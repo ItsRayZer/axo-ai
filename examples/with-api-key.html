@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Axo Chat — With Your Own API Key</title>
+<style>body { font-family: system-ui, sans-serif; max-width: 640px; margin: 60px auto; padding: 0 20px; line-height: 1.6; }</style>
+</head>
+<body>
+<h1>My Website</h1>
+<p>This example wires Axo Chat to a real AI provider. Two ways to do it:</p>
+<ol>
+  <li><strong>Recommended:</strong> leave the key empty here and let each visitor paste their own key in the chat's ⚙ Settings panel (it stays in their browser only).</li>
+  <li><strong>Site-wide key:</strong> set <code>apiKey</code> below. ⚠️ Only do this with a key you are happy to expose — anything in page source is visible to visitors. For production, prefer the <code>custom</code> provider pointing at your own backend endpoint.</li>
+</ol>
+
+<script>
+window.AXO_CONFIG = {
+  botName: "SiteBot",
+  accentColor: "#0ea5e9",
+  provider: "openai",              // or "gemini" or "custom"
+  apiKey: "",                      // paste a key here OR leave empty for demo mode
+  baseUrl: "https://api.openai.com/v1",
+  model: "gpt-4o-mini",
+  systemPrompt: "You are SiteBot, a helpful assistant for this website. Answer briefly and honestly.",
+  faq: [
+    { keywords: ["price", "cost"], answer: "Our pricing starts low for simple pages and scales with scope — ask me what you need!" },
+    { keywords: ["hello", "hi"], answer: "Hello! Ask me anything about this website." }
+  ]
+};
+</script>
+<script src="../dist/axo-chat.js"></script>
+</body>
+</html>

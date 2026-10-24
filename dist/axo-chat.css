@@ -1,0 +1,113 @@
+/* Axo Chat — widget styles. Override anything here in your own CSS. */
+#axo-chat-root {
+  --axo-accent: #7c5cff;
+  --axo-width: 380px;
+  position: fixed;
+  z-index: 2147483000;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #111;
+}
+#axo-chat-root.axo-pos-bottom-right { right: 20px; bottom: 20px; }
+#axo-chat-root.axo-pos-bottom-left { left: 20px; bottom: 20px; }
+#axo-chat-root *, #axo-chat-root *::before, #axo-chat-root *::after { box-sizing: border-box; }
+
+.axo-launcher {
+  width: 60px; height: 60px; border: none; border-radius: 50%;
+  background: var(--axo-accent); color: #fff; cursor: pointer;
+  font-size: 26px; box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  display: flex; align-items: center; justify-content: center;
+  margin-left: auto; transition: transform .15s ease;
+}
+.axo-pos-bottom-left .axo-launcher { margin-left: 0; margin-right: auto; }
+.axo-launcher:hover { transform: scale(1.06); }
+
+.axo-panel {
+  display: none; width: var(--axo-width); max-width: 92vw;
+  height: 560px; max-height: calc(100vh - 110px);
+  background: #fff; border-radius: 18px; overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0,0,0,.28);
+  flex-direction: column; margin-bottom: 14px;
+}
+.axo-panel.axo-open { display: flex; }
+
+.axo-header {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--axo-accent); color: #fff; padding: 12px 14px;
+}
+.axo-avatar { font-size: 26px; }
+.axo-title { flex: 1; display: flex; flex-direction: column; }
+.axo-title small { opacity: .85; font-size: 12px; display: flex; align-items: center; gap: 5px; }
+.axo-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; display: inline-block; }
+.axo-actions { display: flex; gap: 4px; }
+.axo-icon-btn {
+  background: rgba(255,255,255,.2); border: none; color: #fff;
+  width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 14px;
+}
+.axo-icon-btn:hover { background: rgba(255,255,255,.35); }
+
+.axo-log { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; background: #f7f7fb; }
+.axo-msg { display: flex; }
+.axo-msg.axo-user { justify-content: flex-end; }
+.axo-bubble { max-width: 85%; padding: 9px 12px; border-radius: 14px; word-wrap: break-word; }
+.axo-bot .axo-bubble { background: #fff; border: 1px solid #e5e5ef; border-bottom-left-radius: 4px; }
+.axo-user .axo-bubble { background: var(--axo-accent); color: #fff; border-bottom-right-radius: 4px; }
+.axo-bubble a { color: inherit; text-decoration: underline; }
+.axo-bubble code { background: rgba(0,0,0,.08); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+.axo-typing .axo-bubble span {
+  display: inline-block; width: 7px; height: 7px; margin-right: 3px;
+  border-radius: 50%; background: #999; animation: axo-bounce 1s infinite;
+}
+.axo-typing .axo-bubble span:nth-child(2) { animation-delay: .15s; }
+.axo-typing .axo-bubble span:nth-child(3) { animation-delay: .3s; }
+@keyframes axo-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+
+.axo-suggestions { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px 0; background: #f7f7fb; }
+.axo-chip {
+  border: 1px solid var(--axo-accent); background: #fff; color: var(--axo-accent);
+  border-radius: 999px; padding: 5px 11px; font-size: 12.5px; cursor: pointer;
+}
+.axo-chip:hover { background: var(--axo-accent); color: #fff; }
+
+.axo-settings { padding: 12px 14px; background: #fff; border-top: 1px solid #eee; display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; }
+.axo-settings label { font-size: 12.5px; font-weight: 600; display: flex; flex-direction: column; gap: 3px; }
+.axo-settings input, .axo-settings select {
+  font: inherit; font-weight: 400; padding: 7px 9px; border: 1px solid #ddd; border-radius: 8px;
+}
+.axo-settings input[type="color"] { padding: 2px; height: 34px; }
+.axo-note { font-size: 12px; color: #666; margin: 0; }
+.axo-save, .axo-reset-all {
+  border: none; border-radius: 8px; padding: 9px; cursor: pointer; font: inherit; font-weight: 600;
+}
+.axo-save { background: var(--axo-accent); color: #fff; }
+.axo-reset-all { background: #f1f1f5; color: #c00; }
+
+.axo-form { display: flex; gap: 8px; padding: 12px; background: #fff; border-top: 1px solid #eee; }
+.axo-input { flex: 1; border: 1px solid #ddd; border-radius: 999px; padding: 10px 14px; font: inherit; outline: none; }
+.axo-input:focus { border-color: var(--axo-accent); }
+.axo-send {
+  width: 42px; height: 42px; border: none; border-radius: 50%;
+  background: var(--axo-accent); color: #fff; font-size: 16px; cursor: pointer; flex-shrink: 0;
+}
+.axo-footer { text-align: center; font-size: 11.5px; color: #999; padding: 0 0 8px; background: #fff; }
+.axo-footer a { color: var(--axo-accent); text-decoration: none; }
+
+/* ---- dark theme ---- */
+#axo-chat-root.axo-theme-dark, #axo-chat-root.axo-theme-dark .axo-panel { color: #f1f1f5; }
+.axo-theme-dark .axo-panel { background: #1c1c22; }
+.axo-theme-dark .axo-log, .axo-theme-dark .axo-suggestions { background: #14141a; }
+.axo-theme-dark .axo-bot .axo-bubble { background: #2a2a33; border-color: #3a3a46; color: #f1f1f5; }
+.axo-theme-dark .axo-form, .axo-theme-dark .axo-settings, .axo-theme-dark .axo-footer { background: #1c1c22; border-color: #33333f; }
+.axo-theme-dark .axo-input, .axo-theme-dark .axo-settings input, .axo-theme-dark .axo-settings select { background: #2a2a33; border-color: #3a3a46; color: #f1f1f5; }
+.axo-theme-dark .axo-chip { background: #2a2a33; }
+.axo-theme-dark .axo-reset-all { background: #2a2a33; }
+@media (prefers-color-scheme: dark) {
+  #axo-chat-root.axo-theme-auto .axo-panel { background: #1c1c22; color: #f1f1f5; }
+  .axo-theme-auto .axo-log, .axo-theme-auto .axo-suggestions { background: #14141a; }
+  .axo-theme-auto .axo-bot .axo-bubble { background: #2a2a33; border-color: #3a3a46; color: #f1f1f5; }
+  .axo-theme-auto .axo-form, .axo-theme-auto .axo-settings, .axo-theme-auto .axo-footer { background: #1c1c22; border-color: #33333f; }
+  .axo-theme-auto .axo-input, .axo-theme-auto .axo-settings input, .axo-theme-auto .axo-settings select { background: #2a2a33; border-color: #3a3a46; color: #f1f1f5; }
+  .axo-theme-auto .axo-chip { background: #2a2a33; }
+  .axo-theme-auto .axo-reset-all { background: #2a2a33; }
+}

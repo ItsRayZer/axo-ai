@@ -1,0 +1,4 @@
+# local dev / editor files — nothing to install, but keep the repo clean
+.DS_Store
+*.log
+node_modules/

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Axo Chat — Drop-in AI Chatbot for Any Website</title>
+<meta name="description" content="Axo Chat is a free, open-source chatbot widget for any website. Works with no API key, or plug in your own OpenAI or Gemini key. Fully customizable.">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #111; line-height: 1.6; }
+  header { background: linear-gradient(135deg, #7c5cff, #00c2a8); color: #fff; padding: 72px 24px 64px; text-align: center; }
+  header h1 { font-size: 52px; letter-spacing: -1px; }
+  header p { font-size: 19px; opacity: .92; max-width: 640px; margin: 12px auto 0; }
+  .badges { margin-top: 20px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .badges span { background: rgba(255,255,255,.22); padding: 5px 13px; border-radius: 999px; font-size: 13px; }
+  main { max-width: 860px; margin: 0 auto; padding: 48px 24px 90px; }
+  h2 { font-size: 26px; margin: 40px 0 12px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 16px; }
+  .card { border: 1px solid #e5e5ef; border-radius: 16px; padding: 20px; }
+  .card h3 { font-size: 17px; margin-bottom: 6px; }
+  pre { background: #111; color: #d7ffd7; padding: 16px 18px; border-radius: 12px; overflow-x: auto; font-size: 13.5px; line-height: 1.5; margin-top: 12px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  p code { background: #f1f1f5; padding: 1px 6px; border-radius: 5px; }
+  .cta { display: inline-block; margin-top: 24px; background: #7c5cff; color: #fff; text-decoration: none; padding: 12px 24px; border-radius: 999px; font-weight: 600; }
+  footer { text-align: center; color: #888; font-size: 13px; padding: 0 24px 40px; }
+  footer a { color: #7c5cff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🤖 Axo Chat</h1>
+  <p>A drop-in AI chatbot for any website. No build step, no framework — and it works with <strong>no API key at all</strong>. Plug in your own key any time you want real AI answers.</p>
+  <div class="badges"><span>MIT Licensed</span><span>No API key needed</span><span>OpenAI + Gemini ready</span><span>Fully customizable</span></div>
+</header>
+<main>
+  <h2>Try it live</h2>
+  <p>Click the chat button at the bottom-right of this page. Ask it about prices, hours, or services — it answers from the demo FAQ. Then open <strong>⚙ Settings</strong> inside the chat and paste your own API key to switch it to real AI.</p>
+
+  <h2>Why Axo Chat?</h2>
+  <div class="cards">
+    <div class="card"><h3>🔑 Works without a key</h3><p>Out of the box, Axo answers from your FAQ list — perfect for small business sites that need a helper today, not after an API signup.</p></div>
+    <div class="card"><h3>🧠 Real AI when you want it</h3><p>Paste an OpenAI-compatible or Gemini key in the widget settings and Axo switches to live AI answers instantly.</p></div>
+    <div class="card"><h3>🎨 Fully yours</h3><p>Bot name, avatar, colours, theme, welcome message, suggested questions, FAQ answers — everything is one config file.</p></div>
+    <div class="card"><h3>↺ Reset anytime</h3><p>Visitors can reset the conversation or wipe everything, and history stays only in their own browser.</p></div>
+    <div class="card"><h3>📱 Mobile-first</h3><p>Clean, fast, responsive panel that looks native on phones and desktops.</p></div>
+    <div class="card"><h3>🔒 Private by design</h3><p>Keys are stored in the visitor's browser only — never on an Axo server (there isn't one).</p></div>
+  </div>
+
+  <h2>Add it to your website in 30 seconds</h2>
+  <p>Copy these two files into your site, then paste this before <code>&lt;/body&gt;</code>:</p>
+  <pre><code>&lt;script src="axo.config.js"&gt;&lt;/script&gt;
+&lt;script src="dist/axo-chat.js"&gt;&lt;/script&gt;</code></pre>
+  <p>That's it. Edit <code>axo.config.js</code> to make it yours: your business name, your FAQ answers, your colours.</p>
+  <a class="cta" href="https://github.com/ItsRayZer/axo-ai">View on GitHub →</a>
+
+  <h2>Customise everything</h2>
+  <p>Every option lives in <code>axo.config.js</code> with comments: bot name, avatar, theme (light / dark / auto), accent colour, panel position, welcome message, suggestion chips, FAQ brain, AI provider, model, system prompt, and behaviour flags like history persistence and the reset button.</p>
+  <p>Prefer data attributes? This works too:</p>
+  <pre><code>&lt;script src="dist/axo-chat.js"
+  data-bot-name="ShopBot"
+  data-accent-color="#e91e63"
+  data-theme="dark"&gt;&lt;/script&gt;</code></pre>
+</main>
+<footer>
+  Built by <a href="https://github.com/ItsRayZer">Aben Sojan (RayZer)</a> · Axo Chat is MIT licensed — free for personal and commercial use.
+</footer>
+
+<!-- Axo Chat live demo: config + widget -->
+<script src="axo.config.js"></script>
+<script src="dist/axo-chat.js"></script>
+</body>
+</html>

@@ -81,7 +81,7 @@ svg{display:block;}
 /* Sidebar head shows the MAIN agent — its exact avatar and name —
    in place of the old app logo; it follows every rename / avatar
    change the user makes to the main agent. */
-.sb-agent-ava{width:40px; height:40px; border-radius:50%; overflow:hidden; background:var(--surface2); flex:none; display:block;}
+.sb-agent-ava{width:40px; height:40px; border-radius:50%; overflow:hidden; background:transparent; flex:none; display:block;}
 .sb-agent-ava svg,.sb-agent-ava img{width:100%; height:100%; display:block; object-fit:cover;}
 .sb-icon-btn{width:38px;height:38px;border-radius:50%;background:var(--pill);border:1px solid var(--border);display:grid;place-items:center;color:var(--text);flex:none;}
 .sb-icon-btn:active{background:var(--hover);}
@@ -144,11 +144,10 @@ header.chat-head{position:relative; z-index:6; display:flex; align-items:center;
 .model-pill.on .mdot{background:var(--accent);}
 .model-pill span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 /* The top API pill is an alert, not a permanent control: it is hidden
-   completely while a key is set and the provider is answering. It only
-   appears when no API is set, the API is not working / messages are
-   failing, the quota was reached, or the key/model just changed and
-   has not answered yet. Changing the model lives in the + sheet's
-   Model section and in Settings → APIs & Providers. */
+   completely once a key has been added. It only appears when no API
+   is set, the API is not working / messages are failing, or the quota
+   was reached. Changing the model lives in the + sheet's Model
+   section and in Settings → APIs & Providers. */
 .model-pill[hidden]{display:none !important;}
 .model-pill.warn{border-color:rgba(255,69,58,.55);}
 .model-pill.warn .mdot{background:var(--danger);}
@@ -589,8 +588,8 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
 /* Bottom navigation — Chat, Goals, Library only */
 #bottomNav{flex:none; display:flex; justify-content:space-around; padding:6px 12px calc(7px + env(safe-area-inset-bottom)); background:linear-gradient(to top, rgba(0,0,0,.6), rgba(0,0,0,0)); position:relative; z-index:5;}
 [data-theme="white"] #bottomNav{background:linear-gradient(to top, rgba(255,255,255,.75), rgba(255,255,255,0));}
-.bnav-btn{flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; padding:5px 0 1px; color:var(--muted); font-size:11px; font-weight:600; position:relative; border-radius:14px;}
-.bnav-btn svg{width:25px; height:25px;}
+.bnav-btn{flex:1; display:flex; align-items:center; justify-content:center; padding:8px 0 6px; color:var(--muted); position:relative; border-radius:14px;}
+.bnav-btn svg{width:26px; height:26px;}
 .bnav-btn.on{color:var(--text);}
 .bnav-dot{position:absolute; top:1px; right:calc(50% - 21px); width:9px; height:9px; border-radius:50%; background:var(--accent); border:2px solid var(--bg); display:none;}
 #bottomNav{max-height:96px; transition:max-height .32s cubic-bezier(.22,1,.36,1), opacity .25s ease, padding .32s cubic-bezier(.22,1,.36,1), transform .32s cubic-bezier(.22,1,.36,1);}
@@ -638,7 +637,7 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
    also has a monitor/computer tab — deliberately not included.) */
 .ag-top{display:flex; align-items:flex-start; justify-content:space-between; padding:2px 0 0;}
 .ag-avatar-wrap{position:relative; width:104px; height:104px; margin:0 auto;}
-.ag-avatar{width:104px; height:104px; border-radius:50%; background:var(--surface2); border:1px solid var(--border2); display:grid; place-items:center; font-size:37px; font-weight:700; color:var(--text); overflow:hidden; cursor:pointer; padding:0;}
+.ag-avatar{width:104px; height:104px; border-radius:0; background:transparent; border:none; display:grid; place-items:center; font-size:37px; font-weight:700; color:var(--text); overflow:visible; cursor:pointer; padding:0; box-shadow:none;}
 /* Animated agent avatars (original Axo presets) + chat agent head */
 .agent-ava-slot{display:block; width:100%; height:100%;}
 .agent-ava-slot svg{width:100%; height:100%; display:block;}
@@ -666,12 +665,12 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
    whole avatar floats and breathes continuously (wrapper), the SVG
    itself sways gently even in "idle" (emote classes keep their own
    faster motion), and an uploaded photo sways inside its circle too. */
-.av-svg{animation:avAlive 3.8s ease-in-out infinite; will-change:transform; filter:drop-shadow(0 7px 9px rgba(0,0,0,.28)) drop-shadow(0 2px 2px rgba(0,0,0,.18));}
-.av-prev svg,.avpro-prev svg,.avpro-emotes svg{filter:drop-shadow(0 5px 7px rgba(0,0,0,.25));}
+.av-svg{animation:avAlive 3.8s ease-in-out infinite; will-change:transform; filter:none; background:transparent;}
+.av-prev svg,.avpro-prev svg,.avpro-emotes svg{filter:none;}
 .av-card{transition:transform .18s var(--ease), border-color .18s, box-shadow .18s;}
 .av-card:active{transform:scale(.96);}
 @keyframes avAlive{0%,100%{transform:translateY(0) rotate(-1deg) scale(1);}50%{transform:translateY(-2.2%) rotate(1deg) scale(1.015);}}
-.ca-ava{border-radius:50%; overflow:hidden; background:var(--surface2); flex:none; animation:caFloat 3.4s ease-in-out infinite; will-change:transform;}
+.ca-ava{border-radius:50%; overflow:hidden; background:transparent; flex:none; animation:caFloat 3.4s ease-in-out infinite; will-change:transform;}
 @keyframes caFloat{0%,100%{transform:translateY(0) scale(1);}50%{transform:translateY(-5px) scale(1.02);}}
 .agent-ava-slot img{animation:caSway 4.4s ease-in-out infinite; will-change:transform;}
 @keyframes caSway{0%,100%{transform:scale(1.06) rotate(-1deg);}50%{transform:scale(1.1) rotate(1deg) translateY(-1.5%);}}
@@ -779,11 +778,11 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
    The stage is also sized to FIT phone widths (smaller preview
    disc and peeks on narrow screens) so the peeks are never pushed
    half off the screen edge. Tap or swipe to slide to them. */
-.av-peek{width:54px; height:54px; border-radius:50%; overflow:hidden; flex:none; padding:0; background:var(--surface); border:1px solid var(--border2); cursor:pointer; box-shadow:0 6px 18px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.10); transition:transform .18s var(--ease), box-shadow .18s var(--ease);}
+.av-peek{width:54px; height:54px; border-radius:50%; overflow:hidden; flex:none; padding:0; background:transparent; border:1px solid var(--border2); cursor:pointer; box-shadow:none; transition:transform .18s var(--ease), box-shadow .18s var(--ease);}
 .av-peek svg{width:100%; height:100%; display:block;}
 .av-peek .av-svg{animation:none !important; filter:none !important; will-change:auto;}
 .av-peek img{width:100%; height:100%; display:block; object-fit:cover;}
-.av-peek:active{transform:scale(.93); box-shadow:0 3px 10px rgba(0,0,0,.28);}
+.av-peek:active{transform:scale(.93); box-shadow:none;}
 @media (max-width:430px){
   .av-stage{gap:5px;}
   .av-stage .avedit-previewback{width:160px; height:160px;}
@@ -811,7 +810,7 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
 .av-pick .av-prev{width:46px; height:46px;}
 /* Appearance — preview phone, theme circles, radio lists */
 .aprev{border:2px solid var(--accent); border-radius:38px; padding:22px 16px 14px; max-width:232px; margin:6px auto 4px; background:var(--bg); display:flex; flex-direction:column; align-items:center;}
-.aprev-ava{width:76px; height:76px; border-radius:50%; overflow:hidden; background:var(--surface2); flex:none;}
+.aprev-ava{width:76px; height:76px; border-radius:50%; overflow:hidden; background:transparent; flex:none;}
 .aprev-ava svg,.aprev-ava img{width:100%; height:100%; display:block; object-fit:cover;}
 .aprev.hideava .aprev-ava,.aprev.hideava .aprev-name{display:none;}
 .aprev-name{margin-top:-12px; background:var(--surface2); border:1px solid var(--border2); padding:3px 13px; border-radius:999px; font-weight:600; font-size:13.5px; position:relative; z-index:1;}
@@ -824,7 +823,7 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
 .theme-circles{display:flex; gap:12px; overflow-x:auto; padding:14px; background:var(--surface); border-radius:22px; -webkit-overflow-scrolling:touch;}
 .tcircle{width:46px; height:46px; border-radius:50%; flex:none; border:0; cursor:pointer; padding:0; box-shadow:inset 0 0 0 1px var(--border2);}
 .tcircle.sel{box-shadow:0 0 0 2px var(--bg), 0 0 0 4.5px var(--text);}
-.tcircle.av{overflow:hidden; background:var(--surface2);}
+.tcircle.av{overflow:hidden; background:transparent;}
 .tcircle.av img{width:100%; height:100%; object-fit:cover; display:block;}
 .tcircle.av svg{width:100%; height:100%; display:block;}
 .radio-list{background:var(--surface); border-radius:22px; overflow:hidden;}
@@ -833,7 +832,7 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
 .radio{margin-left:auto; width:26px; height:26px; flex:none; border-radius:50%; border:2px solid var(--muted); display:flex; align-items:center; justify-content:center; color:var(--accent-ink);}
 .radio.on{background:var(--accent); border-color:var(--accent);}
 .radio svg{width:15px; height:15px;}
-.ag-avatar img{width:100%; height:100%; object-fit:cover; display:block;}
+.ag-avatar img{width:100%; height:100%; object-fit:cover; display:block; border-radius:50%;}
 .ag-pencil{position:absolute; right:-2px; bottom:2px; width:29px; height:29px; border-radius:50%; background:var(--surface2); border:1px solid var(--border2); display:grid; place-items:center; color:var(--text); cursor:pointer;}
 .ag-pencil .ic{width:14px; height:14px;}
 .ag-name{font-size:29px; font-weight:700; letter-spacing:-.02em; text-align:center; margin:14px 0 2px;}
@@ -880,8 +879,8 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
 :root{--agent-speed:1;}
 html[data-theme="white"] .sb-logo{filter:invert(1);}
 html[data-theme="white"] .lib-ico img{filter:invert(1);}
-#agentHeadBar{display:none; justify-content:center; position:relative; z-index:6; flex:none; padding:2px 0 0; background:transparent;}
-#agentHeadBar .chat-agent-head{padding:6px 0 4px; background:transparent;}
+#agentHeadBar{display:none; justify-content:center; position:relative; z-index:6; flex:none; padding:0; margin-top:-12px; background:transparent;}
+#agentHeadBar .chat-agent-head{padding:0 0 2px; background:transparent;}
 /* Top avatar presence: the mascot drawing carries its own padding
    inside its square, which made it read small at the top. The slot
    is scaled up a step so the mascot itself is bigger and clearly
@@ -908,7 +907,7 @@ html[data-theme="white"] .lib-ico img{filter:invert(1);}
 .agent-flow>*{animation:agentFlowIn calc(.5s / var(--agent-speed)) var(--ease) both; animation-delay:calc(var(--i,0)*70ms / var(--agent-speed));}
 @keyframes agentFlowIn{from{opacity:0; transform:translateY(14px) scale(.99);}to{opacity:1; transform:translateY(0) scale(1);}}
 @media (prefers-reduced-motion:reduce){.agent-flow>*{animation:none;}}
-.mini-ava{border-radius:50%; overflow:hidden; background:var(--surface2); flex:none; display:block; animation:caFloat calc(3.4s / var(--agent-speed)) ease-in-out infinite; will-change:transform;}
+.mini-ava{border-radius:50%; overflow:hidden; background:transparent; flex:none; display:block; animation:caFloat calc(3.4s / var(--agent-speed)) ease-in-out infinite; will-change:transform;}
 .mini-ava svg,.mini-ava img{width:100%; height:100%; display:block; object-fit:cover;}
 .agent-list-row{display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border-bottom:1px solid var(--border); color:var(--text);}
 .agent-list-row:last-child{border-bottom:none;}
@@ -931,8 +930,8 @@ input[type="range"].speed-range{margin:14px 0 2px;}
 .avedit-hue{-webkit-appearance:none; appearance:none; width:100%; height:16px; border-radius:999px; background:linear-gradient(to right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00); outline:none; margin:14px 0 6px;}
 .avedit-hue::-webkit-slider-thumb{-webkit-appearance:none; width:26px; height:26px; border-radius:50%; background:#fff; border:3px solid var(--bg); box-shadow:0 0 0 1.5px var(--border2), 0 2px 8px rgba(0,0,0,.35); cursor:pointer;}
 .avedit-hue::-moz-range-thumb{width:22px; height:22px; border-radius:50%; background:#fff; border:3px solid var(--bg); box-shadow:0 0 0 1.5px var(--border2); cursor:pointer;}
-.avedit-previewback{width:196px; height:196px; border-radius:50%; background:var(--surface); border:1px solid var(--border); display:grid; place-items:center; margin:0 auto; overflow:hidden;}
-.avedit-previewback img{width:100%; height:100%; object-fit:cover; display:block;}
+.avedit-previewback{width:196px; height:196px; border-radius:0; background:transparent; border:none; display:grid; place-items:center; margin:0 auto; overflow:visible; box-shadow:none;}
+.avedit-previewback img{width:100%; height:100%; object-fit:cover; display:block; border-radius:50%;}
 /* New sub-agent window: one small centred card instead of a full page. */
 .nc-window{max-width:440px; margin:20px auto 10px; background:var(--surface); border:1px solid var(--border2); border-radius:24px; padding:18px 16px 16px; box-shadow:0 18px 44px rgba(0,0,0,.28);}
 .nc-win-head{display:flex; align-items:center; margin-bottom:14px;}
@@ -942,7 +941,7 @@ input[type="range"].speed-range{margin:14px 0 2px;}
 .emo-blinkeyes{transform-box:fill-box; transform-origin:center; animation:avBlink 4.4s infinite;}
 
 
-button.ca-ava{border:0; padding:0; cursor:pointer; background:var(--surface2);}
+button.ca-ava{border:0; padding:0; cursor:pointer; background:transparent;}
 .set-row .sub2{display:block; color:var(--muted); font-size:13px; font-weight:400; margin-top:2px; line-height:1.4;}
 
 /* ================= Performance & glow pass =================
@@ -963,10 +962,46 @@ button.ca-ava{border:0; padding:0; cursor:pointer; background:var(--surface2);}
    send, and primary buttons. (Never behind the top chat avatar:
    that head stays fully transparent, as requested.) */
 @keyframes glowPulse{0%,100%{box-shadow:0 0 0 1px var(--border), 0 0 20px rgba(255,255,255,.08), 0 12px 32px rgba(0,0,0,.30);}50%{box-shadow:0 0 0 1px var(--border2), 0 0 42px rgba(255,255,255,.19), 0 12px 32px rgba(0,0,0,.30);}}
-.avedit-previewback{animation:glowPulse 3.2s ease-in-out infinite;}
+.avedit-previewback{animation:none;}
 @keyframes sendGlow{0%,100%{box-shadow:0 0 10px color-mix(in srgb, var(--accent) 30%, transparent);}50%{box-shadow:0 0 24px color-mix(in srgb, var(--accent) 55%, transparent);}}
 .send-btn:not(:disabled){animation:sendGlow 2.6s ease-in-out infinite;}
 .btn-primary{box-shadow:0 0 16px color-mix(in srgb, var(--accent) 22%, transparent);}
 @media (prefers-reduced-motion:reduce){.avedit-previewback,.send-btn:not(:disabled){animation:none !important;}}
+
+/* ================= Avatar transparency — FINAL pass =================
+   The avatar is FULLY transparent, everywhere it appears: no black
+   or dark background, disc, ring, shadow or glow behind the mascot —
+   not at the top of the chat, not on the agent page, not in the
+   sidebar, lists, Appearance preview, theme circles, picker peeks
+   or the big editor preview. This block sits LAST in the stylesheet
+   and uses !important so no earlier or later rule can repaint a
+   fill behind the avatar (the scattered per-spot fixes before this
+   kept missing layers: the mascot SVG's own black drop-shadow
+   filter, the editor preview's pulsing glow disc, the agent-page
+   ring border, and the solid fills in the preview / peek circles).
+   Only the mascot drawing itself (or an uploaded photo) is visible,
+   sitting directly on whatever is behind it. */
+#agentHeadBar, #agentHeadBar .chat-agent-head,
+.ca-ava, button.ca-ava,
+.agent-ava-slot, .agent-ava-slot svg, .agent-ava-slot img,
+.av-svg,
+.ag-avatar, .ag-avatar-wrap,
+.mini-ava, .sb-agent-ava,
+.aprev-ava, .tcircle.av,
+.av-peek,
+.avedit-preview, .avedit-previewback,
+.av-prev, .avpro-prev{
+  background:transparent !important; background-color:transparent !important;
+  box-shadow:none !important; backdrop-filter:none !important; -webkit-backdrop-filter:none !important;
+}
+.av-svg, .av-prev svg, .avpro-prev svg, .avpro-emotes svg,
+.ag-avatar .av-svg, .avedit-preview .av-svg, .avedit-previewback .av-svg,
+#agentHeadBar .av-svg{
+  filter:none !important;
+}
+.ag-avatar, .avedit-previewback{
+  border:none !important;
+}
+.avedit-previewback{animation:none !important;}
 
 .hidden{display:none !important;}

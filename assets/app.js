@@ -160,16 +160,24 @@ function renderAgentHead(){
   var show = state.view==='chat' && !state.splitId && state.avatarSize!=='hidden' && !apiIncomplete();
   bar.innerHTML = show? chatAgentHeadHTML() : '';
   bar.style.display = show? 'flex' : 'none';
-  /* Agent switch: the incoming agent's circle slides in from the
-     side the swipe came from, smoothly filling its place. */
-  if(show && headSwapInDir){
+  /* Agent switch animation — ONLY after a left / right swipe on the
+     top agent (switchTopAgent is the one place that sets
+     headSwapInDir, and only the swipe handler calls it): the new
+     agent's circle looms in from the side the swipe pointed to,
+     sliding across and growing to full size as it lands. Renders
+     for any other reason — first load, a menu switch, a re-render —
+     never set the flag, so the head simply appears, unmoving. A
+     flag left over while the head is hidden is dropped, never
+     replayed later. */
+  if(!show){ headSwapInDir=0; return; }
+  if(headSwapInDir){
     var h=bar.querySelector('.chat-agent-head'), d=headSwapInDir; headSwapInDir=0;
-    if(h){
+    if(h && !window.matchMedia('(prefers-reduced-motion: reduce)').matches){
       h.style.transition='none';
-      h.style.transform='translateX('+(d*56)+'px)';
+      h.style.transform='translateX('+(d*170)+'px) scale(.55)';
       h.style.opacity='0';
       requestAnimationFrame(function(){ requestAnimationFrame(function(){
-        h.style.transition='transform .28s cubic-bezier(.32,.72,0,1), opacity .28s ease';
+        h.style.transition='transform .34s cubic-bezier(.32,.72,0,1), opacity .3s ease';
         h.style.transform=''; h.style.opacity='';
       }); });
     }
@@ -307,11 +315,12 @@ function sbOpen(){ return app.classList.contains('sb-open'); }
 /* =============== API pill — alert only, never permanent ===============
    The pill at the top of the chat shows ONLY when the API needs
    attention: no key set, the provider is not working (a message just
-   failed), the quota / rate limit was reached, or the key/model was
-   changed and has not answered yet. While a key is set and the last
-   reply came through, the pill is hidden and the header stays clean —
-   and the centred agent avatar (below) is shown instead. Changing the
-   model/key lives in the + sheet Model section and in Settings →
+   failed), or the quota / rate limit was reached. The moment a key
+   has been added the pill is removed — adding (or changing) a key
+   never brings it back; it only returns if a send actually fails.
+   While a key is set, the pill is hidden, the header stays clean,
+   and the centred agent avatar (below) is shown instead. Changing
+   the model/key lives in the + sheet Model section and in Settings →
    APIs & Providers; both call setApiHealth / updateApiPill. */
 function apiIncomplete(){ return !apiEntries().length; }
 function apiWorking(){ return apiEntries().length>0 && state.apiHealth==='ok'; }
@@ -319,14 +328,13 @@ function updateApiPill(){
   var pill=$('#modelPill'); if(!pill) return;
   var txt=$('#modelPillText');
   var h=state.apiHealth||'unset';
-  var show = apiIncomplete() || h==='error' || h==='quota' || h==='changed';
+  var show = apiIncomplete() || h==='error' || h==='quota';
   pill.hidden=!show;
   pill.classList.toggle('warn', h==='error'||h==='quota');
   pill.classList.toggle('on', !!state.apiKey && h==='ok');
   if(txt){
     if(h==='quota') txt.textContent='API quota reached';
     else if(h==='error') txt.textContent='API not working';
-    else if(h==='changed') txt.textContent='+ '+(state.model||'API / Model')+' — check API';
     else txt.textContent='+ API / Model';
   }
   if(show) pill.removeAttribute('tabindex'); else pill.setAttribute('tabindex','-1');
@@ -351,9 +359,10 @@ function apiSaved(prev, pastedKey){
    The user only ever pastes a key. The provider, base URL and model
    are detected from the key itself and confirmed against the
    provider's own model list where it offers one. Any number of keys
-   can be added; sending tries the active key first, then every
-   other key automatically, and only reports an error when none of
-   them work. state.apiKey / provider / providerBase / model stay
+   can be added; sending tries the active key first with its model,
+   then every other model on that key, then the next key and every
+   model on it, and only reports an error when every model on every
+   key has failed. state.apiKey / provider / providerBase / model stay
    synced to the active entry for the rest of the app (top pill,
    agent head, usage page). */
 var API_PROVIDERS={
@@ -409,6 +418,27 @@ function apiPickModel(ids){
   var prefs=['claude-sonnet','claude-3-5-sonnet','claude-3.5-sonnet','gpt-4o','gpt-4.1','gemini-2.5-flash','gemini-2.5-pro','gemini-2.0-flash','llama-3.3','llama3.3','deepseek-chat','grok','mistral-large','sonnet','opus','pro','flash','turbo','instruct','chat'];
   for(var p=0;p<prefs.length;p++){ for(var i=0;i<list.length;i++){ if(String(list[i]).toLowerCase().indexOf(prefs[p])>=0) return list[i]; } }
   return list[0];
+}
+/* Every model a key should be tried with, in order: the key's
+   chosen model first, then the provider default, then every
+   other model from that provider's own list, best first. This
+   is the list sending and Test walk through — one model failing
+   never gives up on the key, and one key failing never gives up
+   on the message: all of this key's models, then all of the next
+   key's models, and so on, in every way, before any error. */
+function apiModelCandidates(e){
+  if(!e) return [];
+  var p=API_PROVIDERS[e.provider]; if(!p) return e.model? [e.model] : [];
+  var seen={}, out=[];
+  function add(m){ m=String(m||'').trim(); if(m && !seen[m]){ seen[m]=1; out.push(m); } }
+  add(e.model); add(p.defModel);
+  var cached=(e.models||[]).slice();
+  var prefs=['claude-sonnet','claude-3-5-sonnet','claude-3.5-sonnet','gpt-4o','gpt-4.1','gemini-2.5-flash','gemini-2.5-pro','gemini-2.0-flash','llama-3.3','llama3.3','deepseek-chat','grok','mistral-large','sonnet','opus','pro','flash','turbo','instruct','chat'];
+  function rank(id){ var s=String(id).toLowerCase(); for(var i=0;i<prefs.length;i++){ if(s.indexOf(prefs[i])>=0) return i; } return prefs.length; }
+  cached.sort(function(a,b){ return rank(a)-rank(b); });
+  var usable=cached.filter(function(id){ var s=String(id).toLowerCase(); return !/(embed|whisper|tts|transcri|dall|image|moderation|rerank|guard|ocr|audio|realtime)/.test(s); });
+  (usable.length? usable : cached).forEach(add);
+  return out;
 }
 function apiFetchModels(e){
   var p=API_PROVIDERS[e.provider]; if(!p) return Promise.resolve(null);
@@ -560,13 +590,14 @@ function wireApiList(root, rerender){
 }
 /* =============== Test API ===============
    The Test button on each added key: first the provider's own
-   model list is asked (issuer endpoint only) and the best chat
-   model is auto-selected from it, then a one-line ping proves
-   chat itself answers. If the ping fails on the model, the model
-   is re-picked from the list and the ping retries once. A pass
-   marks the key Working, makes it the active API, and the result
-   text shows under the list; a fail shows the provider's own
-   error words, not a guess. Works the same for every provider. */
+   model list is asked (issuer endpoint only), then a one-line
+   ping is tried with EVERY model on that key, in order, until
+   one answers — a single model failing never fails the test.
+   A pass marks the key Working, keeps the model that answered
+   as the key's model, makes it the active API, and the result
+   text shows under the list; only when every model on the key
+   has failed does a fail show, with the last provider error.
+   Works the same for every provider. */
 var apiTestMsgText='';
 function setApiTestMsg(t){
   apiTestMsgText=t;
@@ -577,21 +608,22 @@ function apiHost(e){
   var p=e&&API_PROVIDERS[e.provider];
   try{ return new URL((e&&e.base)||(p?p.base:'')).host; }catch(err){ return (e&&e.base)||''; }
 }
-function pingApi(entry){
+function pingApi(entry, modelOverride){
   var p=API_PROVIDERS[entry.provider]; if(!p) return Promise.resolve({ok:false, msg:'Provider not recognised'});
+  var useModel=modelOverride||entry.model||p.defModel;
   var url, headers, body;
   if(p.type==='gemini'){
-    url=p.base+'/models/'+encodeURIComponent(entry.model||p.defModel)+':generateContent';
+    url=p.base+'/models/'+encodeURIComponent(useModel)+':generateContent';
     headers={'Content-Type':'application/json','x-goog-api-key':entry.key};
     body={contents:[{role:'user',parts:[{text:'Reply with OK'}]}], generationConfig:{temperature:0, maxOutputTokens:8}};
   } else if(p.type==='anthropic'){
     url=p.base+'/messages';
     headers={'Content-Type':'application/json','x-api-key':entry.key,'anthropic-version':'2023-06-01'};
-    body={model:entry.model||p.defModel, max_tokens:8, messages:[{role:'user', content:'Reply with OK'}]};
+    body={model:useModel, max_tokens:8, messages:[{role:'user', content:'Reply with OK'}]};
   } else {
     url=(entry.base||p.base).replace(/\/$/,'')+'/chat/completions';
     headers={'Content-Type':'application/json','Authorization':'Bearer '+entry.key};
-    body={model:entry.model||p.defModel, messages:[{role:'user', content:'Reply with OK'}], temperature:0, max_tokens:8};
+    body={model:useModel, messages:[{role:'user', content:'Reply with OK'}], temperature:0, max_tokens:8};
   }
   return fetch(url,{method:'POST', headers:headers, body:JSON.stringify(body)})
     .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j, status:r.status}; }).catch(function(){ return {ok:r.ok, j:null, status:r.status}; }); })
@@ -617,21 +649,19 @@ function testApiEntry(entry){
     return {ok:ok, msg:msg};
   }
   return apiFetchModels(entry).then(function(models){
-    if(models && models.length){ entry.models=models; var pick=apiPickModel(models); if(pick) entry.model=pick; }
-    return pingApi(entry).then(function(r){
-      if(r.ok) return done(true,'Working');
-      if(r.modelError){
-        return apiFetchModels(entry).then(function(m2){
-          if(m2 && m2.length){
-            entry.models=m2;
-            entry.model=apiPickModel(m2)||entry.model;
-            return pingApi(entry).then(function(r2){ return r2.ok? done(true,'Working') : done(false, r2.msg, r2.kind); });
-          }
-          return done(false, r.msg, r.kind);
-        });
-      }
-      return done(false, r.msg, r.kind);
-    });
+    if(models && models.length) entry.models=models;
+    var candidates=apiModelCandidates(entry);
+    if(!candidates.length) candidates=[entry.model||(API_PROVIDERS[entry.provider]||{}).defModel].filter(Boolean);
+    var last={ok:false, msg:'No model could be tried', kind:'error'};
+    function tryPing(i){
+      if(i>=candidates.length) return Promise.resolve(done(false, last.msg, last.kind));
+      return pingApi(entry, candidates[i]).then(function(r){
+        if(r.ok){ entry.model=candidates[i]; return done(true,'Working'); }
+        last=r;
+        return tryPing(i+1);
+      });
+    }
+    return tryPing(0);
   });
 }
 /* Sidebar motion: one short iOS-style run (340ms, --sb-ease), started
@@ -852,7 +882,7 @@ function detailSheet(title, bullets){
   $('#sheetCloseBtn').addEventListener('click',closeSheet);
 }
 var DETAILS={
-  apis:{t:'API Keys & Automatic Failover', b:['Just paste a key — the provider, base URL and model are detected and selected automatically. Nothing else to fill in.','Every added key shows its models: the list under the key is the real model list from that key\u2019s own provider, with the auto-selected model picked. Tap it to choose a different model for that key, or tap Show models to load the list.','Add as many keys as you like, from any supported provider: OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, xAI, DeepSeek, NVIDIA, Mistral, Together, or another OpenAI-compatible key.','Sending tries your active key first, then every other added key automatically. An error is only shown when none of the keys work.','Keys are held for this session only in this preview and are never shown in full after saving.','Without a key, replies come from the built-in local reply engine.']},
+  apis:{t:'API Keys & Automatic Failover', b:['Just paste a key — the provider, base URL and model are detected and selected automatically. Nothing else to fill in.','Every added key shows its models: the list under the key is the real model list from that key\u2019s own provider, with the auto-selected model picked. Tap it to choose a different model for that key, or tap Show models to load the list.','Add as many keys as you like, from any supported provider: OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, xAI, DeepSeek, NVIDIA, Mistral, Together, or another OpenAI-compatible key.','Sending tries your active key first with its chosen model, then every other model on that key, then the next key and every model on it, and so on through all keys and all their models. An error is only shown when every model on every key has failed.','Keys are held for this session only in this preview and are never shown in full after saving.','Without a key, replies come from the built-in local reply engine.']},
   usage:{t:'Usage & Limits', b:['Pick the API you have at the top — the page then shows that API only.','This session counts are counted by the app itself, request by request: requests sent, replies received, failures, quota hits, and the token totals your provider returns with each reply. They reset when the page reloads, like the rest of this preview.','OpenRouter limit: tap Check live usage & limit and the app asks OpenRouter directly, with your saved key, how much this key has used, its limit and what remains. Nothing is estimated.','Google Gemini and custom endpoints do not offer a per-key limit check the app can call, so their limits live on the provider side — the page says so instead of inventing a number, and still shows your status and session counts.']},
   connectors:{t:'Connectors & Online Search', b:['Online Search is the only connector in this build.','When it is on, /search looks up live sources on Wikipedia and the open web.']},
   memory:{t:'Local Memory System', b:['Everything you say in any chat is saved to memory automatically, locally in this app, with no limit on entries.','Before every reply, the saved memory is searched by the incoming message\u2019s keywords, and the reply is built using the related memories found.','Memory never holds keys, secrets, emails or phone numbers — those are stripped out before a note is saved.','Turn it off any time and saving and searching both stop. The + sheet Memory switch and this switch always match.']},
@@ -2286,10 +2316,10 @@ function callProvider(chat, memHits, opts){
   if(codeMode){
     msgs.unshift({role:'system', content:CODER_INSTRUCTION+(canvasMsg? '\n\n'+CANVAS_CODER_INSTRUCTION : '')});
   }
-  function buildProviderRequest(requestMsgs, entry){
+  function buildProviderRequest(requestMsgs, entry, modelOverride){
     var temperature=codeMode? Math.min(state.tempVal, 0.4) : state.tempVal;
     var p=API_PROVIDERS[entry.provider] || API_PROVIDERS.openai;
-    var model=entry.model || p.defModel;
+    var model=modelOverride || entry.model || p.defModel;
     if(p.type==='gemini'){
       var systems=[], convo=[];
       requestMsgs.forEach(function(m){
@@ -2332,9 +2362,15 @@ function callProvider(chat, memHits, opts){
     if(Array.isArray(j.content)) return j.content.map(function(b){ return b && b.type==='text'? (b.text||'') : ''; }).join('') || null;
     return null;
   }
-  /* Automatic failover: try the active key first, then every other
-     added key in order. Only when ALL of them fail does the chat
-     show an error. */
+  /* Automatic failover — exhaustive, in every way: try the active
+     key first with its chosen model, then EVERY other model on
+     that same key (its full provider model list, freshly fetched
+     if it was not known yet, and fetched again if the cached list
+     is exhausted so any new model is tried too), then move to the
+     next added key and try EVERY model on it the same way, and so
+     on through all added keys. Keep trying like that and only
+     when every model on every key has failed does the chat show
+     an error. */
   var attemptEntries=apiAttemptOrder();
   if(!attemptEntries.length){
     ty.remove(); discardCanvasPending(chat, canvasMsg);
@@ -2347,8 +2383,8 @@ function callProvider(chat, memHits, opts){
     }
     renderAll(); return;
   }
-  function postToProvider(requestMsgs, entry){
-    var req=buildProviderRequest(requestMsgs, entry);
+  function postToProvider(requestMsgs, entry, modelOverride){
+    var req=buildProviderRequest(requestMsgs, entry, modelOverride);
     state.usage.requests++;
     return fetch(req.url,{method:'POST', headers:req.headers, body:JSON.stringify(req.body)});
   }
@@ -2395,33 +2431,76 @@ function callProvider(chat, memHits, opts){
     }
   }
   var lastFailKind='error';
+  var lastFailDetail='';
+  var totalTried=0;
   function attemptApi(idx){
     if(idx>=attemptEntries.length){
-      /* Every added API was tried automatically and none worked —
-         only now does an error show. */
+      /* Every model on every added API was tried automatically
+         and none worked — only now does an error show. */
       ty.remove(); discardCanvasPending(chat, canvasMsg);
-      setApiHealth(lastFailKind, 'All APIs failed');
-      chat.messages.push({id:mid(), role:'ai', text:'None of your APIs worked — every added key was tried automatically. Add another key, or check the keys in Settings → APIs & Providers.'});
+      setApiHealth(lastFailKind, 'All APIs and models failed');
+      chat.messages.push({id:mid(), role:'ai', text:'None of your APIs worked — every model on every added key was tried automatically ('+totalTried+' attempt'+(totalTried===1?'':'s')+' across '+attemptEntries.length+' API'+(attemptEntries.length===1?'':'s')+'), in every way, before showing this error. Add another key, or check the keys in Settings → APIs & Providers.'});
       renderAll(); return;
     }
     var entry=attemptEntries[idx];
-    postToProvider(msgs, entry)
+    if(entry.models && entry.models.length){
+      attemptModel(idx, entry, apiModelCandidates(entry), 0, false);
+    } else {
+      /* No model list known for this key yet — fetch it from its
+         own provider first so ALL its models can be tried, not
+         just the default. */
+      apiFetchModels(entry).then(function(fresh){
+        if(fresh && fresh.length) entry.models=fresh;
+        attemptModel(idx, entry, apiModelCandidates(entry), 0, true);
+      });
+    }
+  }
+  function attemptModel(apiIdx, entry, models, mIdx, didFreshFetch){
+    if(mIdx>=models.length){
+      if(!didFreshFetch){
+        /* The cached list is exhausted — fetch the provider's
+           list once more for this key and try any model that was
+           not already tried before giving up on this key. */
+        apiFetchModels(entry).then(function(fresh){
+          if(fresh && fresh.length){
+            entry.models=fresh;
+            var all=apiModelCandidates(entry);
+            var extra=all.filter(function(m){ return models.indexOf(m)<0; });
+            if(extra.length){ attemptModel(apiIdx, entry, models.concat(extra), mIdx, true); return; }
+          }
+          entry.status=lastFailKind; entry.detail=lastFailDetail||'All models failed';
+          attemptApi(apiIdx+1);
+        });
+        return;
+      }
+      entry.status=lastFailKind; entry.detail=lastFailDetail||'All models failed';
+      attemptApi(apiIdx+1);
+      return;
+    }
+    var model=models[mIdx];
+    totalTried++;
+    postToProvider(msgs, entry, model)
     .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j, status:r.status}; }).catch(function(){ return {ok:r.ok, j:null, status:r.status}; }); })
     .then(function(res){
       var out=extractReplyText(res.j);
       if(!(out && res.ok)){
         var kind=apiFailureKind(res.status, res.j);
         lastFailKind=kind;
-        entry.status=kind; entry.detail='HTTP '+res.status;
+        lastFailDetail='HTTP '+res.status+' · '+model;
         if(kind==='quota') state.usage.quota++; else state.usage.failed++;
-        attemptApi(idx+1);
+        /* This model failed — keep trying: next model on the
+           SAME key, not the next key yet. */
+        attemptModel(apiIdx, entry, models, mIdx+1, didFreshFetch);
         return;
       }
       ty.remove();
-      /* This key answered: it becomes the active API, and the top
-         pill hides while the agent head shows. */
-      entry.status='ok'; entry.detail='Working';
-      if(state.activeApiId!==entry.id){ state.activeApiId=entry.id; syncLegacyApi(); }
+      /* This model on this key answered: the working model is
+         kept on the key, the key becomes the active API, and the
+         top pill hides while the agent head shows. */
+      entry.model=model;
+      entry.status='ok'; entry.detail='Working — '+model;
+      if(state.activeApiId!==entry.id){ state.activeApiId=entry.id; }
+      syncLegacyApi();
       setApiHealth('ok');
       state.usage.ok++;
       var pu=res.j&&res.j.usage, gm=res.j&&res.j.usageMetadata;
@@ -2447,7 +2526,7 @@ function callProvider(chat, memHits, opts){
         if(needsRepair){
           var repairPrompt='The HTML in your previous reply failed a structural check: '+((htmlIssues.length? htmlIssues.join('; ') : 'the code block is incomplete'))+'. Return the complete corrected build now. Fix every listed issue, keep the same app and features, and return exactly one complete self-contained HTML document in one fenced ```html block with no prose after it.';
           var repairMsgs=msgs.concat([{role:'assistant', content:out},{role:'user', content:repairPrompt}]);
-          return postToProvider(repairMsgs, entry)
+          return postToProvider(repairMsgs, entry, model)
             .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j, status:r.status}; }); })
             .then(function(rr){
               var repairedOut=extractReplyText(rr.j);
@@ -2472,11 +2551,11 @@ function callProvider(chat, memHits, opts){
       }
     })
     .catch(function(){
-      /* Network / CORS on this key: mark it and automatically
-         move on to the next added key. */
-      entry.status='error'; entry.detail='Network or CORS';
+      /* Network / CORS on this model: keep trying — next model
+         on the same key, then the next key and all its models. */
+      lastFailKind='error'; lastFailDetail='Network or CORS · '+model;
       state.usage.failed++;
-      attemptApi(idx+1);
+      attemptModel(apiIdx, entry, models, mIdx+1, didFreshFetch);
     });
   }
   attemptApi(0);
@@ -3038,7 +3117,7 @@ function openPlusSheet(view){
   if(v==='model'){
     /* ---- Model / API — only this menu ---- */
     html=backHead('Model')
-    +'<p class="sub" style="margin:0 0 10px">Just paste a key — provider, base URL and model are selected automatically. Add as many as you like; when one is unavailable the next is tried automatically.</p>'
+    +'<p class="sub" style="margin:0 0 10px">Just paste a key — provider, base URL and model are selected automatically. Add as many as you like; if a model fails, every other model on that key is tried, then every model on the next key, and only then is an error shown.</p>'
     + apiListHTML()
     +'<div class="field"><label>API key</label><input id="plusKey" type="password" placeholder="Paste any API key" autocomplete="off"></div>'
     +'<button class="btn-primary" id="plusApiAdd" style="margin-top:2px">Add API</button>'
@@ -3289,6 +3368,7 @@ function renderSettingsInner(view){
   if(view==='ide') return settingsIDE();
   if(view==='agents') return settingsAgents();
   if(view==='agentpage') return settingsAgent();
+  if(view==='agentprofile') return settingsAgentProfile();
   if(view==='avataredit') return settingsAvatarEdit();
   if(view==='agentfile') return settingsAgentFile();
   if(view==='memorylib') return settingsLibrary();
@@ -3339,7 +3419,7 @@ function settingsList(){
   ];
   setView.innerHTML='<div class="set-head"><button class="circle-btn" id="setBack" aria-label="Back">'+I.back+'</button><span style="flex:1"></span><span style="width:44px"></span></div>'
     +'<div class="set-scroll"><div class="set-inner">'
-    +'<div class="set-profile-hero"><div class="sph-ava-wrap"><button class="sph-ava" id="sphAva" aria-label="Edit profile">'+esc(displayName().charAt(0).toUpperCase()||'R')+'</button><button class="sph-pencil" id="sphEdit" aria-label="Edit profile">'+I.edit+'</button></div>'
+    +'<div class="set-profile-hero"><div class="sph-ava-wrap"><button class="sph-ava" id="sphAva" aria-label="Edit profile">'+esc(displayName().charAt(0).toUpperCase()||'Y')+'</button><button class="sph-pencil" id="sphEdit" aria-label="Edit profile">'+I.edit+'</button></div>'
     +'<div class="sph-name">'+esc(displayName())+'</div></div>'
     +groups.map(function(g){ return '<div class="set-group">'+g.rows.map(function(r){
         /* Collapsed list rows stay minimal: icon, label, value and
@@ -3371,7 +3451,7 @@ function settingsSimple(title, topic, kvs, extraHTML, wire){
 }
 function settingsApis(){
   setView.innerHTML=setHead('APIs & Providers','apis')+'<div class="set-scroll"><div class="set-inner">'
-    +'<p class="set-note">Just paste a key — the provider, base URL and model are detected and selected automatically. Add as many APIs as you like; when one is unavailable the next is tried automatically, and an error only shows if none of them work.</p>'
+    +'<p class="set-note">Just paste a key — the provider, base URL and model are detected and selected automatically. Add as many APIs as you like; if a model fails, every other model on that key is tried, then every model on the next key, and an error only shows if every model on every key has failed.</p>'
     + apiListHTML()
     +'<div class="field"><label>API key</label><input id="apiKeyIn" type="password" placeholder="Paste any API key" autocomplete="off"></div>'
     +'<button class="btn-primary" id="apiAdd">Add API</button>'
@@ -3853,24 +3933,35 @@ function setChatAgent(id){
    agent's own page — profile, vibe, features — never the Change
    Avatar page (avatar changing stays on the pencil / Edit page). */
 var headSwipedAt=0;
+var profileAgentId=null, agentEditReturn=null;
 function openAgentPage(id){
+  /* Tapping the top agent opens THAT agent's own page — its profile
+     (avatar, name, vibe, what it is), never the editing page. The
+     page is opened from the chat, so its back button returns
+     straight to the chat — not to Settings or any other page.
+     Editing stays one tap deeper, from the page's Edit row. */
   var a=agentById(id)||chatAgent(); if(!a) return;
-  editingAgentId=a.id;
-  openSettings(a.id===mainAgentId? 'agentpage' : 'agentedit');
+  profileAgentId=a.id; editingAgentId=a.id; headSwapInDir=0;
+  openSettings('agentprofile');
 }
 function switchTopAgent(dir){
-  if(AGENTS.length<2){ openSettings('agentcreate'); return; }
-  var idx=0; AGENTS.forEach(function(a,i){ if(a.id===chatAgentId) idx=i; });
-  var next=AGENTS[(idx+dir+AGENTS.length)%AGENTS.length];
+  /* Only ever called from the swipe handler below — so the
+     slide-out here and the slide-in in renderAgentHead happen
+     only when the user actually swipes the top agent. */
   var bar=document.getElementById('agentHeadBar');
   var head=bar? bar.querySelector('.chat-agent-head') : null;
-  function go(){ headSwapInDir=dir; setChatAgent(next.id); renderAll(); toast('Chatting with '+next.name); }
-  if(head){
-    head.style.transition='transform .18s cubic-bezier(.32,.72,0,1), opacity .18s ease';
-    head.style.transform='translateX('+(-dir*56)+'px)';
-    head.style.opacity='0';
-    setTimeout(go,185);
-  } else go();
+  function slideOut(done){
+    if(head && !window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+      head.style.transition='transform .22s cubic-bezier(.32,.72,0,1), opacity .22s ease';
+      head.style.transform='translateX('+(-dir*170)+'px) scale(.8)';
+      head.style.opacity='0';
+      setTimeout(done,225);
+    } else done();
+  }
+  if(AGENTS.length<2){ slideOut(function(){ openSettings('agentcreate'); }); return; }
+  var idx=0; AGENTS.forEach(function(a,i){ if(a.id===chatAgentId) idx=i; });
+  var next=AGENTS[(idx+dir+AGENTS.length)%AGENTS.length];
+  slideOut(function(){ headSwapInDir=dir; setChatAgent(next.id); renderAll(); toast('Chatting with '+next.name); });
 }
 (function(){
   var bar=document.getElementById('agentHeadBar'); if(!bar) return;
@@ -3926,7 +4017,7 @@ document.addEventListener('click',function(e){
   var t=e.target.closest('[data-avtap]'); if(!t) return;
   var id=t.getAttribute('data-avtap')||chatAgentId;
   avatarTargetAgentId=id; editingAgentId=id;
-  avReturn = (state.view==='settings')? ((typeof lastSetView!=='undefined' && (lastSetView==='agentedit'||lastSetView==='subagents'))? lastSetView : 'agentpage') : 'chat';
+  avReturn = (state.view==='settings')? ((typeof lastSetView!=='undefined' && (lastSetView==='agentedit'||lastSetView==='subagents'||lastSetView==='agentprofile'))? lastSetView : 'agentpage') : 'chat';
   avDraft=null;
   openSettings('avataredit');
 });
@@ -4715,7 +4806,7 @@ function openAgentMenu(a){
     {icon:I.chat, label:'Chat with '+a.name, fn:function(){ setChatAgent(a.id); closeSettings(); toast('Chatting with '+a.name); }}
   ];
   if(a.id!==mainAgentId) rows.push({icon:I.spark, label:'Make main agent', fn:function(){ if(makeMainAgent(a)) toast(a.name+' is now the main agent'); renderSettings(lastSetView||'agentpage'); }});
-  rows.push({icon:I.edit, label:'Edit — name, avatar, instructions, memory', fn:function(){ editingAgentId=a.id; renderSettings('agentedit'); }});
+  rows.push({icon:I.edit, label:'Edit — name, avatar, instructions, memory', fn:function(){ editingAgentId=a.id; agentEditReturn=null; renderSettings('agentedit'); }});
   rows.push({icon:I.userCircle, label:'Avatar — presets & change avatar', fn:function(){ avatarTargetAgentId=a.id; editingAgentId=a.id; avReturn='agentpage'; avDraft=null; renderSettings('avataredit'); }});
   if(AGENTS.length>1 && a.id!==mainAgentId) rows.push({icon:I.trash, label:'Delete agent', danger:true, fn:function(){ askDeleteAgent(a); }});
   afMenuSheet(a.name+(a.id===mainAgentId?' · Main agent':' · Sub-agent'), rows);
@@ -4794,7 +4885,7 @@ function knownUserName(){
    files — the profile every agent and chat reads — so the saved
    name applies to everyone at once, kept exactly as typed. */
 function displayName(){
-  return knownUserName()||'RayZer';
+  return knownUserName()||'You';
 }
 function saveDisplayName(n){
   n=String(n||'').trim(); if(!n) return false;
@@ -4803,14 +4894,14 @@ function saveDisplayName(n){
     if(/Display name:\s*.*/.test(f.content)) f.content=f.content.replace(/Display name:\s*.*/, 'Display name: '+n);
     else f.content=f.content.replace(/^# Profile\s*/, '# Profile\n\n- Display name: '+n+'\n');
   } else {
-    AGENT_FILES.push({path:'user/profile.md', content:'# Profile\n\n- Display name: '+n+'\n- Timezone: Asia/Kolkata\n'});
+    AGENT_FILES.push({path:'user/profile.md', content:'# Profile\n\n- Display name: '+n+'\n'});
   }
   return true;
 }
 function profileSheetHTML(){
   var n=displayName();
   return '<h3>Profile</h3>'
-    +'<div class="profile-card" style="margin:6px 0 14px"><span class="avatar">'+esc(n.charAt(0).toUpperCase()||'R')+'</span><span><b>'+esc(n)+'</b><span>Your profile — shared by every agent and chat</span></span></div>'
+    +'<div class="profile-card" style="margin:6px 0 14px"><span class="avatar">'+esc(n.charAt(0).toUpperCase()||'Y')+'</span><span><b>'+esc(n)+'</b><span>Your profile — shared by every agent and chat</span></span></div>'
     +'<div class="field"><label>Display name</label><input id="pfName" type="text" value="'+escA(n)+'" autocomplete="off"></div>'
     +'<button class="btn-primary" id="pfSave">Save</button><button class="btn-ghost" id="pfCancel">Cancel</button>';
 }
@@ -4923,6 +5014,41 @@ function agStatusLine(){
   if(state.apiHealth==='changed') return 'Key changed — send a message to check it';
   return 'Online — ready when you are';
 }
+/* =============== One agent's own page (from tapping the top agent) ===============
+   A profile page for the tapped agent — main or sub-agent alike:
+   its avatar, name, status, vibe and what it keeps, plus Chat /
+   Edit / Make-main actions. It is NOT the editing page: no form
+   fields live here; Edit is a separate row that opens the editor
+   and comes back here. Opened from the chat's top agent, so Back
+   leaves Settings entirely and lands back on the chat. */
+function settingsAgentProfile(){
+  var a=agentById(profileAgentId)||chatAgent(); profileAgentId=a.id; editingAgentId=a.id;
+  var isMain=a.id===mainAgentId, isChat=a.id===chatAgentId;
+  setView.innerHTML=setHead('Agent','agent')+'<div class="set-scroll"><div class="set-inner agent-flow">'
+    +'<div style="--i:0"><div class="ag-avatar-wrap"><button class="ag-avatar" data-avtap="'+a.id+'" aria-label="Change avatar for '+escA(a.name)+'"><span class="agent-ava-slot">'+avatarHTMLFor(a,'idle')+'</span></button><button class="ag-pencil" id="apPencil" aria-label="Edit '+escA(a.name)+'">'+I.edit+'</button></div>'
+    +'<div class="ag-name">'+esc(a.name)+'</div>'
+    +'<p class="ag-status">'+esc(agStatusLine())+'</p>'
+    +'<div style="text-align:center;margin:-8px 0 18px"><span class="badge'+(isMain?' main':'')+'">'+(isMain?'Main agent':'Sub-agent')+'</span>'+(isChat? '<span class="badge" style="margin-left:6px">Chatting now</span>' : '')+'</div></div>'
+    +'<div class="set-group" style="--i:1">'
+    +(isChat? '' : '<button class="set-row" id="apChat"><span class="ric">'+I.chat+'</span><span style="flex:1">Chat with '+esc(a.name)+'</span>'+I.chevR+'</button>')
+    +'<button class="set-row" id="apEdit"><span class="ric">'+I.edit+'</span><span style="flex:1">Edit agent<span class="sub2">Name, vibe, instructions & memory</span></span>'+I.chevR+'</button>'
+    +(isMain? '' : '<button class="set-row" id="apMakeMain"><span class="ric">'+I.spark+'</span><span style="flex:1">Make main agent</span>'+I.chevR+'</button>')
+    +'</div>'
+    +'<div style="--i:2"><p class="ag-vibe-label">VIBE</p>'
+    +'<p class="ag-vibe-text">'+esc(a.vibe? a.vibe : (isMain? agentVibe : 'No vibe set yet — add one from Edit agent.'))+'</p>'
+    +(a.instructions? '<p class="ag-vibe-label">INSTRUCTIONS</p><p class="ag-vibe-text">'+esc(a.instructions)+'</p>' : '')
+    +(a.memoryText? '<p class="ag-vibe-label">MEMORY</p><p class="ag-vibe-text">'+esc(a.memoryText)+'</p>' : '')
+    +'<p class="set-note">'+(a.individualHistory? 'Keeps its own chats.' : 'Shares chats with all agents.')+' '+(a.individualMemory? 'Keeps its own memory.' : 'Shares memory with all agents.')+'</p></div>'
+    +'</div></div>';
+  /* Back goes back to the chat — this page was opened from the
+     chat's top agent, not from Settings or anywhere else. */
+  wireBack(function(){ closeSettings(); });
+  function goEdit(){ agentEditReturn='agentprofile'; renderSettings('agentedit'); }
+  var pe=$('#apPencil'); if(pe) pe.addEventListener('click',goEdit);
+  $('#apEdit').addEventListener('click',goEdit);
+  var ch=$('#apChat'); if(ch) ch.addEventListener('click',function(){ setChatAgent(a.id); closeSettings(); toast('Chatting with '+a.name); });
+  var mm=$('#apMakeMain'); if(mm) mm.addEventListener('click',function(){ if(makeMainAgent(a)){ toast(a.name+' is now the main agent'); renderSettings('agentprofile'); } });
+}
 function settingsAgent(){
   syncMainGlobals();
   var m=mainAgent(), ca=chatAgent();
@@ -4954,7 +5080,7 @@ function settingsAgent(){
       }).join('') : '<p class="set-note">Nothing here yet.</p>');
     } else {
       body='<div class="ag-vibe-name">'+esc(m.name)+'</div>'
-        +'<p class="ag-vibe-muted">Your main agent in Gptopen. Its personality lives in SOUL.md and its long-term memory in MEMORY.md — tap a card to open the file.</p>'
+        +'<p class="ag-vibe-muted">Your main agent in Gptopen.</p>'
         +'<p class="ag-vibe-label">VIBE</p>'
         +'<p class="ag-vibe-text">'+esc(m.vibe||agentVibe)+'</p>'
         +'<button class="ag-editbtn" id="agEditProfile">'+I.edit+'<span>Edit agent — name, instructions & memory</span></button>'
@@ -4966,7 +5092,7 @@ function settingsAgent(){
     return body;
   }
   function wireTabBody(){
-    var ep=$('#agEditProfile'); if(ep) ep.addEventListener('click',function(){ editingAgentId=m.id; renderSettings('agentedit'); });
+    var ep=$('#agEditProfile'); if(ep) ep.addEventListener('click',function(){ editingAgentId=m.id; agentEditReturn=null; renderSettings('agentedit'); });
     var cs=$('#agCardSoul'); if(cs) cs.addEventListener('click',function(){ agOpenFile('SOUL.md'); });
     var cme=$('#agCardMem'); if(cme) cme.addEventListener('click',function(){ libReturn='agentpage'; renderSettings('memorylib'); });
   }
@@ -5041,7 +5167,7 @@ function settingsAgentHub(asSub){
     +'</div></div>';
   wireBack(function(){ renderSettings(asSub?'agentpage':'list'); });
   $('#hubChatMain').addEventListener('click',function(){ setChatAgent(m.id); closeSettings(); toast('Chatting with '+m.name); });
-  $('#hubEditMain').addEventListener('click',function(){ editingAgentId=m.id; renderSettings('agentedit'); });
+  $('#hubEditMain').addEventListener('click',function(){ editingAgentId=m.id; agentEditReturn=null; renderSettings('agentedit'); });
   var hsb=$('#hubSubBtn'); if(hsb) hsb.addEventListener('click',function(){ renderSettings('subagents'); });
   $('#hubCreate').addEventListener('click',createAgentSheet);
   var sp=$('#agSpeed'); if(sp) sp.addEventListener('input',function(){ setAgentsAnimSpeed(+this.value/100); });
@@ -5135,7 +5261,7 @@ function settingsAgentEdit(){
     +(!isMain && AGENTS.length>1? '<button class="btn-ghost" id="aeDelete" style="color:var(--danger)">Delete agent</button>' : '')
     +'</div>'
     +'</div></div>';
-  wireBack(function(){ renderSettings(lastSetView==='subagents'?'subagents':'agentpage'); });
+  wireBack(function(){ if(agentEditReturn){ renderSettings(agentEditReturn); return; } renderSettings(lastSetView==='subagents'?'subagents':'agentpage'); });
   function capture(){
     var n=$('#aeName'); if(n && n.value.trim()) a.name=n.value.trim();
     var v=$('#aeVibe'); if(v) a.vibe=v.value.trim();
@@ -5161,7 +5287,7 @@ $('#agentAvatarPicker').addEventListener('change',function(){
   var f=this.files && this.files[0]; this.value='';
   if(!f) return;
   var rd=new FileReader();
-  rd.onload=function(){ var url=String(rd.result||''); var a=targetAgent(); if(a){ a.avatar=url; if(a.id===mainAgentId) agentAvatar=url; autoGenerateEmotes(a); } else agentAvatar=url; avDraft=null; renderSettings((avReturn==='agentedit'||avReturn==='subagents')? avReturn : 'agentpage'); toast('Avatar updated — animated in chat'); };
+  rd.onload=function(){ var url=String(rd.result||''); var a=targetAgent(); if(a){ a.avatar=url; if(a.id===mainAgentId) agentAvatar=url; autoGenerateEmotes(a); } else agentAvatar=url; avDraft=null; renderSettings((avReturn==='agentedit'||avReturn==='subagents'||avReturn==='agentprofile')? avReturn : 'agentpage'); toast('Avatar updated — animated in chat'); };
   rd.readAsDataURL(f);
 });
 var agentsShowAll=false, agentsFromLib=false;

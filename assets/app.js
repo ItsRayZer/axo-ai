@@ -1832,14 +1832,15 @@ $('#cvMenu').querySelectorAll('[data-cv]').forEach(function(b){
     }
     else if(a==='artifact'){
       /* Make it artifact: the canvas is saved as a standalone HTML
-         file in Agents files (workspace/), ready to view, edit and
-         download like any other agent file. */
+         file in the Library (workspace/) — a file the agent made
+         for the user when asked, not a system file — ready to view,
+         edit and download from the Library. */
       var p='workspace/'+cvSlug(cvMsg.canvas? cvMsg.canvas.title : 'canvas')+'.html';
       var f=afFind(p);
       if(f) f.content=cvMsg.code.body;
       else AGENT_FILES.push({path:p, content:cvMsg.code.body});
       var mt=afMeta(p); mt.mod=++afSeq;
-      toast('Saved as artifact — Agents files → '+p);
+      toast('Saved to Library — '+p);
     }
   });
 });
@@ -1906,7 +1907,7 @@ function pushAI(chat, reply){
      + colour avatar is built from the description and applied.
    • Name a preset — cute/Mia, Muse, Botthew, Froggy, Berry, Sunny, Hearty, Mochi, Cue, Grokbot/robot, Dots, Muse.
    • "Open avatar editor" opens Settings → Agent → Change Avatar.
-   The agent-side how-to lives in Agents files → agents/AVATAR.md. */
+   The agent-side how-to lives in System files → agents/AVATAR.md. */
 /* ===== Auto emotes for a new avatar (background) =====
    Every time an avatar is created or changed — built in chat,
    picked as a preset, built in Change Avatar, a created agent, or
@@ -2088,8 +2089,8 @@ function sendText(raw){
   /* Memory: this message is saved to memory automatically (sanitised
      first — keys, secrets, emails and phone numbers never enter it). */
   if(state.memory) saveMemory(chat, newMsg);
-  /* Agents files auto-update: durable facts the user states are
-     written into the agent files as the agent learns (sanitised). */
+  /* System files auto-update: durable facts the user states are
+     written into the system files as the agent learns (sanitised). */
   afAutoUpdateLearn(text);
   /* While a new agent's onboarding is running, its answers are
      captured by the onboarding flow itself, not the generic learner. */
@@ -2295,11 +2296,11 @@ function callProvider(chat, memHits, opts){
   if(memCtx) msgs.unshift({role:'system', content:'Relevant saved memory about the user — use it where it fits:\n'+memCtx});
   /* The reaction instructions travel with every provider request. */
   msgs.unshift({role:'system', content:REACTION_INSTRUCTION});
-  /* The agent files are the standing instructions: IDENTITY.md,
+  /* The system files are the standing instructions: IDENTITY.md,
      SOUL.md (persona), AGENTS.md (workspace rules, including the
      auto-update rule), USER.md, MEMORY.md, TOOLS.md, HEARTBEAT.md
      and BOOTSTRAP.md travel with every provider request, read live
-     from the editable files, so edits in Settings → Agents files
+     from the editable files, so edits in Settings → System files
      apply at once. */
   var coreMsg=agentCoreMessage();
   if(coreMsg) msgs.unshift({role:'system', content:coreMsg});
@@ -3389,8 +3390,8 @@ function segWire(sel, val, fn){
   });
 }
 function settingsList(){
-  /* The Settings list always opens Agents files in its normal
-     folder view — the flat all-files mode is only for Library →
+  /* The Settings list always opens System files in its normal
+     folder view — the flat system-files mode is only for Library →
      System files, and it is exited before landing here. */
   agentsShowAll=false; agentsFromLib=false;
   var groups=[
@@ -3410,7 +3411,7 @@ function settingsList(){
       {id:'commands', icon:I.slash, label:'Slash commands', val:String(COMMANDS.length), q:'commands'},
       {id:'dashboard', icon:I.grid, label:'Dashboard'},
       {id:'ide', icon:I.panel, label:'IDE panel'},
-      {id:'agents', icon:I.folder, label:'Agents files', val:AGENT_FILES.length+' files'},
+      {id:'agents', icon:I.folder, label:'System files', val:AGENT_FILES.filter(function(f){ return isSystemFilePath(f.path); }).length+' files'},
       {id:'terminal', icon:I.terminal, label:'Terminal'}
     ]},
     {rows:[
@@ -3725,7 +3726,7 @@ function settingsIDE(){
     wireBack(function(){ renderSettings('list'); });
   }
 }
-/* =============== Agents files: browser, viewer, editor =============== */
+/* =============== System files: browser, viewer, editor =============== */
 var agentEditing=false;
 function afSizeOf(e){ return e.size!=null? e.size : afBytes(e.content||''); }
 function afDownload(name, blobOrUrl){
@@ -3804,7 +3805,7 @@ function afMenuSheet(title, rows){
   sheet.querySelectorAll('[data-afm]').forEach(function(b){ b.addEventListener('click',function(){ var r=rows[+b.getAttribute('data-afm')]; closeSheet(); if(r.fn) r.fn(); }); });
 }
 function afAskDeleteFile(entry, after){
-  openSheet('<h3>Delete '+esc(afBase(entry.path))+'?</h3><p class="sub">This deletes the file from Agents files in this app. Downloaded copies are not affected.</p><button class="btn-danger" id="afDelYes">Delete</button><button class="btn-ghost" id="afDelNo">Cancel</button>');
+  openSheet('<h3>Delete '+esc(afBase(entry.path))+'?</h3><p class="sub">This deletes the file from System files in this app. Downloaded copies are not affected.</p><button class="btn-danger" id="afDelYes">Delete</button><button class="btn-ghost" id="afDelNo">Cancel</button>');
   $('#afDelNo').addEventListener('click',closeSheet);
   $('#afDelYes').addEventListener('click',function(){
     var ix=AGENT_FILES.indexOf(entry); if(ix>=0) AGENT_FILES.splice(ix,1);
@@ -3865,7 +3866,7 @@ function mdRender(md){
    (list · shield · clock · fingerprint; no computer tab). Tabs show
    Today, Approvals history, Reminders + Daily, and the agent
    profile with its VIBE and the SOUL / MEMORY cards, which open the
-   matching Agents files. */
+   matching System files. */
 /* =============== Agents (multi-agent) ===============
    The old single "Agent mode" is replaced by an Agents hub: many
    agents, each with its own name, avatar, custom instructions and
@@ -4267,7 +4268,7 @@ function chatAgentHeadHTML(){
    A custom avatar is a shape + a face expression + a colour, drawn
    as original Axo SVG. It is always animated by the same always-
    moving CSS as every other avatar. The full how-to for the agent
-   lives in Agents files → agents/AVATAR.md. */
+   lives in System files → agents/AVATAR.md. */
 /* A LOT of shapes: a full animal family first (all drawn as soft
    3D-look plush mascots with the same clay shading as the presets),
    then the classic objects and things. */
@@ -5010,7 +5011,7 @@ function sbCreateAgent(){ setSidebar(false,true); openSettings('agentcreate'); }
    page, and creating a sub-agent has its own page too. */
 var agentTab='today';
 function agOpenFile(path){
-  var f=afFind(path); if(!f){ toast('That file is not in Agents files'); return; }
+  var f=afFind(path); if(!f){ toast('That file is not in System files'); return; }
   afReturnTo='agents'; agentFilePath=path; agentEditing=false; renderSettings('agentfile');
 }
 function agStatusLine(){
@@ -5100,7 +5101,7 @@ function settingsAgent(){
   function wireTabBody(){
     var ep=$('#agEditProfile'); if(ep) ep.addEventListener('click',function(){ editingAgentId=m.id; agentEditReturn=null; renderSettings('agentedit'); });
     var cs=$('#agCardSoul'); if(cs) cs.addEventListener('click',function(){ agOpenFile('SOUL.md'); });
-    var cme=$('#agCardMem'); if(cme) cme.addEventListener('click',function(){ libReturn='agentpage'; renderSettings('memorylib'); });
+    var cme=$('#agCardMem'); if(cme) cme.addEventListener('click',function(){ agOpenFile('MEMORY.md'); });
   }
   setView.innerHTML=setHead('Agent','agent')+'<div class="set-scroll"><div class="set-inner agent-flow">'
     +'<div style="--i:0"><div class="ag-avatar-wrap"><button class="ag-avatar" data-avtap="'+m.id+'" aria-label="Change avatar for '+escA(m.name)+'"><span class="agent-ava-slot">'+avatarHTMLFor(m,'idle')+'</span></button><button class="ag-pencil" id="agPencil" aria-label="Avatar and name options">'+I.edit+'</button></div>'
@@ -5255,7 +5256,7 @@ function settingsAgentEdit(){
     +'</div>'
     +'<div style="--i:3"><div class="field"><label>Custom instructions</label><textarea id="aeIns" rows="5" style="'+TA_STYLE+'" placeholder="How this agent should behave, its job, its rules">'+esc(a.instructions||'')+'</textarea></div>'
     +'<div class="field"><label>Custom memory</label><textarea id="aeMem" rows="5" style="'+TA_STYLE+'" placeholder="What this agent should always remember">'+esc(a.memoryText||'')+'</textarea></div>'
-    +'<p class="set-note">Instructions and memory are this agent\u2019s own. They are sent with its chats and kept in its agent file. Passwords, keys, secrets, emails and phone numbers are stripped automatically — they never belong in a file.</p></div>'
+    +'<p class="set-note">Instructions and memory are this agent\u2019s own. They are sent with its chats and kept in its system file. Passwords, keys, secrets, emails and phone numbers are stripped automatically — they never belong in a file.</p></div>'
     +'<div class="set-group" style="--i:4">'
     +'<button class="set-row" id="aeHist"><span style="flex:1">Individual history<span class="sub2">Off: chats are shared with all agents (default). On: this agent keeps its own chats.</span></span><span class="switch" role="switch" aria-checked="'+a.individualHistory+'"></span></button>'
     +'<button class="set-row" id="aeMemTog"><span style="flex:1">Individual memory<span class="sub2">Off: memory is shared with all agents (default). On: this agent keeps its own memory.</span></span><span class="switch" role="switch" aria-checked="'+a.individualMemory+'"></span></button>'
@@ -5263,7 +5264,7 @@ function settingsAgentEdit(){
     +'<div style="--i:5"><button class="btn-primary" id="aeSave">Save</button>'
     +'<button class="btn-ghost" id="aeChat">Chat with '+esc(a.name)+'</button>'
     +(isMain? '' : '<button class="btn-ghost" id="aeMakeMain">Make main agent</button>')
-    +'<button class="btn-ghost" id="aeFile">Open agent file</button>'
+    +'<button class="btn-ghost" id="aeFile">Open system file</button>'
     +(!isMain && AGENTS.length>1? '<button class="btn-ghost" id="aeDelete" style="color:var(--danger)">Delete agent</button>' : '')
     +'</div>'
     +'</div></div>';
@@ -5299,14 +5300,15 @@ $('#agentAvatarPicker').addEventListener('change',function(){
 var agentsShowAll=false, agentsFromLib=false;
 function settingsAgents(){
   agentEditing=false; afReturnTo='agents';
-  /* All-files mode (opened from Library → System files): every agent
-     file is listed flat in one list, full paths shown — not just the
-     current folder's children. */
+  /* System-files mode (opened from Library → System files): only
+     the agent's core files are listed, flat in one list, full paths
+     shown — files the agent made for the user live in the Library
+     and never appear here. */
   var showAll=agentsShowAll;
   var ch= showAll
-    ? {folders:[], files:AGENT_FILES.slice().sort(function(a,b){ return a.path.localeCompare(b.path); })}
+    ? {folders:[], files:AGENT_FILES.filter(function(f){ return isSystemFilePath(f.path); }).sort(function(a,b){ return a.path.localeCompare(b.path); })}
     : afChildren(agentPath);
-  var head='<div class="set-head"><button class="circle-btn" id="setBack" aria-label="Back">'+I.back+'</button><h2>Agents files</h2><button class="af-head-btn" id="afMenuBtn" aria-label="Upload and create">'+I.dotsH+'</button></div>';
+  var head='<div class="set-head"><button class="circle-btn" id="setBack" aria-label="Back">'+I.back+'</button><h2>System files</h2><button class="af-head-btn" id="afMenuBtn" aria-label="Upload and create">'+I.dotsH+'</button></div>';
   var rows=ch.folders.map(function(f){
     return '<div class="af-row" data-affolder="'+escA(f)+'" role="button" tabindex="0"><span class="af-tile folder">'+I.folder+'</span><span class="af-meta"><span class="af-name">'+esc(afBase(f))+'</span><span class="af-sub">Folder</span></span><button class="af-dots" data-affolderdots="'+escA(f)+'" aria-label="Folder options">'+I.dotsV+'</button><span style="color:var(--muted)">'+I.chevR+'</span></div>';
   }).join('') + ch.files.map(function(f){
@@ -5317,7 +5319,7 @@ function settingsAgents(){
     +'<div class="af-sortrow"><b>Name</b><button class="af-sortbtn" id="afSortBtn">'+I.sliders+'<span>'+(agentSort==='name'?'A–Z':'Size')+'</span></button></div>'
     +'<p class="set-note" style="margin:0 4px 12px">Auto-update is always on — the agent writes and updates these files as it learns.</p>'
     +(rows? '<div class="set-group">'+rows+'</div>' : '<p class="set-note">This folder is empty. Use the dots menu to upload a file or create one here.</p>')
-    +'<p class="set-note">'+AGENT_FILES.length+' files · '+AGENT_FOLDERS.length+' folders · tap a file to view it, tap Edit to change anything.</p>'
+    +'<p class="set-note">'+(showAll? ch.files.length : AGENT_FILES.length)+' files · '+AGENT_FOLDERS.length+' folders · tap a file to view it, tap Edit to change anything.</p>'
     +'</div></div>';
   $('#setBack').addEventListener('click',function(){
     if(showAll){ agentsShowAll=false; if(agentsFromLib){ agentsFromLib=false; renderSettings('memorylib'); } else renderSettings('list'); return; }
@@ -5421,8 +5423,11 @@ function settingsAgentFile(){
     ]);
   });
 }
-/* =============== Library (opened from the Agent page MEMORY card
-   and from the bottom navigation) =============== */
+/* =============== Library (bottom navigation and sidebar tab) =====
+   The Library holds ONLY files the agent made for the user when
+   asked — artefacts saved from chats (workspace/) and other made
+   files. The agent's core files are NOT here: they are the System
+   files (Settings → System files), a different store. =============== */
 var afReturnTo='agents';
 var libTab='art', libViewMode='list', libSort='modified', libSys=true, libReturn='agentpage', libMenuOpen=false;
 function libItems(){
@@ -5434,7 +5439,7 @@ function libItems(){
     items.push({kind:'app', name:appName(), type:'Artefact', mod:999, opened:999});
     AGENT_FILES.forEach(function(f){
       if(f.dataUrl && /^data:image\//.test(f.dataUrl)) return;
-      if(!libSys && f.path.indexOf('/')<0) return;
+      if(isSystemFilePath(f.path)) return;
       var mt=afMeta(f.path);
       items.push({kind:'file', path:f.path, name:afBase(f.path), type:afExt(afBase(f.path)), mod:mt.mod, opened:mt.opened});
     });
@@ -5464,7 +5469,7 @@ function settingsLibrary(){
       + lmRow('opened', I.clock, 'Sort by last opened', libSort==='opened')
       + lmRow('name', '<span style="font-size:15px;font-weight:700">Aa</span>', 'Sort by name', libSort==='name')
       + '<div class="lm-sep"></div>'
-      + lmRow('sys', I.folder, 'System files', libSys)
+      + lmRow('sys', I.folder, 'System files', false)
       + '</div>';
   }
   var body='';
@@ -5504,9 +5509,9 @@ function settingsLibrary(){
   setView.querySelectorAll('[data-lm]').forEach(function(b){ b.addEventListener('click',function(){
     var a=b.getAttribute('data-lm');
     if(a==='sys'){
-      /* System files does not just toggle a filter — it opens the
-         Agents files browser showing ALL of the agent files, flat,
-         and Back returns here to the Library. */
+      /* System files is a different store, not part of the Library:
+         it opens the System files browser showing only the agent's
+         core files, flat, and Back returns here to the Library. */
       libMenuOpen=false; libSys=true;
       agentsFromLib=true; agentsShowAll=true; agentPath=''; agentFilePath=null;
       renderSettings('agents');
@@ -5519,7 +5524,7 @@ function settingsLibrary(){
   setView.querySelectorAll('[data-libopen]').forEach(function(r){ r.addEventListener('click',function(e){
     if(e.target.closest('[data-libdots]')) return;
     var parts=r.getAttribute('data-libopen').split('|'); var kind=parts[0], key=parts.slice(1).join('|');
-    if(kind==='app'){ detailSheet(appName(), ['Artefact — this app, the one you are using right now.', 'Its files live under Agents files in Settings.']); return; }
+    if(kind==='app'){ detailSheet(appName(), ['Artefact — this app, the one you are using right now.', 'Its core files live under System files in Settings; files it makes for you live here in the Library.']); return; }
     if(kind==='asset'){ detailSheet(key, ['Image — the app logo, stored with the app assets.']); return; }
     afReturnTo='memorylib'; agentFilePath=key; agentEditing=false; renderSettings('agentfile');
   }); });

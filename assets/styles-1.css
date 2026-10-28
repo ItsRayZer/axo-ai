@@ -523,7 +523,7 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
 .plus-proj{display:none; border:1px solid var(--border); border-radius:14px; padding:4px 12px; background:var(--input); margin:2px 0 6px;}
 .plus-proj.show{display:block;}
 .plus-proj .sheet-row{padding:11px 2px; font-size:14.5px;}
-/* ---------- Agents files (Settings file browser & editor) ---------- */
+/* ---------- System files (Settings file browser & editor) ---------- */
 .af-path{color:var(--muted); font-size:13px; margin:0 4px 10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .af-row{display:flex; align-items:center; gap:13px; width:100%; text-align:left; padding:11px 15px; border-bottom:1px solid var(--border);}
 .af-row:last-child{border-bottom:none;}
@@ -556,7 +556,7 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
 .af-title{flex:1; min-width:0; font-size:17px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .af-sortrow{display:flex; align-items:center; justify-content:space-between; padding:2px 4px 8px;}
 .af-auto{display:flex; align-items:center; gap:12px; padding:2px 4px 12px;}
-/* Library (opened from the Agent page MEMORY card) */
+/* Library — files the agent made for the user (NOT system files) */
 .lib-tabs{display:flex; background:var(--raised); border:1px solid var(--border); border-radius:999px; padding:4px; gap:4px; margin:2px 0 14px;}
 .lib-tab{flex:1; padding:9px 0; border-radius:999px; font-size:15.5px; font-weight:600; color:var(--muted); text-align:center;}
 .lib-tab.sel{background:var(--input); color:var(--text); box-shadow:inset 0 1px 0 rgba(255,255,255,.08), 0 2px 8px rgba(0,0,0,.25);}

@@ -3205,6 +3205,22 @@ function avShade(hex, pct){
 function avGrad(id, color){
   return '<radialGradient id="'+id+'" cx="0.36" cy="0.27" r="0.95"><stop offset="0" stop-color="'+avShade(color,42)+'"/><stop offset="0.52" stop-color="'+color+'"/><stop offset="1" stop-color="'+avShade(color,-24)+'"/></radialGradient>';
 }
+/* COLOUR BUG FIX: every rendered avatar used to share the same
+   gradient / clip-path IDs (avMia, avDotG, csg<hex>…). Browsers
+   resolve url(#id) to the FIRST element with that ID in the whole
+   document — and that first copy often sits in a hidden or
+   off-canvas part of the app (the chat view while Settings is
+   open, the slid-away sidebar). Mobile WebViews then fail the
+   paint, the coloured body renders transparent, and the avatar
+   shows dark and faint with only the solid face features left —
+   exactly the reported bug on the Agent page. Every avatar SVG
+   now gets its own unique ID suffix, so its gradients and clips
+   always resolve inside its own SVG and colours always paint. */
+var avUidC=0;
+function avUniq(svg){
+  var u='u'+(++avUidC);
+  return svg.replace(/id="([^"]+)"/g,'id="$1'+u+'"').replace(/url\(#([^)]+)\)/g,'url(#$1'+u+')');
+}
 function avGloss(cx, cy, rx, ry, op){
   return '<ellipse cx="'+cx+'" cy="'+cy+'" rx="'+rx+'" ry="'+ry+'" fill="#ffffff" opacity="'+(op||0.38)+'" transform="rotate(-18 '+cx+' '+cy+')"/>';
 }
@@ -3345,7 +3361,7 @@ function avatarSVG(preset, emo){
       +'<ellipse cx="48" cy="61" rx="13.5" ry="9.5" fill="#ffffff" opacity="0.75"/>'
       +avFace(emo,'#26262b')+avBlush(57);
   }
-  return '<svg viewBox="0 0 96 96" class="av-svg emo-'+emo+'" aria-hidden="true">'+body+'</svg>';
+  return avUniq('<svg viewBox="0 0 96 96" class="av-svg emo-'+emo+'" aria-hidden="true">'+body+'</svg>');
 }
 function customAvatarSVGFor(a, emo){
   /* Custom (shape + face + colour) avatars get the full emote set
@@ -3355,7 +3371,7 @@ function customAvatarSVGFor(a, emo){
   if(emo==='sleeping') face='sleepy'; else if(emo==='angry') face='angry';
   else if(emo==='sad') face='sad'; else if(emo==='dancing') face='smile';
   else if(emo==='typing') face='tired';
-  return '<svg viewBox="0 0 96 96" class="av-svg emo-'+(emo||'idle')+'" aria-hidden="true">'+avShapeSVG(a.shape||'circle', a.color||'#8e8e93')+avFaceSVG(face, avInkFor(a.color||'#8e8e93'))+avAccSVG(a.acc||'none', avInkFor(a.color||'#8e8e93'))+'</svg>';
+  return avUniq('<svg viewBox="0 0 96 96" class="av-svg emo-'+(emo||'idle')+'" aria-hidden="true">'+avShapeSVG(a.shape||'circle', a.color||'#8e8e93')+avFaceSVG(face, avInkFor(a.color||'#8e8e93'))+avAccSVG(a.acc||'none', avInkFor(a.color||'#8e8e93'))+'</svg>');
 }
 function avatarHTMLFor(a, emo){
   if(!a) return avatarSVG('mia', emo||'idle');
@@ -3575,7 +3591,7 @@ function avAccSVG(acc, ink){
   }
 }
 function customAvatarSVG(shape, face, color, acc){
-  return '<svg viewBox="0 0 96 96" class="av-svg emo-idle" aria-hidden="true">'+avShapeSVG(shape,color)+avFaceSVG(face, avInkFor(color))+avAccSVG(acc||'none', avInkFor(color))+'</svg>';
+  return avUniq('<svg viewBox="0 0 96 96" class="av-svg emo-idle" aria-hidden="true">'+avShapeSVG(shape,color)+avFaceSVG(face, avInkFor(color))+avAccSVG(acc||'none', avInkFor(color))+'</svg>');
 }
 function applyCustomAvatar(shape, face, color, acc){
   avatarShape=shape; avatarFace=face; avatarColor=color; avatarAcc=acc||'none';

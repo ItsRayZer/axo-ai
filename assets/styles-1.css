@@ -36,7 +36,7 @@ svg{display:block;}
    desktop: 30px radius card with an 8px margin. Never flattened. */
 #sidebar{position:absolute; top:0; left:0; bottom:0; width:var(--sidebar-w); background:var(--bg); z-index:1; display:flex; flex-direction:column; transform:translate3d(-102%,0,0); will-change:transform; backface-visibility:hidden; -webkit-backface-visibility:hidden;}
 #sidebar.noanim{transition:none !important;}
-#stage{position:absolute; inset:0; background:var(--bg); z-index:2; display:flex; flex-direction:column; will-change:transform; backface-visibility:hidden; -webkit-backface-visibility:hidden; transform-origin:left center; overflow:hidden; box-shadow:-18px 0 44px rgba(0,0,0,.35);}
+#stage{position:absolute; inset:0; background:var(--bg); z-index:2; display:flex; flex-direction:column; will-change:transform; backface-visibility:hidden; -webkit-backface-visibility:hidden; transform-origin:left top; overflow:hidden; box-shadow:-18px 0 44px rgba(0,0,0,.35);}
 #stage.noanim{transition:none !important;}
 #app.dragging #sidebar,#app.dragging #stage{transition:none !important; will-change:transform;}
 #app.dragging #stage{box-shadow:-16px 0 48px rgba(0,0,0,.6);}
@@ -59,7 +59,13 @@ svg{display:block;}
   #app.anim #stage{transition:transform var(--sb-ms) var(--sb-ease), border-radius var(--sb-ms) var(--sb-ease);}
   /* Curved peeking card: the stage keeps its inline translate/scale
      (set in JS) and gains the original 34px curve here. */
-  #app.sb-open #stage{border-radius:34px; background:var(--peek); border:1px solid var(--border2); box-shadow:-16px 0 48px rgba(0,0,0,.75);}
+  /* Open-menu stage edge: the scale now anchors at the top-left, so
+     the top of the peeking stage stays flush with the top of the
+     screen — no inset notch at the top, no stray strip above the
+     stage at the top right, and no top border line. The curve and
+     the hairline live on the LEFT edge only (the edge facing the
+     menu); the top and right edges carry no border at all. */
+  #app.sb-open #stage{border-radius:34px 0 0 34px; background:var(--peek); border-left:1px solid var(--border2); box-shadow:-16px 0 48px rgba(0,0,0,.75);}
   #app.sb-open #scrim{pointer-events:auto;}
 }
 
@@ -204,7 +210,7 @@ header.chat-head{position:relative; z-index:6; display:flex; align-items:center;
 #cvFab[hidden]{display:none;}
 .cv-composer{position:absolute; left:12px; right:12px; bottom:calc(12px + env(safe-area-inset-bottom)); display:flex; align-items:flex-end; gap:8px; background:var(--glass-strong); -webkit-backdrop-filter:blur(20px) saturate(1.4); backdrop-filter:blur(20px) saturate(1.4); border:1px solid var(--border2); border-radius:28px; padding:6px 6px 6px 16px; box-shadow:0 16px 40px rgba(0,0,0,.45);}
 .cv-composer[hidden]{display:none;}
-.cv-composer textarea{flex:1; border:0; background:transparent; color:var(--text); font:inherit; font-size:16px; resize:none; outline:none; max-height:110px; padding:8px 0;}
+.cv-composer textarea{flex:1; border:0; background:transparent; color:var(--text); font:inherit; font-size:16px; resize:none; outline:none; max-height:min(240px,36dvh); padding:8px 0;}
 .cv-composer .send-btn{flex:none;}
 .canvas-features h4{font-size:17px; margin:14px 0 8px; font-weight:700;}
 .canvas-features ul{margin:0; padding-left:20px;}
@@ -328,7 +334,16 @@ html.kb-open .cv-composer{bottom:6px;}
 .composer{display:flex; align-items:flex-end; gap:8px; background:var(--glass); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border:1px solid var(--border2); border-radius:28px; padding:6px; margin-bottom:calc(12px + env(safe-area-inset-bottom)); box-shadow:0 10px 34px rgba(0,0,0,.28);}
 .plus-btn{width:40px; height:40px; border-radius:50%; background:var(--rowbg); display:grid; place-items:center; flex:none; color:var(--text);}
 .plus-btn:active{background:var(--hover);}
-#chatInput{flex:1; border:none; outline:none; background:none; resize:none; color:var(--text); font-size:16px; line-height:1.4; padding:9px 2px; max-height:120px; min-width:0;}
+#chatInput{flex:1; border:none; outline:none; background:none; resize:none; color:var(--text); font-size:16px; line-height:1.4; padding:9px 2px; max-height:min(300px,42dvh); min-width:0; overflow-x:hidden; scrollbar-width:none; -ms-overflow-style:none;}
+/* The message field never shows a scrollbar: some phone browsers
+   painted the textarea's scrollbar thumb as a stray vertical bar
+   inside the composer, between the placeholder and the mic button.
+   The field still scrolls internally once a long message passes
+   max-height (autoGrow switches overflow-y on only then), it just
+   never paints the bar. */
+#chatInput::-webkit-scrollbar{width:0 !important; height:0 !important; display:none;}
+.cv-composer textarea{scrollbar-width:none; -ms-overflow-style:none;}
+.cv-composer textarea::-webkit-scrollbar{width:0 !important; height:0 !important; display:none;}
 #chatInput::placeholder{color:var(--muted);}
 .send-btn{width:40px; height:40px; border-radius:50%; background:var(--accent); color:var(--accent-ink); display:grid; place-items:center; flex:none;}
 .send-btn:disabled{background:var(--surface2); color:var(--muted);}
@@ -356,6 +371,13 @@ html.kb-open .cv-composer{bottom:6px;}
 .msg-menu button.danger{color:var(--danger);}
 .msg-menu button.danger .ic{color:var(--danger);}
 .msg-menu .msep{height:1px; background:var(--border); margin:4px 10px;}
+/* Reaction row at the top of the message menu: quick emoji options
+   shown whenever a message is selected — tap one to react (it lands
+   as the badge on the message), tap the lit one again to remove it. */
+.msg-react-row{display:flex; justify-content:space-between; align-items:center; padding:3px 4px 8px; border-bottom:1px solid var(--border); margin-bottom:5px;}
+.msg-menu .msg-react-row button{width:38px; height:38px; min-height:38px; flex:none; border-radius:50%; display:grid; place-items:center; justify-content:center; font-size:20px; line-height:1; padding:0;}
+.msg-menu .msg-react-row button.sel{background:var(--hover); box-shadow:0 0 0 1.5px var(--border2);}
+.msg.ai .msg-reaction{align-self:flex-start; margin:-9px 0 0 12px;}
 /* Reply bar — sits directly above the composer while a reply is armed. */
 #replyBar{display:none; align-items:center; gap:9px; margin:0 2px 8px; padding:9px 8px 9px 13px; background:var(--glass2); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border:1px solid var(--border2); border-radius:16px; font-size:13.5px; box-shadow:0 10px 30px rgba(0,0,0,.25);}
 #replyBar.show{display:flex;}
@@ -467,6 +489,31 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
 .swatch.sel{color:var(--text);} .swatch.sel i{border-color:var(--text);}
 .kv{display:flex; justify-content:space-between; padding:10px 2px; border-bottom:1px solid var(--border); font-size:14.5px;}
 .kv span{color:var(--muted);} .kv b{font-weight:600;}
+/* Added APIs list — one clean row per pasted key: auto-detected
+   provider + model, masked key, live status, Use and remove. */
+.api-list{display:flex; flex-direction:column; gap:8px; margin:0 0 12px;}
+.api-row{display:flex; align-items:center; gap:11px; background:var(--rowbg); border:1px solid var(--border); border-radius:14px; padding:11px 13px;}
+.api-row.active{border-color:var(--border2);}
+.api-dot{width:9px; height:9px; border-radius:50%; background:var(--muted); flex:none;}
+.api-dot.ok{background:var(--accent);}
+.api-dot.error,.api-dot.quota{background:var(--danger);}
+.api-meta{flex:1; min-width:0; display:flex; flex-direction:column; gap:1px;}
+.api-name{font-size:14.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.api-sub{font-size:12.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.api-active-tag{font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; flex:none;}
+.api-use{font-size:13px; font-weight:600; color:var(--text); background:var(--hover); border-radius:999px; padding:6px 11px; flex:none;}
+.api-x{width:28px; height:28px; border-radius:50%; display:grid; place-items:center; color:var(--muted); flex:none; font-size:15px; line-height:1;}
+.api-x:active{background:var(--hover); color:var(--danger);}
+/* Per-key models: the models that key can actually use, fetched
+   from its own provider — a picker when the list is known, a
+   Show models button to load it on demand. */
+.api-item{display:flex; flex-direction:column; gap:8px;}
+.api-models{padding:2px 2px 0;}
+.api-models-lbl{display:block; font-size:12.5px; color:var(--muted); margin:0 0 6px;}
+.api-modelsel{width:100%; background:var(--input); border:1px solid var(--border); border-radius:12px; padding:10px 12px; outline:none; color:var(--text); font-size:14.5px;}
+.api-modelsel option{background:var(--surface); color:var(--text);}
+.api-showmodels{font-size:13px; font-weight:600; color:var(--text); background:var(--hover); border-radius:999px; padding:7px 13px;}
+.api-showmodels:disabled{opacity:.55;}
 #previewFrame{width:100%; height:52dvh; border:1px solid var(--border); border-radius:14px; background:#fff;}
 /* ---------- + sheet: everything works in-sheet, no Settings trip ---------- */
 .plus-sec{margin-top:16px; border-top:1px solid var(--border); padding-top:12px;}
@@ -656,7 +703,6 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
 .avedit-shape svg{width:50px; height:50px; display:block;}
 .avedit-shape.sel{background:var(--surface2); box-shadow:inset 0 0 0 1px var(--border2);}
 .avedit-div{height:1px; background:var(--border); margin:18px 14px 2px;}
-.ca-name{margin-top:-13px; background:var(--surface2); border:1px solid var(--border2); padding:4px 15px; border-radius:999px; font-weight:600; font-size:14.5px; position:relative; z-index:1;}
 .av-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(98px,1fr)); gap:10px;}
 .av-card{background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:12px 8px; display:flex; flex-direction:column; align-items:center; gap:8px; color:var(--text); font-size:13px; cursor:pointer;}
 .av-card.sel{border-color:var(--accent); box-shadow:0 0 0 1px var(--accent);}
@@ -722,15 +768,35 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
 .av-dots i{width:6px; height:6px; border-radius:50%; background:var(--border2); display:block;}
 .av-dots i.sel{background:var(--text);}
 /* Side previews (Apple-style): the previous / next preset mascots
-   sit CRISP and fully visible in small circles at the left and
-   right edges of the stage — no blur. A fine ring, a soft shadow
-   and a slightly smaller mascot inside the circle keep them clean
-   and premium, clearly "next" without hiding what they are — tap
-   or swipe to slide to them. */
-.av-peek{width:46px; height:46px; border-radius:50%; overflow:hidden; flex:none; padding:0; background:var(--surface); border:1px solid var(--border2); cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.30); transition:transform .18s var(--ease), box-shadow .18s var(--ease);}
-.av-peek svg{width:100%; height:100%; display:block; transform:scale(.92);}
-.av-peek img{width:100%; height:100%; display:block; object-fit:cover; transform:scale(.92);}
-.av-peek:active{transform:scale(.92); box-shadow:0 2px 8px rgba(0,0,0,.28);}
+   sit CRISP, clear and fully visible in clean circles at the left
+   and right edges of the stage — never blurred. Three things used
+   to soften them and all three are off here: the mascot's float
+   animation (a constantly resampled layer reads as blur at small
+   sizes), its big soft drop-shadow filter (a glow blob around a
+   46px mascot), and the shrink-to-.92 scale. The peek mascot is
+   still, unfiltered and full-bleed inside a fine ring with a soft
+   shadow and a top highlight — premium, like an iOS carousel peek.
+   The stage is also sized to FIT phone widths (smaller preview
+   disc and peeks on narrow screens) so the peeks are never pushed
+   half off the screen edge. Tap or swipe to slide to them. */
+.av-peek{width:54px; height:54px; border-radius:50%; overflow:hidden; flex:none; padding:0; background:var(--surface); border:1px solid var(--border2); cursor:pointer; box-shadow:0 6px 18px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.10); transition:transform .18s var(--ease), box-shadow .18s var(--ease);}
+.av-peek svg{width:100%; height:100%; display:block;}
+.av-peek .av-svg{animation:none !important; filter:none !important; will-change:auto;}
+.av-peek img{width:100%; height:100%; display:block; object-fit:cover;}
+.av-peek:active{transform:scale(.93); box-shadow:0 3px 10px rgba(0,0,0,.28);}
+@media (max-width:430px){
+  .av-stage{gap:5px;}
+  .av-stage .avedit-previewback{width:160px; height:160px;}
+  .av-stage .avedit-previewback svg{width:136px; height:136px;}
+  .av-stage .avp-arrow{width:34px; height:34px;}
+  .av-peek{width:50px; height:50px;}
+}
+@media (max-width:380px){
+  .av-stage .avedit-previewback{width:144px; height:144px;}
+  .av-stage .avedit-previewback svg{width:122px; height:122px;}
+  .av-stage .avp-arrow{width:32px; height:32px;}
+  .av-peek{width:46px; height:46px;}
+}
 /* Full chooser panel under the Shape / Face / Colour selector: it
    replaces the old emotes-only area — with Shape picked it shows
    EVERY shape as a full avatar tile, with Face picked every face
@@ -814,8 +880,26 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
 :root{--agent-speed:1;}
 html[data-theme="white"] .sb-logo{filter:invert(1);}
 html[data-theme="white"] .lib-ico img{filter:invert(1);}
-#agentHeadBar{display:none; justify-content:center; position:relative; z-index:6; flex:none; padding:2px 0 0;}
-#agentHeadBar .chat-agent-head{padding:6px 0 4px;}
+#agentHeadBar{display:none; justify-content:center; position:relative; z-index:6; flex:none; padding:2px 0 0; background:transparent;}
+#agentHeadBar .chat-agent-head{padding:6px 0 4px; background:transparent;}
+/* Top avatar presence: the mascot drawing carries its own padding
+   inside its square, which made it read small at the top. The slot
+   is scaled up a step so the mascot itself is bigger and clearly
+   visible above the chat — the button around it stays invisible:
+   no disc, no fill, nothing solid behind it. */
+#agentHeadBar .agent-ava-slot{transform:scale(1.14); transform-origin:center;}
+/* Top avatar transparency: no background at all behind the mascot
+   in the top head — no disc, no circle fill, no shadow, nothing.
+   The mascot drawing (or an uploaded photo, kept round by its own
+   crop) sits directly on the page background. */
+#agentHeadBar .ca-ava, #agentHeadBar button.ca-ava{background:transparent !important; border-radius:0; overflow:visible; box-shadow:none;}
+#agentHeadBar .av-svg{filter:none;}
+#agentHeadBar .agent-ava-slot img{border-radius:50%;}
+/* The top agent head is swipeable: horizontal drags follow the
+   finger (vertical page gestures are untouched), so its circle
+   can be pulled left / right to switch agents. */
+#agentHeadBar .chat-agent-head{will-change:transform,opacity;}
+#agentHeadBar .ca-ava{touch-action:pan-y; cursor:grab;}
 .ca-ava{animation-duration:calc(3.4s / var(--agent-speed));}
 .ag-avatar{animation-duration:calc(3.8s / var(--agent-speed));}
 .av-svg{animation-duration:calc(3.8s / var(--agent-speed));}
@@ -860,5 +944,29 @@ input[type="range"].speed-range{margin:14px 0 2px;}
 
 button.ca-ava{border:0; padding:0; cursor:pointer; background:var(--surface2);}
 .set-row .sub2{display:block; color:var(--muted); font-size:13px; font-weight:400; margin-top:2px; line-height:1.4;}
+
+/* ================= Performance & glow pass =================
+   Brutal-smoothness rules: motion runs on transform / opacity
+   only, and the many small avatar copies inside grids, strips and
+   lists do NOT each carry a live float animation, a drop-shadow
+   filter and a will-change layer — that combination is what made
+   long lists jank on phones. The hero avatars (big preview, top
+   head, agent page) keep the full always-moving treatment; small
+   copies stay crisp and still, so scrolling stays at full speed. */
+.av-pick .av-svg,.av-grid .av-svg,.av-emotes .av-svg,.avpro-emotes .av-svg,.mini-ava .av-svg,.sb-agent-ava .av-svg,.agent-list-row .av-svg{animation:none !important; filter:none !important; will-change:auto;}
+.agent-list-row .mini-ava{animation:none !important;}
+.msg{contain:layout style;}
+.chat-row-main{contain:layout style;}
+.topblur,.bottomblur{transform:translateZ(0);}
+/* Glow animation — a slow, premium pulse where a glow belongs:
+   the big Avatar-page preview disc, the send button while it can
+   send, and primary buttons. (Never behind the top chat avatar:
+   that head stays fully transparent, as requested.) */
+@keyframes glowPulse{0%,100%{box-shadow:0 0 0 1px var(--border), 0 0 20px rgba(255,255,255,.08), 0 12px 32px rgba(0,0,0,.30);}50%{box-shadow:0 0 0 1px var(--border2), 0 0 42px rgba(255,255,255,.19), 0 12px 32px rgba(0,0,0,.30);}}
+.avedit-previewback{animation:glowPulse 3.2s ease-in-out infinite;}
+@keyframes sendGlow{0%,100%{box-shadow:0 0 10px color-mix(in srgb, var(--accent) 30%, transparent);}50%{box-shadow:0 0 24px color-mix(in srgb, var(--accent) 55%, transparent);}}
+.send-btn:not(:disabled){animation:sendGlow 2.6s ease-in-out infinite;}
+.btn-primary{box-shadow:0 0 16px color-mix(in srgb, var(--accent) 22%, transparent);}
+@media (prefers-reduced-motion:reduce){.avedit-previewback,.send-btn:not(:disabled){animation:none !important;}}
 
 .hidden{display:none !important;}

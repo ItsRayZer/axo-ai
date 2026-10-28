@@ -34,6 +34,20 @@ function msgAttHTML(m){
   }
   return h;
 }
+function canvasFeatureItems(m){
+  var body=(m && m.code && m.code.body) || '';
+  var controls=(body.match(/<(button|input|select|textarea)\b/gi)||[]).length;
+  var hasScript=/<script\b/i.test(body);
+  var items=['<li><strong>Single-file build:</strong> one HTML file, no setup — it opens anywhere.</li>'];
+  if(controls && hasScript) items.push('<li><strong>Working interaction:</strong> '+controls+' interactive control'+(controls===1?'':'s')+' wired to JavaScript in the file.</li>');
+  else if(hasScript) items.push('<li><strong>Working interaction:</strong> JavaScript behaviour is included in the file.</li>');
+  else items.push('<li><strong>Finished layout:</strong> the complete content and styling are included in the file.</li>');
+  if(/@media\b|name=["']viewport["']/i.test(body)) items.push('<li><strong>Responsive layout:</strong> viewport / media-query rules are included for phone and desktop widths.</li>');
+  else items.push('<li><strong>Responsive layout:</strong> the layout is contained in one flexible HTML file.</li>');
+  if(/--[\w-]+\s*:|prefers-color-scheme/i.test(body)) items.push('<li><strong>Theme system:</strong> reusable CSS theme values are built into the file.</li>');
+  else items.push('<li><strong>Clean UI:</strong> the generated styling is self-contained in the same file.</li>');
+  return items.join('');
+}
 function msgHTML(m, chatId){
   var cid=chatId||state.currentId;
   var quote=m.replyToText? '<div class="reply-quote">'+esc(m.replyToText)+'</div>' : '';
@@ -52,10 +66,7 @@ function msgHTML(m, chatId){
     if(cvDone){
       h+='<div class="canvas-summary">I have generated the single-file <strong>'+esc(m.canvas.title)+'</strong> app. It runs as one HTML file — tap Open on the card, or Play on the code below, to run it here.</div>'
         +'<div class="canvas-features"><h4>Key Features Included:</h4><ul>'
-        +'<li><strong>Single-file build:</strong> one HTML file, no setup — it opens anywhere.</li>'
-        +'<li><strong>Working interaction:</strong> the Tap button updates the counter instantly.</li>'
-        +'<li><strong>Responsive layout:</strong> fits phone and desktop widths.</li>'
-        +'<li><strong>Clean dark UI:</strong> matches the app\'s black, white and grey style.</li>'
+        + canvasFeatureItems(m)
         +'</ul></div>';
     }
   }
@@ -310,7 +321,17 @@ function setSidebar(open, animate){
     return;
   }
   app.classList.toggle('sb-open', open); app.classList.toggle('sb-closed', !open);
-  if(open){ sidebar.style.display='flex'; }
+  if(open){
+    sidebar.style.display='flex';
+    /* MENU COLOUR FIX: the sidebar head avatar is first rendered at
+       boot while the sidebar is display:none (mobile), and some
+       phone WebViews never repaint that SVG's gradient fills when
+       the menu opens — the avatar shape then shows as a dark /
+       wrong-coloured blob in the menu. Re-render the head avatar
+       fresh on every open, while the sidebar is visible, so its
+       shape always paints in its real colours. */
+    try{ if(typeof syncSidebarAgent==='function') syncSidebarAgent(); }catch(e){}
+  }
   var sbT=open?'translate3d(0,0,0)':'translate3d(-102%,0,0)';
   /* Curved peek (original, kept exactly): stage pushes right AND
      scales to .965 with the 34px radius; the scrim is a transparent
@@ -704,7 +725,7 @@ function handleMsgAction(a, chat, m){
   else if(a==='regen'){
     var idx=chat.messages.indexOf(m), prev='';
     for(var i=idx-1;i>=0;i--){ if(chat.messages[i].role==='user'){ prev=chat.messages[i].text; break; } }
-    if(state.apiKey){ chat.messages.splice(idx,1); renderAll(); callProvider(chat); toast('Regenerating…'); return; }
+    if(state.apiKey){ var oldCode=m.code||null; chat.messages.splice(idx,1); renderAll(); callProvider(chat, null, oldCode? {contextCode:oldCode} : null); toast('Regenerating…'); return; }
     toast('Regenerating…');
     setTimeout(function(){
       if(m.code){ var r=codeReply(prev||'a small example'); m.text=r.text; m.code=r.code; }
@@ -1289,7 +1310,7 @@ function localReply(text, memHits){
 }
 function codeReply(text){
   var topic=(text||'').replace(/^\s*(build|make|create)\s+/i,'')||'a tap counter page';
-  return { text:'Built it — a small working page for "'+topic+'". Play runs it here, Copy takes the code.', code:{lang:'html', body:'<!doctype html>\n<html>\n<body style="font-family:sans-serif;text-align:center;padding:40px">\n<h2 id="n">0</h2>\n<p>'+topic.replace(/</g,'')+'</p>\n<button onclick="n.textContent=+n.textContent+1">Tap</button>\n</body>\n</html>'} };
+  return { text:'Here is a starter page for "'+topic+'". Connect a strong model in the Model section and send the request again, and Gptopen will write the complete build for exactly what you asked. Play runs this starter here; Copy takes its code.', code:{lang:'html', body:'<!doctype html>\n<html>\n<body style="font-family:sans-serif;text-align:center;padding:40px">\n<h2 id="n">0</h2>\n<p>'+topic.replace(/</g,'')+'</p>\n<button onclick="n.textContent=+n.textContent+1">Tap</button>\n</body>\n</html>'} };
 }
 /* =============== Canvas mode ===============
    When the user says "write code in canvas" (any message naming
@@ -1326,6 +1347,20 @@ function canvasCode(title){
     +'<div id="n" style="font-size:52px;font-weight:700;margin-bottom:18px">0</div>\n'
     +'<button onclick="n.textContent=+n.textContent+1" style="font-size:16px;padding:12px 26px;border:0;border-radius:999px;background:#fff;color:#0b0b0c">Tap</button>\n'
     +'</body>\n</html>';
+}
+function pushCanvasPending(chat, text){
+  var title=canvasTitle(text);
+  var m={id:mid(), role:'ai',
+    text:'I will generate a single-file '+title+' with a clean, modern UI — smooth interactions, and touch and keyboard controls where they fit.',
+    canvas:{title:title, status:'writing'}};
+  chat.messages.push(m);
+  renderAll();
+  return m;
+}
+function discardCanvasPending(chat, m){
+  if(!chat || !m) return;
+  var ix=chat.messages.indexOf(m);
+  if(ix>=0) chat.messages.splice(ix,1);
 }
 function pushCanvas(chat, text){
   var title=canvasTitle(text);
@@ -1643,7 +1678,9 @@ function sendText(raw){
     if(SKILL_COMMANDS[cmd]){ var snm=SKILL_COMMANDS[cmd]; if(state.skillsOn[snm]===false){ toast(snm+' is off — turn it on in Skills'); return; } chat.messages.push({id:mid(),role:'user',text:text}); renderAll(); if(state.apiKey && rest){ state.skillOnce=snm; callProvider(chat, memHits); return; } pushAI(chat, skillReply(snm, rest)); return; }
     if(cmd==='/skill'){ state.skillOnce=rest||'frontend-design'; toast('Skill set for next reply: '+state.skillOnce); return; }
     if(cmd==='/agent'){ openSettings('agentpage'); return; }
-    if(cmd==='/chat'||cmd==='/code'){ state.route=cmd.slice(1); updateTargetLine(); toast('Next message: '+state.route+' mode'); return; }
+    if(cmd==='/chat'){ state.route='chat'; updateTargetLine(); toast('Next message: chat mode'); return; }
+    if(cmd==='/code' && !rest){ state.route='code'; updateTargetLine(); toast('Next message: code mode'); return; }
+    if(cmd==='/code' && rest){ chat.messages.push({id:mid(),role:'user',text:text}); renderAll(); if(state.apiKey){ state.codeOnce=true; callProvider(chat, memHits); } else pushAI(chat, codeReply(rest)); return; }
     if(cmd==='/clear'){ chat.messages=[]; renderAll(); toast('Chat cleared'); return; }
     if(cmd==='/settings'){ openSettings('list'); return; }
     if(cmd==='/dashboard'){ openSettings('dashboard'); return; }
@@ -1674,7 +1711,7 @@ function sendText(raw){
   if(!(chatAgent() && chatAgent().onboarding)) agentAutoLearn(text);
   if(chat.title==='New chat') chat.title=text? text.slice(0,34) : (sentAtts.length? (sentAtts[0].name||'Shared file') : (sentLinks.length? sentLinks[0].domain : 'New chat'));
   renderAll();
-  if(state.route==='code'){ state.route=null; updateTargetLine(); pushAI(chat, codeReply(text||'a shared file page')); return; }
+  if(state.route==='code'){ state.route=null; updateTargetLine(); if(state.apiKey){ state.codeOnce=true; callProvider(chat, memHits); } else pushAI(chat, codeReply(text||'a shared file page')); return; }
   /* New-agent onboarding: while it runs, every reply is one of the
      setup answers — it fills the agent's name, memory, instructions
      and vibe, ahead of every other chat command and any provider. */
@@ -1697,7 +1734,11 @@ function sendText(raw){
   if(avRes!==null){ pushAI(chat, avRes); return; }
   /* Canvas: "write code in canvas", or Canvas mode on in the +
      sheet, builds with the canvas card UI instead of a plain reply. */
-  if(canvasWanted(text)){ pushCanvas(chat, text); return; }
+  if(canvasWanted(text)){
+    if(state.apiKey){ var pendingCanvas=pushCanvasPending(chat, text); callProvider(chat, memHits, {codeMode:true, canvasMsg:pendingCanvas}); }
+    else pushCanvas(chat, text);
+    return;
+  }
   if(state.apiKey){ callProvider(chat, memHits); return; }
   pushAI(chat, localReply(text || (sentLinks.length? 'Shared link: '+sentLinks[0].url : 'Shared: '+(sentAtts[0]? (sentAtts[0].name||'a file') : 'a file')), memHits));
 }
@@ -1715,9 +1756,153 @@ function doSearch(chat, q){
     })
     .catch(function(){ ty.remove(); chat.messages.push({id:mid(), role:'ai', text:'Search could not reach the network from this preview. Check the connection and try again.'}); renderAll(); });
 }
-function callProvider(chat, memHits){
-  var ty=pushTyping();
-  var msgs=chat.messages.slice(-10).map(function(m){ return {role:m.role==='user'?'user':'assistant', content:m.text}; });
+/* =============== Agent-grade coding pipeline ===============
+   When a provider is connected, coding work is no longer routed to
+   the local starter generator. The model receives a strict coder
+   brief, the recent code itself (not only the prose around it), a
+   larger history and output budget, and its fenced result is turned
+   back into the existing code / canvas objects. Generated HTML is
+   inspected once in the browser; a structurally broken build gets
+   one automatic repair request before it is shown as finished. */
+var CODER_INSTRUCTION=[
+  'You are Gptopen Coder, operating like a senior software engineer inside a chat-based coding workspace.',
+  'Work in this order: understand the goal and the existing conversation; choose the smallest complete design that fully satisfies it; write the finished code; then mentally inspect it before answering.',
+  'Return complete, runnable work — never a sketch, pseudo-code, placeholder, TODO, lorem ipsum, dead button, empty handler or “rest is left as an exercise”. Every visible control must do something real.',
+  'For a web app, page, game, tool or UI, return exactly ONE complete self-contained HTML document in one fenced ```html block: inline CSS in <style>, inline JavaScript in a classic <script> (no modules, no eval, no Function constructor), no build step and no external files. Make it responsive with no horizontal scrolling on phone or desktop, support light and dark where the design allows, and wire every button, input and control.',
+  'For non-web code, return the complete code in one fenced block labelled with its language, followed only by brief run notes if they are needed. If several files are genuinely required, keep the deliverable in the single block as clearly separated, named sections rather than omitting code.',
+  'For debugging, find the root cause from the latest code and error in the conversation. If the change is substantial, return the full corrected file or code block; if it is tiny, give the exact replacement and say precisely where it goes.',
+  'If the user says “continue”, continue from the exact stopping point of the previous partial answer without restarting, repeating completed code or changing direction.',
+  'Before answering, check identifiers, event handlers, syntax, opening/closing tags, empty states, edge cases and mobile layout. Do not claim that you ran, tested, deployed, opened or verified anything outside this conversation.',
+  'Keep prose outside the code concise: one short summary before the block and, only when useful, a few concrete notes after it. Do not ask questions that a sensible default can resolve; state any important assumption briefly.'
+].join('\n');
+var CANVAS_CODER_INSTRUCTION='This build will be placed into the existing Gptopen Canvas card and preview. Put one short sentence before the ```html block and nothing after the block. The single HTML file is the whole deliverable.';
+function lastUserText(chat){
+  if(!chat) return '';
+  for(var i=chat.messages.length-1;i>=0;i--) if(chat.messages[i].role==='user') return chat.messages[i].text||'';
+  return '';
+}
+function chatHasCode(chat){
+  return !!(chat && chat.messages.some(function(m){ return !!(m.code && m.code.body); }));
+}
+function lastAiTruncated(chat){
+  if(!chat) return false;
+  for(var i=chat.messages.length-1;i>=0;i--) if(chat.messages[i].role==='ai') return !!chat.messages[i].truncated;
+  return false;
+}
+function latestUserHasTextFile(chat){
+  if(!chat) return false;
+  for(var i=chat.messages.length-1;i>=0;i--){
+    if(chat.messages[i].role==='user') return !!(chat.messages[i].attachments && chat.messages[i].attachments.some(function(a){ return !!(a && a.textContent); }));
+  }
+  return false;
+}
+function isCodeRequestText(text, chat){
+  var t=String(text||'').toLowerCase();
+  if(!t) return false;
+  if(latestUserHasTextFile(chat) && /\b(fix|debug|review|explain|change|update|refactor|optimi[sz]e|code|error|bug)\b/.test(t)) return true;
+  if(/```|<!doctype\s+html|<html\b|<script\b|<style\b/.test(t)) return true;
+  if(/^(continue|finish it|complete it|keep going)\b/.test(t) && (chatHasCode(chat) || lastAiTruncated(chat))) return true;
+  if(/\b(fix|debug|repair|refactor|optimi[sz]e|update|change|add|remove|improve)\b[\s\S]{0,90}\b(code|bug|error|function|script|app|page|website|button|feature|login|form|canvas|layout|ui)\b/.test(t)) return true;
+  if(/\b(build|create|make|write|generate|develop|implement|design|code)\b[\s\S]{0,90}\b(app|application|web ?page|website|site|game|tool|calculator|dashboard|ui|interface|component|form|landing page|portfolio|clone|html|css|javascript|python|function|script|program)\b/.test(t)) return true;
+  if(/\b(html|css|javascript|typescript|python|java|c\+\+|c#|php|ruby|swift|kotlin|sql|react|vue|angular|node\.?js)\b/.test(t) && /\b(build|write|create|make|code|fix|debug|error|function|app|page|website|program|script|api)\b/.test(t)) return true;
+  if(/\b(error|bug|exception|stack trace|not working|doesn[’']t work|broken|syntax)\b/.test(t) && chatHasCode(chat)) return true;
+  return false;
+}
+function providerContentForMessage(m){
+  var content=m.text||'';
+  if(m.attachments && m.attachments.length){
+    m.attachments.forEach(function(a){
+      if(a && a.textContent) content+='\n\nAttached file "'+(a.name||'file')+'"'+(a.textTruncated?' (first part shown)':'')+':\n```\n'+a.textContent+'\n```';
+    });
+  }
+  if(m.code && m.code.body){
+    content+=(content?'\n\n':'')+'```'+(m.code.lang||'')+'\n'+m.code.body+'\n```';
+  }
+  if(m.truncated) content+='\n\n[The previous reply hit the output limit and may be incomplete.]';
+  return content;
+}
+function normalizeCodeLang(lang, body){
+  var l=String(lang||'').toLowerCase().replace(/[^a-z0-9+#.-]/g,'');
+  if(l==='js') return 'javascript';
+  if(l==='ts') return 'typescript';
+  if(l==='sh') return 'bash';
+  if(!l && /<!doctype\s+html|<html\b/i.test(body||'')) return 'html';
+  return l||'text';
+}
+function extractProviderCode(out, force){
+  var src=String(out||''), blocks=[], re=/```([A-Za-z0-9_+#.-]*)\s*\n([\s\S]*?)```/g, match;
+  while((match=re.exec(src))!==null){
+    blocks.push({lang:match[1]||'', body:(match[2]||'').replace(/^\n+|\n+$/g,''), raw:match[0]});
+  }
+  var chosen=null, bestScore=-1;
+  blocks.forEach(function(b){
+    var score=b.body.length + (/<!doctype\s+html|<html\b/i.test(b.body)?1000000:0);
+    if(score>bestScore){ bestScore=score; chosen=b; }
+  });
+  var incomplete=false;
+  var residue=src;
+  blocks.forEach(function(b){ residue=residue.replace(b.raw,''); });
+  var openMatch=residue.match(/```([A-Za-z0-9_+#.-]*)\s*\n([\s\S]*)$/);
+  if(openMatch && openMatch[2] && openMatch[2].trim()){
+    var openBody=openMatch[2].replace(/\n+$/g,'');
+    if(!chosen || openBody.length>chosen.body.length){
+      chosen={lang:openMatch[1]||'', body:openBody, raw:openMatch[0]};
+      incomplete=true;
+    }
+  }
+  if(!chosen){
+    var ds=src.search(/<!doctype\s+html/i); if(ds<0) ds=src.search(/<html\b/i);
+    if(ds>=0){
+      var end=src.lastIndexOf('</html>');
+      var rawBody=end>=ds? src.slice(ds,end+7) : src.slice(ds);
+      chosen={lang:'html', body:rawBody, raw:rawBody};
+      incomplete=end<ds;
+    }
+  }
+  if(!chosen) return null;
+  var body=String(chosen.body||'').trim();
+  if(!body) return null;
+  var fullHtml=/<!doctype\s+html|<html\b/i.test(body);
+  if(!force && !fullHtml && body.length<180) return null;
+  var prose=src.replace(chosen.raw,'\n').replace(/\n{3,}/g,'\n\n').trim();
+  return {text:prose, code:{lang:normalizeCodeLang(chosen.lang, body), body:body}, incomplete:incomplete};
+}
+function inspectHtmlCode(body){
+  var src=String(body||''), issues=[];
+  if(!/<!doctype\s+html/i.test(src)) issues.push('missing <!doctype html>');
+  if(!/<html\b/i.test(src) || !/<\/html\s*>/i.test(src)) issues.push('missing a complete <html>...</html> structure');
+  if(!/<head\b/i.test(src) || !/<\/head\s*>/i.test(src)) issues.push('missing a complete <head>...</head> structure');
+  if(!/<body\b/i.test(src) || !/<\/body\s*>/i.test(src)) issues.push('missing a complete <body>...</body> structure');
+  if(/<script[^>]+type\s*=\s*["']module["']/i.test(src)) issues.push('uses a module script instead of a classic script');
+  if(/\beval\s*\(|new\s+Function\s*\(/.test(src)) issues.push('uses eval() or Function(), which are not allowed in the build');
+  ['script','style'].forEach(function(tag){
+    var opens=(src.match(new RegExp('<'+tag+'\\b','gi'))||[]).length;
+    var closes=(src.match(new RegExp('</'+tag+'\\s*>','gi'))||[]).length;
+    if(opens!==closes) issues.push('unbalanced <'+tag+'> tags');
+  });
+  var controls=(src.match(/<(button|input|select|textarea)\b/gi)||[]).length;
+  if(controls && !/<script\b/i.test(src) && !/\son\w+\s*=/i.test(src)) issues.push('interactive controls have no JavaScript behaviour');
+  var ids={}, dup={};
+  src.replace(/\bid\s*=\s*["']([^"']+)["']/gi,function(_,id){ if(ids[id]) dup[id]=1; ids[id]=1; return _; });
+  if(Object.keys(dup).length) issues.push('duplicate id values: '+Object.keys(dup).join(', '));
+  return issues;
+}
+function callProvider(chat, memHits, opts){
+  var canvasMsg=(opts && opts.canvasMsg) || null;
+  var requestText=lastUserText(chat);
+  var codeMode=!!(state.codeOnce || (opts && opts.codeMode) || (opts && opts.contextCode) || canvasMsg || isCodeRequestText(requestText, chat));
+  state.codeOnce=false;
+  /* A canvas card already shows its own “Writing code...” state, so
+     it does not need a second typing bubble while the provider works. */
+  var ty=canvasMsg? {remove:function(){}} : pushTyping();
+  var history=chat.messages.filter(function(m){ return m!==canvasMsg; }).slice(codeMode? -24 : -10);
+  var msgs=history.map(function(m){ return {role:m.role==='user'?'user':'assistant', content:providerContentForMessage(m)}; });
+  if(opts && opts.contextCode && opts.contextCode.body){
+    var contextMsg={role:'assistant', content:'Previous generated version — use it as the base for this fix, change or regeneration:\n```'+(opts.contextCode.lang||'')+'\n'+opts.contextCode.body+'\n```'};
+    var contextAt=msgs.length;
+    for(var ci=msgs.length-1;ci>=0;ci--){ if(msgs[ci].role==='user'){ contextAt=ci; break; } }
+    msgs.splice(contextAt,0,contextMsg);
+  }
   /* Related memory (keyword-searched before this reply, already
      sanitised — it never contains keys, secrets, emails or phone
      numbers) goes to the provider as context for this answer. */
@@ -1743,20 +1928,80 @@ function callProvider(chat, memHits){
       msgs.unshift({role:'system', content:'Apply the "'+pSkill+'" skill to your reply and follow these instructions exactly.\n\n'+pInstr+pExtra});
     }
   }
-  var url, headers={'Content-Type':'application/json'}, body;
-  if(state.provider==='gemini'){
-    url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(state.model||'gemini-2.0-flash')+':generateContent';
-    headers['x-goog-api-key']=state.apiKey;
-    body={contents:msgs.map(function(m){ return {role:m.role==='assistant'?'model':'user', parts:[{text:m.content}]}; })};
-  } else {
-    var base=state.provider==='openrouter' ? 'https://openrouter.ai/api/v1' : (state.providerBase||'');
-    if(!base){ ty.remove(); setApiHealth('error','Missing base URL'); pushAI(chat,'Set a base URL for the custom endpoint in the Model section of the + sheet, or in Settings → APIs & Providers.'); return; }
-    url=base.replace(/\/$/,'')+'/chat/completions';
-    headers.Authorization='Bearer '+state.apiKey;
-    body={model:state.model||'openai/gpt-4o-mini', messages:msgs};
+  if(codeMode){
+    msgs.unshift({role:'system', content:CODER_INSTRUCTION+(canvasMsg? '\n\n'+CANVAS_CODER_INSTRUCTION : '')});
   }
-  state.usage.requests++;
-  fetch(url,{method:'POST', headers:headers, body:JSON.stringify(body)})
+  function buildProviderRequest(requestMsgs){
+    var temperature=codeMode? Math.min(state.tempVal, 0.4) : state.tempVal;
+    if(state.provider==='gemini'){
+      var systems=[], convo=[];
+      requestMsgs.forEach(function(m){
+        if(m.role==='system') systems.push(m.content);
+        else convo.push({role:m.role==='assistant'?'model':'user', parts:[{text:m.content}]});
+      });
+      var gemBody={contents:convo, generationConfig:{temperature:temperature, maxOutputTokens:codeMode?8192:2048}};
+      if(systems.length) gemBody.systemInstruction={parts:[{text:systems.join('\n\n---\n\n')}]};
+      var gemHeaders={'Content-Type':'application/json','x-goog-api-key':state.apiKey};
+      return {url:'https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(state.model||'gemini-2.5-flash')+':generateContent', headers:gemHeaders, body:gemBody};
+    }
+    var base=state.provider==='openrouter' ? 'https://openrouter.ai/api/v1' : (state.providerBase||'');
+    var reqHeaders={'Content-Type':'application/json', Authorization:'Bearer '+state.apiKey};
+    var fallbackModel=state.provider==='openrouter' ? 'anthropic/claude-sonnet-4.5' : 'openai/gpt-4o-mini';
+    return {url:base.replace(/\/$/,'')+'/chat/completions', headers:reqHeaders, body:{model:state.model||fallbackModel, messages:requestMsgs, temperature:temperature, max_tokens:codeMode?8192:2048}};
+  }
+  if(state.provider!=='gemini' && state.provider!=='openrouter' && !(state.providerBase||'')){
+    ty.remove(); discardCanvasPending(chat, canvasMsg); setApiHealth('error','Missing base URL');
+    chat.messages.push({id:mid(), role:'ai', text:'Set a base URL for the custom endpoint in the Model section of the + sheet, or in Settings → APIs & Providers.'});
+    renderAll(); return;
+  }
+  function postToProvider(requestMsgs){
+    var req=buildProviderRequest(requestMsgs);
+    state.usage.requests++;
+    return fetch(req.url,{method:'POST', headers:req.headers, body:JSON.stringify(req.body)});
+  }
+  function deliverProviderReply(finalOut, parsed, truncated){
+    var limitNote='The model hit its output limit before finishing. Say “continue” and Gptopen will continue from the code and context already in this chat.';
+    if(canvasMsg){
+      if(parsed && parsed.code && parsed.code.lang==='html'){
+        canvasMsg.text=parsed.text || ('Built the '+canvasMsg.canvas.title+' app in Canvas.');
+        canvasMsg.canvas.status='done';
+        canvasMsg.canvas.ts=Date.now();
+        canvasMsg.code=parsed.code;
+        canvasMsg.truncated=!!(truncated || parsed.incomplete);
+        if(canvasMsg.truncated) canvasMsg.text+='\n\n'+limitNote;
+        var canvasIssues=inspectHtmlCode(parsed.code.body);
+        if(canvasIssues.length) canvasMsg.text+='\n\nBuild check: '+canvasIssues.join('; ')+'. Ask me to fix it and I will work from this exact code.';
+      } else if(parsed && parsed.code){
+        delete canvasMsg.canvas;
+        canvasMsg.text=parsed.text || 'Here is the complete code.';
+        canvasMsg.code=parsed.code;
+        canvasMsg.truncated=!!(truncated || parsed.incomplete);
+        if(canvasMsg.truncated) canvasMsg.text+='\n\n'+limitNote;
+      } else {
+        delete canvasMsg.canvas;
+        canvasMsg.text=finalOut;
+        canvasMsg.truncated=!!truncated;
+        if(truncated) canvasMsg.text+='\n\n'+limitNote;
+      }
+      return;
+    }
+    if(parsed && parsed.code){
+      var codedMsg={id:mid(), role:'ai', text:parsed.text || 'Here is the complete code.', code:parsed.code};
+      codedMsg.truncated=!!(truncated || parsed.incomplete);
+      if(codedMsg.truncated) codedMsg.text+='\n\n'+limitNote;
+      if(parsed.code.lang==='html'){
+        var codeIssues=inspectHtmlCode(parsed.code.body);
+        if(codeIssues.length) codedMsg.text+='\n\nBuild check: '+codeIssues.join('; ')+'. Ask me to fix it and I will work from this exact code.';
+      }
+      chat.messages.push(codedMsg);
+    } else if(finalOut){
+      var plainMsg={id:mid(), role:'ai', text:finalOut};
+      plainMsg.truncated=!!truncated;
+      if(truncated) plainMsg.text+='\n\n'+limitNote;
+      chat.messages.push(plainMsg);
+    }
+  }
+  postToProvider(msgs)
     .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j, status:r.status}; }); })
     .then(function(res){
       ty.remove();
@@ -1783,10 +2028,40 @@ function callProvider(chat, memHits){
             for(var i=chat.messages.length-1;i>=0;i--){ if(chat.messages[i].role==='user'){ if(!chat.messages[i].reaction) chat.messages[i].reaction=em; break; } }
           }
         }
-        if(out) chat.messages.push({id:mid(), role:'ai', text:out});
+        var finishTruncated=!!((res.j.choices && res.j.choices[0] && res.j.choices[0].finish_reason==='length') || (res.j.candidates && res.j.candidates[0] && /MAX_TOKENS/i.test(res.j.candidates[0].finishReason||'')));
+        var parsed=extractProviderCode(out, codeMode || !!canvasMsg);
+        var htmlIssues=(parsed && parsed.code && parsed.code.lang==='html')? inspectHtmlCode(parsed.code.body) : [];
+        var needsRepair=!!(parsed && parsed.code && parsed.code.lang==='html' && (parsed.incomplete || htmlIssues.length));
+        if(needsRepair){
+          var repairPrompt='The HTML in your previous reply failed a structural check: '+((htmlIssues.length? htmlIssues.join('; ') : 'the code block is incomplete'))+'. Return the complete corrected build now. Fix every listed issue, keep the same app and features, and return exactly one complete self-contained HTML document in one fenced ```html block with no prose after it.';
+          var repairMsgs=msgs.concat([{role:'assistant', content:out},{role:'user', content:repairPrompt}]);
+          return postToProvider(repairMsgs)
+            .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j, status:r.status}; }); })
+            .then(function(rr){
+              var repairedOut=null;
+              if(rr.j && rr.j.choices && rr.j.choices[0] && rr.j.choices[0].message) repairedOut=rr.j.choices[0].message.content;
+              if(!repairedOut && rr.j && rr.j.candidates && rr.j.candidates[0] && rr.j.candidates[0].content) repairedOut=rr.j.candidates[0].content.parts.map(function(p){return p.text||'';}).join('');
+              if(rr.ok && repairedOut){
+                var repairedParsed=extractProviderCode(repairedOut, true);
+                if(repairedParsed && repairedParsed.code && repairedParsed.code.lang==='html'){
+                  var repairedIssues=inspectHtmlCode(repairedParsed.code.body);
+                  if(!repairedParsed.incomplete && repairedIssues.length<=htmlIssues.length){
+                    parsed=repairedParsed;
+                    out=repairedOut;
+                    finishTruncated=!!((rr.j.choices && rr.j.choices[0] && rr.j.choices[0].finish_reason==='length') || (rr.j.candidates && rr.j.candidates[0] && /MAX_TOKENS/i.test(rr.j.candidates[0].finishReason||'')));
+                  }
+                }
+              }
+              deliverProviderReply(out, parsed, finishTruncated);
+              renderAll();
+            })
+            .catch(function(){ deliverProviderReply(out, parsed, finishTruncated); renderAll(); });
+        }
+        deliverProviderReply(out, parsed, finishTruncated);
       }
       else {
         var kind=apiFailureKind(res.status, res.j);
+        discardCanvasPending(chat, canvasMsg);
         if(kind==='quota') state.usage.quota++; else state.usage.failed++;
         setApiHealth(kind, 'HTTP '+res.status);
         chat.messages.push({id:mid(), role:'ai', text: kind==='quota'
@@ -1795,7 +2070,7 @@ function callProvider(chat, memHits){
       }
       renderAll();
     })
-    .catch(function(){ ty.remove(); state.usage.failed++; setApiHealth('error','Network or CORS'); chat.messages.push({id:mid(), role:'ai', text:'Could not reach the provider from this preview (network or CORS), so messages are not going through. The key stays saved for this session — check the provider and model in the + sheet Model section, or in Settings → APIs & Providers.'}); renderAll(); });
+    .catch(function(){ ty.remove(); discardCanvasPending(chat, canvasMsg); state.usage.failed++; setApiHealth('error','Network or CORS'); chat.messages.push({id:mid(), role:'ai', text:'Could not reach the provider from this preview (network or CORS), so messages are not going through. The key stays saved for this session — check the provider and model in the + sheet Model section, or in Settings → APIs & Providers.'}); renderAll(); });
 }
 /* =============== Composer =============== */
 var input=$('#chatInput'), sendBtn=$('#sendBtn');
@@ -2503,8 +2778,26 @@ function handlePickedFiles(fileList){
   var files=Array.prototype.slice.call(fileList||[]);
   files.forEach(function(f){
     var kind=attKindOf(f);
-    state.attachments.push({name:f.name, size:f.size, type:f.type||'', kind:kind,
-      url:(kind==='image'||kind==='video')? URL.createObjectURL(f) : ''});
+    var rec={name:f.name, size:f.size, type:f.type||'', kind:kind,
+      url:(kind==='image'||kind==='video')? URL.createObjectURL(f) : ''};
+    state.attachments.push(rec);
+    /* Text and code attachments are read locally so a connected
+       model can actually inspect and fix the file the user sent,
+       instead of only seeing its filename. Binary files are not
+       decoded or sent as text. */
+    var type=(f.type||'').toLowerCase(), fname=(f.name||'').toLowerCase();
+    var readable=kind==='file' && (type.indexOf('text/')===0 || /^(application\/(json|javascript|xml|xhtml\+xml)|image\/svg\+xml)$/.test(type) || /\.(txt|md|html?|css|scss|js|jsx|ts|tsx|json|xml|svg|py|java|c|cc|cpp|h|hpp|cs|php|rb|go|rs|swift|kt|sql|sh|ya?ml|toml|ini|csv)$/i.test(fname));
+    if(readable && window.FileReader){
+      try{
+        var reader=new FileReader();
+        reader.onload=function(){
+          var txt=String(reader.result||'');
+          rec.textContent=txt.slice(0,60000);
+          rec.textTruncated=txt.length>60000;
+        };
+        reader.readAsText(f);
+      }catch(e){}
+    }
   });
   renderAttach(); closeSheet(); updateSend();
   if(files.length) toast(files.length===1?'Attached — ready to send':'Files attached — ready to send');

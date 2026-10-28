@@ -721,13 +721,16 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
 .av-dots{display:flex; gap:5px;}
 .av-dots i{width:6px; height:6px; border-radius:50%; background:var(--border2); display:block;}
 .av-dots i.sel{background:var(--text);}
-/* Blurred peek previews: the previous / next preset mascots sit
-   blurred at the left and right edges of the stage — tap or swipe
-   to slide to them. */
-.av-peek{width:44px; height:44px; border-radius:50%; overflow:hidden; flex:none; padding:0; background:var(--surface); border:1px solid var(--border); cursor:pointer; opacity:.8;}
-.av-peek svg{width:100%; height:100%; display:block; filter:blur(2.5px); transform:scale(1.15);}
-.av-peek img{width:100%; height:100%; display:block; object-fit:cover; filter:blur(2.5px); transform:scale(1.15);}
-.av-peek:active{opacity:1;}
+/* Side previews (Apple-style): the previous / next preset mascots
+   sit CRISP and fully visible in small circles at the left and
+   right edges of the stage — no blur. A fine ring, a soft shadow
+   and a slightly smaller mascot inside the circle keep them clean
+   and premium, clearly "next" without hiding what they are — tap
+   or swipe to slide to them. */
+.av-peek{width:46px; height:46px; border-radius:50%; overflow:hidden; flex:none; padding:0; background:var(--surface); border:1px solid var(--border2); cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.30); transition:transform .18s var(--ease), box-shadow .18s var(--ease);}
+.av-peek svg{width:100%; height:100%; display:block; transform:scale(.92);}
+.av-peek img{width:100%; height:100%; display:block; object-fit:cover; transform:scale(.92);}
+.av-peek:active{transform:scale(.92); box-shadow:0 2px 8px rgba(0,0,0,.28);}
 /* Full chooser panel under the Shape / Face / Colour selector: it
    replaces the old emotes-only area — with Shape picked it shows
    EVERY shape as a full avatar tile, with Face picked every face

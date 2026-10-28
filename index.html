@@ -341,7 +341,11 @@ var state = {
      one-time energy profile plus observed pattern notes. */
   panel:null, panelCustomised:false,
   voiceCard:null, voiceSnapshotShown:false,
-  energyProfile:null, energyOffered:false, energyNotes:[], lastEnergy:null
+  energyProfile:null, energyOffered:false, energyNotes:[], lastEnergy:null,
+  /* One-shot provider coding state: set only by the existing /code
+     command or CodeR row, consumed by the next provider request, and
+     never persisted or shown as a new control. */
+  codeOnce:false
 };
 SKILLS.forEach(function(s){ state.skillsOn[s]=true; });
 /* =============== Agents files (Settings) ===============

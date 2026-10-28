@@ -879,14 +879,13 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
 :root{--agent-speed:1;}
 html[data-theme="white"] .sb-logo{filter:invert(1);}
 html[data-theme="white"] .lib-ico img{filter:invert(1);}
-#agentHeadBar{display:none; justify-content:center; position:relative; z-index:6; flex:none; padding:0; margin-top:-24px; background:transparent;}
+#agentHeadBar{display:none; justify-content:center; position:relative; z-index:6; flex:none; padding:0; margin-top:-38px; background:transparent;}
 #agentHeadBar .chat-agent-head{padding:0 0 2px; background:transparent;}
-/* Top avatar presence: the mascot drawing carries its own padding
-   inside its square, which made it read small at the top. The slot
-   is scaled up a step so the mascot itself is bigger and clearly
-   visible above the chat — the button around it stays invisible:
-   no disc, no fill, nothing solid behind it. */
-#agentHeadBar .agent-ava-slot{transform:scale(1.14); transform-origin:center;}
+/* Top avatar presence: kept small by default (Medium) and high at
+   the top — no extra scale-up on the slot, so the rendered size is
+   exactly the size map in chatAgentHeadHTML. The button around it
+   stays invisible: no disc, no fill, nothing solid behind it. */
+#agentHeadBar .agent-ava-slot{transform:scale(1); transform-origin:center;}
 /* Top avatar transparency: no background at all behind the mascot
    in the top head — no disc, no circle fill, no shadow, nothing.
    The mascot drawing (or an uploaded photo, kept round by its own

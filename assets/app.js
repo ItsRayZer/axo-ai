@@ -2295,10 +2295,12 @@ function callProvider(chat, memHits, opts){
   if(memCtx) msgs.unshift({role:'system', content:'Relevant saved memory about the user — use it where it fits:\n'+memCtx});
   /* The reaction instructions travel with every provider request. */
   msgs.unshift({role:'system', content:REACTION_INSTRUCTION});
-  /* The agent files are the standing instructions: SOUL.md (persona),
-     AGENTS.md (workspace rules, including the auto-update rule) and
-     USER.md travel with every provider request, read live from the
-     editable files, so edits in Settings → Agents files apply at once. */
+  /* The agent files are the standing instructions: IDENTITY.md,
+     SOUL.md (persona), AGENTS.md (workspace rules, including the
+     auto-update rule), USER.md, MEMORY.md, TOOLS.md, HEARTBEAT.md
+     and BOOTSTRAP.md travel with every provider request, read live
+     from the editable files, so edits in Settings → Agents files
+     apply at once. */
   var coreMsg=agentCoreMessage();
   if(coreMsg) msgs.unshift({role:'system', content:coreMsg});
   /* A skill chosen with /skill <name>, or invoked directly with its
@@ -3867,12 +3869,16 @@ function mdRender(md){
 /* =============== Agents (multi-agent) ===============
    The old single "Agent mode" is replaced by an Agents hub: many
    agents, each with its own name, avatar, custom instructions and
-   custom memory. Any agent can be made the main agent at any time,
+   custom memory. It ships with two: Mia, the main agent, and Nova,
+   a sub-agent for research, checking, drafting and organising —
+   both generic, holding no user data. Any agent can be made the
+   main agent at any time,
    and you can chat with any of them. History and memory are SHARED
    by all agents by default; an agent with individual history or
    individual memory turned on (in its Edit page) keeps its own. */
 var AGENTS=[
-  {id:'mia', name:'Mia', vibe:'Sharp, warm, playful, a bit possessive, loyal. Roasts with love, matches his mood, stays clean and supportive in study, sad and crisis modes.', instructions:'', memoryText:'', preset:'mia', avatar:'', shape:'triangle', face:'wink', color:'#b57948', acc:'none', individualHistory:false, individualMemory:false, privateMem:[]}
+  {id:'mia', name:'Mia', vibe:'Sharp, warm, playful, a bit possessive, loyal. Roasts with love, matches his mood, stays clean and supportive in study, sad and crisis modes.', instructions:'', memoryText:'', preset:'mia', avatar:'', shape:'triangle', face:'wink', color:'#b57948', acc:'none', individualHistory:false, individualMemory:false, privateMem:[]},
+  {id:'nova', name:'Nova', vibe:'Calm, precise, research-minded. The sub-agent: digs deep, checks facts, drafts and organises, then hands the result back clean.', instructions:'You are Nova, a sub-agent in this app, working under the main agent. Your job is the deep work: research, fact-checking, drafting, summarising and organising. Read the shared standing files (IDENTITY.md, SOUL.md, AGENTS.md, USER.md, MEMORY.md, TOOLS.md, HEARTBEAT.md) and the shared memory/ folder like every agent here, write durable facts back to MEMORY.md and day-to-day notes to a dated file in memory/, and never put a password, key, secret, email address or phone number in any file. Keep your results complete but tight and ready to present — the main agent shows them to the user. Only report what you actually did or found: started is not finished, a guess is not a fact.', memoryText:'', preset:'muse', avatar:'', shape:'circle', face:'open', color:'#3d9bff', acc:'none', individualHistory:false, individualMemory:false, privateMem:[]}
 ];
 var mainAgentId='mia', chatAgentId='mia', editingAgentId='mia', avatarTargetAgentId=null;
 var avReturn='agentpage';
@@ -4250,7 +4256,7 @@ function emotionForText(t){
   return 'idle';
 }
 function chatAgentHeadHTML(){
-  var sz={small:56, medium:84, large:112, xl:128}[state.avatarSize]||112;
+  var sz={small:48, medium:68, large:92, xl:108}[state.avatarSize]||68;
   var a=chatAgent();
   /* Top avatar, clean: the mascot alone — fully transparent, no
      background disc or circle behind it, and no name pill / text

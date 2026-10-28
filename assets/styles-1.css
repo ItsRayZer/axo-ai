@@ -8,7 +8,7 @@
   --danger:#ff453a; --kb:0px; --kbFixed:0px; --sidebar-w:min(312px,calc(100vw - 66px));
   --peek:#161618; --peek-desk:#141416; --pill:#232326;
   --ease:cubic-bezier(.32,.72,0,1);
-  --sb-ease:cubic-bezier(.32,.72,0,1); --sb-ms:340ms;
+  --sb-ease:cubic-bezier(.22,1,.36,1); --sb-ms:360ms;
 }
 html[data-theme="white"]{
   --bg:#ffffff; --surface:#f2f2f7; --surface2:#e5e5ea; --text:#111111; --text2:#333333;
@@ -34,15 +34,36 @@ svg{display:block;}
    menu is open the chat stage pushes right and curves into a card —
    mobile: translateX(sidebar) scale(.965), 34px radius, #161618 peek;
    desktop: 30px radius card with an 8px margin. Never flattened. */
-#sidebar{position:absolute; top:0; left:0; bottom:0; width:var(--sidebar-w); background:var(--bg); z-index:1; display:flex; flex-direction:column; transform:translate3d(-102%,0,0); will-change:transform; backface-visibility:hidden; -webkit-backface-visibility:hidden;}
+#sidebar{position:absolute; top:0; left:0; bottom:0; width:var(--sidebar-w); background:var(--bg); z-index:1; display:flex; flex-direction:column; transform:translate3d(-102%,0,0); backface-visibility:hidden; -webkit-backface-visibility:hidden;}
 #sidebar.noanim{transition:none !important;}
-#stage{position:absolute; inset:0; background:var(--bg); z-index:2; display:flex; flex-direction:column; will-change:transform; backface-visibility:hidden; -webkit-backface-visibility:hidden; transform-origin:left top; overflow:hidden; box-shadow:-18px 0 44px rgba(0,0,0,.35);}
+#stage{position:absolute; inset:0; background:var(--bg); z-index:2; display:flex; flex-direction:column; backface-visibility:hidden; -webkit-backface-visibility:hidden; transform-origin:left top; overflow:hidden; box-shadow:-18px 0 44px rgba(0,0,0,.35);}
 #stage.noanim{transition:none !important;}
 #app.dragging #sidebar,#app.dragging #stage{transition:none !important; will-change:transform;}
-#app.dragging #stage{box-shadow:-16px 0 48px rgba(0,0,0,.6);}
+/* Layers are promoted ONLY while a sidebar run is live — a permanent
+   will-change on the full-screen stage forces the phone to keep a
+   huge extra layer alive and re-raster it, which is part of why the
+   menu felt stuck between runs. */
+#app.anim #sidebar,#app.anim #stage{will-change:transform;}
+/* While the menu is moving, the two full-screen backdrop blurs inside
+   the stage freeze (their gradient backgrounds stay, so the look is
+   unchanged) — re-blurring them on every frame of the slide was the
+   biggest single cause of dropped frames. They come back the moment
+   the run ends. */
+#app.anim .topblur,#app.anim .bottomblur,#app.dragging .topblur,#app.dragging .bottomblur{backdrop-filter:none; -webkit-backdrop-filter:none;}
+/* While the menu is moving on a phone, EVERY glass surface inside the
+   stage freezes too — composer, header pills, reply/cmd bars, link
+   cards — and the stage's big soft shadow is dropped for the run:
+   re-blurring and re-shadowing a full-screen scaling layer on every
+   frame was the rest of the dropped frames. Everything returns the
+   moment the run ends, so the settled look is unchanged. */
+@media (max-width:819px){
+  #app.anim #stage,#app.dragging #stage{box-shadow:none !important;}
+  #app.anim .composer,#app.anim .circle-btn,#app.anim .head-pill,#app.anim #replyBar,#app.anim #cmdBox,#app.anim .lp-pending,
+  #app.dragging .composer,#app.dragging .circle-btn,#app.dragging .head-pill,#app.dragging #replyBar,#app.dragging #cmdBox,#app.dragging .lp-pending{backdrop-filter:none !important; -webkit-backdrop-filter:none !important;}
+}
 #scrim{position:absolute; inset:0; background:transparent; opacity:0; pointer-events:none; z-index:3;}
 @media (min-width:820px){
-  #sidebar{transform:translateX(0);}
+  #sidebar{transform:translateX(0); visibility:visible !important;}
   #stage{transform:translateX(var(--sidebar-w)); width:calc(100% - var(--sidebar-w) - 8px); margin:8px 8px 8px 0; height:calc(100% - 16px); border-radius:30px; background:var(--peek-desk); border:1px solid var(--border); box-shadow:-12px 0 40px rgba(0,0,0,.55);}
   #app.sb-closed #sidebar{transform:translateX(-102%);}
   #app.sb-closed #stage{transform:translateX(0); width:100%; margin:0; height:100%; border-radius:0; background:var(--bg); border:none; box-shadow:none;}
@@ -172,6 +193,9 @@ header.chat-head{position:relative; z-index:6; display:flex; align-items:center;
 .reply-quote{max-width:90%; background:var(--rowbg); border:1px solid var(--border); color:var(--muted); border-radius:12px; padding:6px 10px; font-size:12.5px; line-height:1.35; margin-bottom:5px; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;}
 .msg.ai .reply-quote{align-self:flex-start;}
 .msg.ai .body b{font-weight:650;}
+.limit-cta{max-width:340px;}
+.limit-cta .btn-primary{margin-top:10px;}
+.limit-cta .btn-ghost{margin-top:8px;}
 .msg-actions{display:flex; gap:2px; margin-top:5px;}
 .msg-actions button{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:var(--muted);}
 .msg-actions button:active{background:var(--hover); color:var(--text);}
@@ -347,6 +371,36 @@ html.kb-open .cv-composer{bottom:6px;}
 .send-btn{width:40px; height:40px; border-radius:50%; background:var(--accent); color:var(--accent-ink); display:grid; place-items:center; flex:none;}
 .send-btn:disabled{background:var(--surface2); color:var(--muted);}
 .send-btn:active{filter:brightness(1.12);}
+/* ---------- API box — the composer when no API is working ----------
+   The top header pill is gone. When no API is working (nothing set
+   up, a send failed, or the limit was reached) the type box itself
+   is replaced by this liquid-glass API box in the same place: a
+   search button (select an added API or add a new one), the status
+   line, and a circular Test/Retry button exactly where Send sits.
+   The moment any model answers, the normal type box flows back.
+   Both swaps are one Apple-style flow: fade + rise + unblur, and a
+   slow sheen drifts across the glass while the box is up. */
+#apiBox{display:none; align-items:center; gap:8px; background:var(--glass); backdrop-filter:blur(24px) saturate(1.5); -webkit-backdrop-filter:blur(24px) saturate(1.5); border:1px solid var(--border2); border-radius:28px; padding:6px; margin-bottom:calc(12px + env(safe-area-inset-bottom)); box-shadow:0 10px 34px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.09); position:relative; overflow:hidden;}
+#composerZone.api-mode .composer{display:none;}
+#composerZone.api-mode #apiBox{display:flex; animation:apiSwapIn .5s var(--ease);}
+#composerZone:not(.api-mode) .composer{animation:apiSwapIn .45s var(--ease);}
+@keyframes apiSwapIn{from{opacity:0; transform:translateY(10px) scale(.965); filter:blur(6px);}to{opacity:1; transform:translateY(0) scale(1); filter:blur(0);}}
+#apiBox::after{content:''; position:absolute; inset:0; background:linear-gradient(115deg, transparent 32%, rgba(255,255,255,.10) 48%, transparent 64%); transform:translateX(-130%); animation:apiSheen 3.8s ease-in-out infinite; pointer-events:none;}
+@keyframes apiSheen{0%,55%{transform:translateX(-130%);}92%,100%{transform:translateX(130%);}}
+.apibox-search{width:40px; height:40px; border-radius:50%; background:var(--rowbg); display:grid; place-items:center; flex:none; color:var(--text); position:relative; z-index:1;}
+.apibox-search:active{background:var(--hover);}
+.apibox-main{flex:1; min-width:0; text-align:left; display:flex; flex-direction:column; gap:1px; padding:4px 2px; position:relative; z-index:1; color:var(--text);}
+.apibox-title{font-size:15.5px; font-weight:650; line-height:1.25; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.apibox-sub{font-size:12.5px; color:var(--muted); line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.apibox-retry{width:40px; height:40px; border-radius:50%; background:var(--accent); color:var(--accent-ink); display:grid; place-items:center; flex:none; position:relative; z-index:1; box-shadow:0 4px 14px rgba(0,0,0,.25);}
+.apibox-retry:active{filter:brightness(1.12);}
+.apibox-retry.testing svg{animation:apiSpin .9s linear infinite;}
+@keyframes apiSpin{to{transform:rotate(360deg);}}
+@media (prefers-reduced-motion:reduce){
+  #composerZone.api-mode #apiBox,#composerZone:not(.api-mode) .composer{animation:none;}
+  #apiBox::after{animation:none; display:none;}
+  .apibox-retry.testing svg{animation-duration:1.8s;}
+}
 #targetLine{display:none; font-size:11.5px; color:var(--muted); padding:0 8px 4px;}
 #targetLine.show{display:block;} #targetLine b{color:var(--accent); font-weight:650;}
 
@@ -478,6 +532,10 @@ html.kb-open .cv-composer{bottom:6px;}
 .set-search{display:flex; align-items:center; gap:8px; background:var(--glass); backdrop-filter:blur(16px); border:1px solid var(--border); border-radius:999px; padding:11px 15px; color:var(--muted); position:sticky; bottom:10px; margin-top:2px;}
 .set-search input{flex:1; background:none; border:none; outline:none; color:var(--text); font-size:15px; min-width:0;}
 .set-note{color:var(--muted); font-size:13.5px; line-height:1.5; margin:2px 4px 14px;}
+.fk-get,.fk-use{display:inline-flex; align-items:center; padding:9px 15px; border-radius:999px; font-size:14px; font-weight:600; text-decoration:none; cursor:pointer;}
+.fk-get{background:var(--accent); color:var(--accent-ink);}
+.fk-use{background:var(--rowbg); color:var(--text); border:1px solid var(--border2);}
+.fk-get:active,.fk-use:active{filter:brightness(1.12);}
 input[type="range"]{width:100%; accent-color:var(--accent);}
 .seg{display:flex; background:var(--input); border-radius:12px; padding:3px; gap:3px;}
 .seg button{flex:1; padding:9px 4px; border-radius:9px; font-size:14px; font-weight:600; color:var(--muted);}
@@ -1002,5 +1060,41 @@ button.ca-ava{border:0; padding:0; cursor:pointer; background:transparent;}
   border:none !important;
 }
 .avedit-previewback{animation:none !important;}
+
+/* ================= Mobile smoothness — FINAL pass =================
+   Phones were dropping frames for three compounding reasons, all
+   fixed here without changing the look:
+   1) Backdrop blur is the most expensive paint on a phone GPU, and
+      this app stacks it everywhere — two full-screen 20px blurs over
+      the scrolling messages, plus the composer, pills and menus.
+      On phone widths every blur radius is cut roughly in half; the
+      glass tints already carry most of the look, so it reads the
+      same while the compositor stops re-blurring huge areas.
+   2) The send button's glow animated box-shadow forever, forcing a
+      repaint every frame even when nothing on screen was moving.
+      On phones the glow becomes a steady shadow — same presence,
+      zero per-frame cost.
+   3) Every message was laid out and painted even when far
+      off-screen, so long chats scrolled through hundreds of live
+      nodes. content-visibility lets the browser skip off-screen
+      messages entirely; `auto` intrinsic size remembers each
+      message's real height after its first paint, so the scroll
+      position and scrollbar stay honest. */
+.msg{content-visibility:auto; contain-intrinsic-size:auto 132px;}
+.chat-row{content-visibility:auto; contain-intrinsic-size:auto 52px;}
+@media (max-width:819px){
+  .topblur,.bottomblur{backdrop-filter:blur(10px) saturate(1.2); -webkit-backdrop-filter:blur(10px) saturate(1.2);}
+  .composer,.circle-btn,.model-pill,.head-pill,.set-search,.av-seg{backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);}
+  #cmdBox,.lp-pending,#replyBar,#toast,.lib-cell{backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);}
+  .menu-pop,.cv-menu,.lib-menu{backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);}
+  .msg-menu{backdrop-filter:blur(16px) saturate(1.4); -webkit-backdrop-filter:blur(16px) saturate(1.4);}
+  .cv-composer,#cvFab,#splitBar{backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);}
+  .send-btn:not(:disabled){animation:none; box-shadow:0 0 14px color-mix(in srgb, var(--accent) 32%, transparent);}
+  #stage{box-shadow:-10px 0 28px rgba(0,0,0,.30);}
+}
+@media (prefers-reduced-motion:reduce){
+  .send-btn:not(:disabled){animation:none !important;}
+  .ca-ava .av-svg,.chat-agent-head .av-svg{animation:none !important;}
+}
 
 .hidden{display:none !important;}

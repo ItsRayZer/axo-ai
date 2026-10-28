@@ -54,6 +54,13 @@ function msgHTML(m, chatId){
   var att=msgAttHTML(m);
   if(m.role==='user'){ return '<div class="msg user" data-msg-id="'+m.id+'" data-chat-id="'+cid+'" tabindex="0" role="button" aria-label="Your message — open message menu">'+quote+att+(m.text?'<div class="bubble-user">'+esc(m.text)+'</div>':'')+(m.reaction?'<span class="msg-reaction" aria-label="AI reaction">'+esc(m.reaction)+'</span>':'')+(m.liked?'<span class="msg-like" aria-label="You liked this message">'+LIKE_HEART+'</span>':'')+'</div>'; }
   var h='<div class="msg ai" data-msg-id="'+m.id+'" data-chat-id="'+cid+'" tabindex="0" role="button" aria-label="Assistant message — open message menu">'+quote+att+'<div class="body">'+esc(m.text)+'</div>';
+  if(m.limitCta){
+    /* Shared-limit message actions: "Use my own API key" opens
+       Settings → APIs & Providers (the API key box); "Get a free
+       API key" opens the Free API keys document, whose rows open
+       each provider's own site. */
+    h+='<div class="limit-cta"><button type="button" class="btn-primary" data-act="usemykey" data-id="'+m.id+'">Use my own API key</button><button type="button" class="btn-ghost" data-act="getfreekey" data-id="'+m.id+'">Get a free API key</button></div>';
+  }
   if(m.canvas){
     var cvDone=m.canvas.status==='done';
     h+='<div class="canvas-building">Building the application...</div>';
@@ -145,20 +152,48 @@ function renderMain(){
   }
 }
 function hashStr(s){ var h=0; for(var i=0;i<s.length;i++){ h=(h*31 + s.charCodeAt(i))|0; } return h; }
+/* Per-message hash cache: renderMain re-signs the whole chat on
+   every render, and hashing every character of every message each
+   time was steady main-thread work on long chats — a real source
+   of phone lag. A message's text only changes by replacement, so
+   the hash is computed once per distinct text (streaming updates
+   change the text, miss the cache, and re-hash just that one). */
+var msgHashCache=(typeof WeakMap!=='undefined')? new WeakMap() : null;
+function msgTextHash(m){
+  var t=m.text||'';
+  if(msgHashCache){
+    var hit=msgHashCache.get(m);
+    if(hit && hit.t===t) return hit.h;
+    var h=hashStr(t);
+    try{ msgHashCache.set(m,{t:t,h:h}); }catch(e){}
+    return h;
+  }
+  return hashStr(t);
+}
 function msgSig(c){
   var s=c.id+'#'+c.messages.length;
   for(var i=0;i<c.messages.length;i++){
     var m=c.messages[i];
-    s+='|'+m.id+':'+(m.text? m.text.length+':'+hashStr(m.text) : '0')+':'+(m.reaction||'')+(m.liked?'L':'')+(m.canvas? m.canvas.status : '')+(m.code? m.code.body.length : '')+(m.avatarProposal? (m.avatarProposal.resolved||'o') : '');
+    s+='|'+m.id+':'+(m.text? m.text.length+':'+msgTextHash(m) : '0')+':'+(m.reaction||'')+(m.liked?'L':'')+(m.canvas? m.canvas.status : '')+(m.code? m.code.body.length : '')+(m.avatarProposal? (m.avatarProposal.resolved||'o') : '');
   }
   return s;
 }
 var lastMsgSig='';
 var headSwapInDir=0;
+var lastHeadHTML=null;
 function renderAgentHead(){
   var bar=$('#agentHeadBar'); if(!bar) return;
   var show = state.view==='chat' && !state.splitId && state.avatarSize!=='hidden' && !apiIncomplete();
-  bar.innerHTML = show? chatAgentHeadHTML() : '';
+  /* Fast path: renderAll reaches here on almost every interaction,
+     and rebuilding the head's innerHTML each time tore down and
+     restarted the avatar SVG and its animations for nothing — a
+     visible hitch on phones. Identical head HTML is left in the
+     DOM untouched; only a real change (agent, size, emotion,
+     visibility) re-renders. A pending swipe-in clears the cache
+     so its animation still gets a fresh element to move. */
+  if(headSwapInDir) lastHeadHTML=null;
+  var nextHTML = show? chatAgentHeadHTML() : '';
+  if(nextHTML!==lastHeadHTML){ bar.innerHTML = nextHTML; lastHeadHTML=nextHTML; }
   bar.style.display = show? 'flex' : 'none';
   /* Agent switch animation — ONLY after a left / right swipe on the
      top agent (switchTopAgent is the one place that sets
@@ -308,36 +343,28 @@ function renderSidebar(){
   });
   list.innerHTML=html || '<div class="sb-empty">No matching chats</div>';
   if(sbScrollEl) sbScrollEl.scrollTop=keepTop;
+  /* New list content while closed: warm the layout in idle time so
+     the next open is already painted (see sbWarm). */
+  if(!sbOpen() && typeof sbWarm==='function') sbWarm();
 }
 var app=$('#app'), sidebar=$('#sidebar'), stage=$('#stage'), scrim=$('#scrim');
 function sbWidth(){ return Math.min(312, window.innerWidth-66); }
 function sbOpen(){ return app.classList.contains('sb-open'); }
-/* =============== API pill — alert only, never permanent ===============
-   The pill at the top of the chat shows ONLY when the API needs
-   attention: no key set, the provider is not working (a message just
-   failed), or the quota / rate limit was reached. The moment a key
-   has been added the pill is removed — adding (or changing) a key
-   never brings it back; it only returns if a send actually fails.
-   While a key is set, the pill is hidden, the header stays clean,
-   and the centred agent avatar (below) is shown instead. Changing
-   the model/key lives in the + sheet Model section and in Settings →
-   APIs & Providers; both call setApiHealth / updateApiPill. */
-function apiIncomplete(){ return !apiEntries().length; }
+/* =============== API state — shown in the composer, never the top ===============
+   There is no header pill any more. API state lives in the composer
+   itself: while a model is working (or a setup is added and not yet
+   disproven) the normal type box shows; the moment no API is
+   working — nothing set up, a send failed on every API, or the
+   limit was reached — the type box is replaced by the API box
+   (search / select / add + circular Test/Retry where Send sits),
+   and it flows back to the type box the moment a model answers.
+   setApiHealth / updateApiPill drive the swap; the same health also
+   feeds the agent head and Settings → APIs & Providers. */
+function apiIncomplete(){ return !apiEntries().length && !state.relayOn; }
 function apiWorking(){ return apiEntries().length>0 && state.apiHealth==='ok'; }
 function updateApiPill(){
-  var pill=$('#modelPill'); if(!pill) return;
-  var txt=$('#modelPillText');
-  var h=state.apiHealth||'unset';
-  var show = apiIncomplete() || h==='error' || h==='quota';
-  pill.hidden=!show;
-  pill.classList.toggle('warn', h==='error'||h==='quota');
-  pill.classList.toggle('on', !!state.apiKey && h==='ok');
-  if(txt){
-    if(h==='quota') txt.textContent='API quota reached';
-    else if(h==='error') txt.textContent='API not working';
-    else txt.textContent='+ API / Model';
-  }
-  if(show) pill.removeAttribute('tabindex'); else pill.setAttribute('tabindex','-1');
+  /* Kept name (callers everywhere): now drives the composer swap. */
+  updateComposerMode();
 }
 function setApiHealth(h, detail){ state.apiHealth=h; state.apiDetail=detail||''; updateApiPill(); /* Keep the chat in sync the moment the setup changes (key saved / removed / reply health): re-render so the agent head appears or clears right away instead of waiting for the next unrelated render. */ if(typeof renderMain==='function' && state.view==='chat'){ try{ renderMain(); }catch(e){} } }
 function apiFailureKind(status, payload){
@@ -374,10 +401,167 @@ var API_PROVIDERS={
   xai:{name:'xAI', type:'openai', base:'https://api.x.ai/v1', defModel:'grok-4'},
   deepseek:{name:'DeepSeek', type:'openai', base:'https://api.deepseek.com/v1', defModel:'deepseek-chat'},
   nvidia:{name:'NVIDIA', type:'openai', base:'https://integrate.api.nvidia.com/v1', defModel:'meta/llama-3.3-70b-instruct'},
-  mistral:{name:'Mistral', type:'openai', base:'https://api.mistral.ai/v1', defModel:'mistral-large-latest'},
-  together:{name:'Together', type:'openai', base:'https://api.together.xyz/v1', defModel:'meta-llama/Llama-3.3-70B-Instruct-Turbo'}
+  mistral:{name:'Mistral', type:'openai', base:'https://api.mistral.ai/v1', defModel:'mistral-large-latest', agents:true},
+  together:{name:'Together', type:'openai', base:'https://api.together.xyz/v1', defModel:'meta-llama/Llama-3.3-70B-Instruct-Turbo'},
+  huggingface:{name:'Hugging Face', type:'openai', base:'https://router.huggingface.co/v1', defModel:'meta-llama/Llama-3.3-70B-Instruct'},
+  cohere:{name:'Cohere', type:'openai', base:'https://api.cohere.com/compatibility/v1', defModel:'command-r-plus-08-2024'},
+  github:{name:'GitHub Models', type:'openai', base:'https://models.github.ai/inference', defModel:'openai/gpt-4.1-mini'},
+  kimi:{name:'Kimi (Moonshot AI)', type:'openai', base:'https://api.moonshot.ai/v1', defModel:'moonshot-v1-8k'}
 };
-function apiEntries(){ return (state.apiKeys||[]).filter(function(e){ return !!(e && e.key); }); }
+/* =============== Free API key sites ===============
+   Every provider above that gives a key away free (free tier,
+   free models, or a free trial key), with the site where the
+   user gets their OWN key and the exact Vercel variable name
+   for sharing it through the app relay. No key is baked into
+   the app — each user pastes their own key, or the site owner
+   puts keys in the server variables and turns the relay on. */
+var FREE_APIS=[
+  {provider:'groq', site:'Groq', url:'https://console.groq.com/keys', env:'GROQ_API_KEY', note:'Free tier · very fast', how:'Sign up → API Keys → Create API Key. Free tier, no card.'},
+  {provider:'openrouter', site:'OpenRouter', url:'https://openrouter.ai/keys', env:'OPENROUTER_API_KEY', note:'Free :free models', how:'Sign up → Keys → Create Key. Pick models ending in :free for $0 use.'},
+  {provider:'gemini', site:'Google AI Studio', url:'https://aistudio.google.com/apikey', env:'GEMINI_API_KEY', note:'Free Gemini key', how:'Get API key → Create API key → pick the auto project (or Create new project in the same popup). No billing setup.'},
+  {provider:'huggingface', site:'Hugging Face', url:'https://huggingface.co/settings/tokens', env:'HUGGINGFACE_API_KEY', envAlt:'HF_TOKEN', note:'Free token · open models', how:'Settings → Access Tokens → Create new token (Read is enough). The same value is also called HF_TOKEN.'},
+  {provider:'deepseek', site:'DeepSeek', url:'https://platform.deepseek.com/api_keys', env:'DEEPSEEK_API_KEY', note:'Very cheap · trials vary', how:'Sign up → API Keys → Create new key. Mostly paid, but very cheap; occasional free trials.'},
+  {provider:'openai', site:'OpenAI', url:'https://platform.openai.com/api-keys', env:'OPENAI_API_KEY', envAlt:'CHATGPT_API_KEY', note:'Trial credits · then paid', how:'Sign up → API keys → Create new secret key. In the server relay, CHATGPT_API_KEY is accepted as this same OpenAI key — no rename needed.'},
+  {provider:'mistral', site:'Mistral', url:'https://console.mistral.ai/api-keys', env:'MISTRAL_API_KEY', envAlt:'MISTRAL2_API_KEY', note:'Free tier · Agents too', how:'Console → API Keys → Create key. A second Mistral key can live in MISTRAL2_API_KEY — the relay uses it automatically when the first hits its limit. Agents: Console → Agents → create one, its id starts with ag_.'},
+  {provider:'kimi', site:'Kimi (Moonshot AI)', url:'https://platform.moonshot.ai/console/api-keys', env:'KIMI_API_KEY', note:'Moonshot · trial credit', how:'Moonshot platform → API Keys → create a key. That key is KIMI_API_KEY on the server — it works as-is, nothing to rename.'},
+  {provider:'together', site:'Together AI', url:'https://api.together.ai/settings/api-keys', env:'TOGETHER_API_KEY', note:'Trial credits', how:'Sign up → Settings → API Keys → create a key. New accounts get trial credit.'},
+  {provider:'cohere', site:'Cohere', url:'https://dashboard.cohere.com/api-keys', env:'COHERE_API_KEY', note:'Free trial key', how:'Dashboard → API Keys → create a trial key. Trial keys are rate-limited.'},
+  {provider:'github', site:'GitHub Models', url:'https://github.com/marketplace/models', env:'GITHUB_TOKEN', note:'Free with GitHub', how:'Use a GitHub personal access token (github.com/settings/tokens) — Models access is included for free, rate-limited.'},
+  {provider:'nvidia', site:'NVIDIA NIM', url:'https://build.nvidia.com/explore/discover', env:'NVIDIA_API_KEY', note:'Free NIM key', how:'build.nvidia.com → sign in → API Keys → Generate. Keys start with nvapi-. Accept the model terms on the model page if a model returns 403.'},
+  {provider:'anthropic', site:'Anthropic (Claude)', url:'https://console.anthropic.com/settings/keys', env:'ANTHROPIC_API_KEY', note:'Trial credits · then paid', how:'Console → Settings → API Keys → Create Key. Keys start with sk-ant-.'},
+  {provider:'xai', site:'xAI (Grok)', url:'https://console.x.ai', env:'XAI_API_KEY', note:'Trial credits · then paid', how:'Console → API Keys → create a key. Keys start with xai-.'}
+];
+function freeApiFor(pid){ for(var i=0;i<FREE_APIS.length;i++) if(FREE_APIS[i].provider===pid) return FREE_APIS[i]; return null; }
+function freeApiEnvText(f){ return f.env+(f.envAlt? ' (also accepted: '+f.envAlt+')' : ''); }
+/* =============== Key vault — keys sealed, never readable ===============
+   How a pasted key is handled, end to end:
+   - The paste fields are password inputs; both Add handlers clear
+     through a re-render, and the key is never written into any
+     page HTML — lists, pills and the Usage page show only the
+     provider, the model and the last 4 digits (apiKeyMask).
+   - In memory, the plaintext lives only in vaultPlain and on the
+     live entry objects, where sending reads it.
+   - At rest it is AES-GCM ciphertext (entry.sealed): a fresh
+     random IV per key, sealed under a 256-bit device key that is
+     generated once, marked non-extractable, and kept in
+     IndexedDB — it cannot be read back out as bytes. Reading the
+     app's stored data, its downloaded backup, or this file shows
+     no key anywhere: the backup export is masked too, and memory
+     saving strips any vault key on sight.
+   - On open, vaultBoot() unseals each saved key back into memory
+     and re-seals any older entry that was stored before the
+     vault existed, then forces a save so storage is rewritten
+     sealed. If this browser has no WebCrypto/IndexedDB at all,
+     the vault reports itself broken and the app falls back to
+     keeping keys in memory for the session rather than writing
+     them anywhere readable. */
+function vaultB64(bytes){ var s=''; for(var i=0;i<bytes.length;i++) s+=String.fromCharCode(bytes[i]); return btoa(s); }
+function vaultUnB64(b64){ var s=atob(String(b64||'')); var out=new Uint8Array(s.length); for(var i=0;i<s.length;i++) out[i]=s.charCodeAt(i); return out; }
+function vaultStrToBytes(str){ if(window.TextEncoder) return new TextEncoder().encode(str); var u=unescape(encodeURIComponent(str)); var out=new Uint8Array(u.length); for(var i=0;i<u.length;i++) out[i]=u.charCodeAt(i); return out; }
+function vaultBytesToStr(bytes){ if(window.TextDecoder) return new TextDecoder().decode(bytes); var s=''; for(var i=0;i<bytes.length;i++) s+=String.fromCharCode(bytes[i]); return decodeURIComponent(escape(s)); }
+var vaultMKPromise=null;
+function vaultMK(){
+  if(vaultMKPromise) return vaultMKPromise;
+  vaultMKPromise=new Promise(function(resolve){
+    try{
+      if(!window.crypto || !crypto.subtle || !window.indexedDB){ vaultBroken=true; resolve(null); return; }
+      var req=indexedDB.open('axo-vault',1);
+      req.onupgradeneeded=function(){ try{ req.result.createObjectStore('mk'); }catch(e){} };
+      req.onerror=function(){ vaultBroken=true; resolve(null); };
+      req.onsuccess=function(){
+        var db=req.result;
+        try{
+          var get=db.transaction('mk','readonly').objectStore('mk').get('mk');
+          get.onsuccess=function(){
+            if(get.result){ resolve(get.result); return; }
+            crypto.subtle.generateKey({name:'AES-GCM', length:256}, false, ['encrypt','decrypt']).then(function(mk){
+              try{
+                var tx2=db.transaction('mk','readwrite');
+                tx2.objectStore('mk').put(mk,'mk');
+                tx2.oncomplete=function(){ resolve(mk); };
+                tx2.onerror=function(){ resolve(mk); };
+              }catch(e){ resolve(mk); }
+            }).catch(function(){ vaultBroken=true; resolve(null); });
+          };
+          get.onerror=function(){ vaultBroken=true; resolve(null); };
+        }catch(e){ vaultBroken=true; resolve(null); }
+      };
+    }catch(e){ vaultBroken=true; resolve(null); }
+  });
+  return vaultMKPromise;
+}
+function vaultSeal(entry){
+  if(!entry || !entry.key) return Promise.resolve(entry);
+  vaultPlain[entry.id]=entry.key;
+  entry.last4=String(entry.key).slice(-4);
+  return vaultMK().then(function(mk){
+    if(!mk){ entry.sessionOnly=true; return entry; }
+    var iv=crypto.getRandomValues(new Uint8Array(12));
+    return crypto.subtle.encrypt({name:'AES-GCM', iv:iv}, mk, vaultStrToBytes(entry.key)).then(function(ct){
+      entry.sealed={iv:vaultB64(iv), ct:vaultB64(new Uint8Array(ct))};
+      entry.sessionOnly=false;
+      return entry;
+    }).catch(function(){ entry.sessionOnly=true; return entry; });
+  });
+}
+function vaultOpen(entry){
+  if(!entry || !entry.sealed) return Promise.resolve(null);
+  return vaultMK().then(function(mk){
+    if(!mk) return null;
+    try{
+      return crypto.subtle.decrypt({name:'AES-GCM', iv:vaultUnB64(entry.sealed.iv)}, mk, vaultUnB64(entry.sealed.ct)).then(function(buf){
+        var k=vaultBytesToStr(new Uint8Array(buf));
+        vaultPlain[entry.id]=k; entry.key=k; entry.last4=k.slice(-4);
+        return k;
+      }).catch(function(){ if(entry) entry.detail='Saved key could not be unlocked on this device — remove it and add the key again'; return null; });
+    }catch(e){ return null; }
+  });
+}
+function vaultForget(id){ try{ delete vaultPlain[id]; }catch(e){ vaultPlain[id]=undefined; } }
+function vaultBoot(){
+  var list=state.apiKeys||[], jobs=[];
+  list.forEach(function(e){
+    if(!e || !e.id) return;
+    if(!e.last4 && e.key) e.last4=String(e.key).slice(-4);
+    if(e.sealed && !e.key) jobs.push(vaultOpen(e));
+    else if(e.key && !e.sealed) jobs.push(vaultSeal(e));
+    else if(e.key) vaultPlain[e.id]=e.key;
+  });
+  /* Safety net: if the vault somehow never settles, saves must
+     not stay blocked — fall back to the pre-vault behaviour for
+     this device rather than losing the state slice. */
+  setTimeout(function(){
+    if(!vaultReady){ vaultBroken=true; vaultReady=true; try{ localDirty=true; saveLocal(); }catch(e){} }
+  }, 4000);
+  if(!jobs.length){ vaultReady=true; return Promise.resolve(); }
+  return Promise.all(jobs).then(function(){
+    vaultReady=true;
+    try{ syncLegacyApi(); }catch(e){}
+    try{ state.apiHealth=(apiEntries().length || state.relayOn)? 'changed' : 'unset'; }catch(e){}
+    try{ localDirty=true; saveLocal(); }catch(e){}
+    try{ if(state.view==='chat') renderAll(); }catch(e){}
+  });
+}
+/* What persistence and backups are allowed to see of an entry:
+   metadata + last 4 + sealed ciphertext. The plaintext `key`
+   field is included ONLY when the vault is broken on a browser
+   with no WebCrypto/IndexedDB (the pre-vault fallback), never in
+   normal operation. */
+function apiKeysForStore(){
+  return (state.apiKeys||[]).map(function(e){
+    var o={id:e.id, provider:e.provider||'', base:e.base||'', model:e.model||'', models:e.models||[], status:e.status||'', detail:e.detail||'', last4:e.last4||String(e.key||'').slice(-4)};
+    if(e.sealed) o.sealed=e.sealed;
+    else if(vaultBroken && e.key) o.key=e.key;
+    return o;
+  });
+}
+function apiEntries(){
+  return (state.apiKeys||[]).filter(function(e){
+    if(!e) return false;
+    if(!e.key && e.id && vaultPlain[e.id]) e.key=vaultPlain[e.id];
+    return !!(e.key || e.sealed);
+  });
+}
 function apiEntryById(id){ var l=apiEntries(); for(var i=0;i<l.length;i++) if(l[i].id===id) return l[i]; return null; }
 function activeApiEntry(){ return apiEntryById(state.activeApiId) || apiEntries()[0] || null; }
 function syncLegacyApi(){
@@ -389,8 +573,8 @@ function syncLegacyApi(){
   else if(e.provider){ state.provider='custom'; state.providerBase=e.base||''; }
   else { state.provider=''; state.providerBase=''; }
 }
-function apiEntryLabel(e){ if(!e) return 'Not set'; if(!e.provider) return e.status==='unknown'? 'Unrecognised key' : 'Detecting…'; var p=API_PROVIDERS[e.provider]; return (p? p.name : 'API')+(e.model? ' · '+e.model : ''); }
-function apiKeyMask(e){ return '•••• •••• '+String((e&&e.key)||'').slice(-4); }
+function apiEntryLabel(e){ if(!e) return 'Not set'; if(!e.provider) return e.status==='unknown'? 'Unrecognised key' : 'Detecting…'; var p=API_PROVIDERS[e.provider]; if(e.provider==='mistral' && mistralAgentOn()) return 'Mistral Agent · ag_…'+state.mistralAgentId.slice(-4); if(e.provider==='mistral' && e.relay) return 'Mistral (relay — Agent auto if server set)'; return (p? p.name : 'API')+(e.model? ' · '+e.model : ''); }
+function apiKeyMask(e){ return '•••• •••• '+(((e&&e.last4)||'')||String((e&&e.key)||'').slice(-4)); }
 function apiDetectProviderLocal(key){
   /* LOCAL detection only: the key's own prefix / format names its
      provider, with no network call. A key is only ever sent to
@@ -405,9 +589,12 @@ function apiDetectProviderLocal(key){
   if(/^gsk_/.test(k)) return 'groq';
   if(/^xai-/.test(k)) return 'xai';
   if(/^nvapi-/.test(k)) return 'nvidia';
+  if(/^hf_/.test(k)) return 'huggingface';
+  if(/^(ghp_|gho_|github_pat_)/.test(k)) return 'github';
   if(/^sk-[0-9a-f]{32}$/i.test(k)) return 'deepseek';
   if(/^sk-/.test(k)) return 'openai';
   if(/^[0-9a-f]{64}$/i.test(k)) return 'together';
+  if(/^[A-Za-z0-9_-]{40}$/.test(k)) return 'cohere';
   if(/^[A-Za-z0-9_-]{32}$/.test(k)) return 'mistral';
   return '';
 }
@@ -474,15 +661,42 @@ function apiDetectEntry(key){
     return {provider:pid, model:API_PROVIDERS[pid].defModel, models:[], verified:false};
   });
 }
+/* =============== Mistral Agent — auto on when an ID is present ===============
+   A Mistral agent id (ag_…) is NOT a key: it names a saved agent
+   in the user's Mistral console (its own instructions + tools).
+   The moment an ag_… id is present — pasted in the Agent ID
+   field, pasted into the key box by mistake, or supplied by the
+   server relay's MISTRAL_AGENT_ID variable — Mistral chats
+   automatically go through the Agents endpoint
+   (/v1/agents/completions) instead of plain chat completions.
+   No switch to find, nothing else to set: id present = agent
+   on, id cleared = normal Mistral chat again. */
+function isMistralAgentId(v){ return /^ag_[A-Za-z0-9_-]{6,}$/.test(String(v||'').trim()); }
+function mistralAgentOn(){ return isMistralAgentId(state.mistralAgentId); }
+function setMistralAgentId(v){
+  var id=String(v||'').trim();
+  state.mistralAgentId=isMistralAgentId(id)? id : '';
+  if(typeof saveLocalSoon==='function') saveLocalSoon();
+  return mistralAgentOn();
+}
+function mistralAgentLabel(){ return mistralAgentOn()? 'Mistral Agent · ag_…'+state.mistralAgentId.slice(-4) : 'Mistral Agent — off'; }
 function addApiKey(rawKey){
   var key=String(rawKey||'').trim();
   if(!key) return Promise.resolve(null);
+  /* Auto-add: an ag_… value pasted here is a Mistral Agent ID,
+     not a key — save it as the agent id (Agent API turns on
+     automatically) and never store or send it as a key. */
+  if(isMistralAgentId(key)){ setMistralAgentId(key); return Promise.resolve({agent:true, provider:'mistral'}); }
   var existing=null;
   apiEntries().forEach(function(e){ if(e.key===key) existing=e; });
   if(existing){ state.activeApiId=existing.id; syncLegacyApi(); setApiHealth('changed'); return Promise.resolve(existing); }
-  var entry={id:'api'+Date.now().toString(36)+Math.floor(Math.random()*99999), key:key, provider:'', base:'', model:'', models:[], status:'checking', detail:''};
+  var entry={id:'api'+Date.now().toString(36)+Math.floor(Math.random()*99999), key:key, provider:'', base:'', model:'', models:[], status:'checking', detail:'', last4:key.slice(-4)};
   if(!state.apiKeys) state.apiKeys=[];
   state.apiKeys.push(entry); state.activeApiId=entry.id; syncLegacyApi();
+  /* Into the vault straight away: the plaintext stays in memory
+     for this session, and what gets saved is the sealed form. */
+  vaultPlain[entry.id]=key;
+  var sealed=vaultSeal(entry);
   return apiDetectEntry(key).then(function(det){
     entry.provider=det.provider;
     entry.base=det.provider? API_PROVIDERS[det.provider].base : '';
@@ -492,10 +706,11 @@ function addApiKey(rawKey){
     entry.detail=det.unknown? 'Provider not recognised from the key format — not sent anywhere' : (det.verified? 'Detected automatically' : 'Added — checked on the next message');
     if(state.activeApiId===entry.id) syncLegacyApi();
     setApiHealth('changed');
-    return entry;
+    return sealed.then(function(){ if(typeof saveLocalSoon==='function') saveLocalSoon(); return entry; });
   });
 }
 function removeApiEntry(id){
+  vaultForget(id);
   state.apiKeys=(state.apiKeys||[]).filter(function(e){ return e.id!==id; });
   if(state.activeApiId===id) state.activeApiId=(apiEntries()[0]||{}).id||'';
   syncLegacyApi();
@@ -504,17 +719,55 @@ function removeApiEntry(id){
 function setActiveApi(id){ if(apiEntryById(id)){ state.activeApiId=id; syncLegacyApi(); setApiHealth('changed'); } }
 /* Attempt order for a send: the active key first, then every other
    added key in the order it was added. */
+/* =============== App relay — server-side keys, none in the app ===============
+   When the relay is on, sending first tries this site's own
+   server relay: POST /api/relay with {provider, model, messages}
+   and NO key at all. The relay is a Vercel function (its full
+   source is in Settings → APIs & Providers → App relay) that
+   reads the keys from the server's environment variables (one
+   per free provider, plus MISTRAL_AGENT_ID for the Mistral
+   Agent), adds the right one server-side, and forwards the call. The
+   keys never reach the browser: not in this file, not in any
+   response the app can see. Where no relay is deployed (like a
+   plain static preview) the call simply fails and sending falls
+   through to the user's own added keys, exactly as before. */
+/* Relay reachability, learned live: a relay call that fails at the
+   network level, or answers 404/405, or answers a non-JSON body,
+   proves there is no relay function on THIS origin (a plain static
+   preview serves the page but has no /api/relay — the deployed site
+   does). Once proven, relayGone skips every remaining relay entry
+   instantly instead of burning one slow doomed request per provider,
+   and the failure is reported as what it is. A real relay always
+   answers JSON (its own errors included), and a provider that is
+   merely not configured answers 501 — that is NOT relay-gone, the
+   next relay provider is still tried. */
+var relayGone=false;
+function relayEntries(){
+  if(!state.relayOn) return [];
+  /* Every free-key provider has a relay route: the server adds
+     whichever server variable is set for it (see the relay code
+     in Settings → App relay). A provider whose variable is not
+     set answers 501 and sending simply moves on. Mistral goes
+     through the relay's Agent API automatically when the server
+     sets MISTRAL_AGENT_ID (or this device has an agent id). */
+  return FREE_APIS.map(function(f){
+    return {id:'relay-'+f.provider, relay:true, provider:f.provider, base:'', model:API_PROVIDERS[f.provider].defModel, models:[], key:'', status:'relay', detail:'App relay'};
+  });
+}
+function providerRouteOn(){ return !!state.apiKey || !!state.relayOn; }
 function apiAttemptOrder(){
-  /* Only keys whose provider was recognised are ever attempted —
-     an unrecognised key is never sent anywhere. */
+  /* Relay first when it is on (it is the app-provided route),
+     then the user's own keys: active key first, then every other
+     added key. Only keys whose provider was recognised are ever
+     attempted — an unrecognised key is never sent anywhere. */
   var l=apiEntries().filter(function(e){ return !!e.provider; });
-  var a=activeApiEntry(), out=[];
+  var a=activeApiEntry(), out=relayEntries();
   if(a && a.provider) out.push(a);
   l.forEach(function(e){ if(!a || e.id!==a.id) out.push(e); });
   return out;
 }
 function apiStatusText(){
-  var l=apiEntries(); if(!l.length) return 'Not set';
+  var l=apiEntries(); if(!l.length) return state.relayOn? 'App relay on — free providers via server keys' : 'Not set';
   if(state.apiHealth==='quota') return 'One API hit its limit — the next is tried automatically';
   if(state.apiHealth==='error') return 'Not working — the next API is tried automatically';
   if(state.apiHealth==='changed') return l.length+(l.length===1?' API':' APIs')+' added — send a message to check';
@@ -618,8 +871,14 @@ function pingApi(entry, modelOverride){
     body={contents:[{role:'user',parts:[{text:'Reply with OK'}]}], generationConfig:{temperature:0, maxOutputTokens:8}};
   } else if(p.type==='anthropic'){
     url=p.base+'/messages';
-    headers={'Content-Type':'application/json','x-api-key':entry.key,'anthropic-version':'2023-06-01'};
+    headers={'Content-Type':'application/json','x-api-key':entry.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'};
     body={model:useModel, max_tokens:8, messages:[{role:'user', content:'Reply with OK'}]};
+  } else if(entry.provider==='mistral' && mistralAgentOn()){
+    /* Mistral Agent ping: the Agents endpoint, with the saved
+       agent id — the agent answers, not a bare model. */
+    url=p.base+'/agents/completions';
+    headers={'Content-Type':'application/json','Authorization':'Bearer '+entry.key};
+    body={agent_id:state.mistralAgentId, messages:[{role:'user', content:'Reply with OK'}]};
   } else {
     url=(entry.base||p.base).replace(/\/$/,'')+'/chat/completions';
     headers={'Content-Type':'application/json','Authorization':'Bearer '+entry.key};
@@ -646,7 +905,7 @@ function testApiEntry(entry){
     if(ok){
       state.activeApiId=entry.id; syncLegacyApi(); setApiHealth('ok');
     }
-    return {ok:ok, msg:msg};
+    return {ok:ok, msg:msg, kind:kind||(ok?'':'error')};
   }
   return apiFetchModels(entry).then(function(models){
     if(models && models.length) entry.models=models;
@@ -664,33 +923,207 @@ function testApiEntry(entry){
     return tryPing(0);
   });
 }
-/* Sidebar motion: one short iOS-style run (340ms, --sb-ease), started
-   on the NEXT frame so the browser paints the starting position and
-   no first frame is dropped; timers are kept and cleared so a fast
-   re-tap never fights a stale timeout. Transforms are translate3d
-   only — the compositor moves both layers without repainting. */
-var SB_MS=340, sbAnimT=null, sbHideT=null;
-function setSidebar(open, animate){
+/* =============== Composer API box — select / add / retest ===============
+   When no API is working the type box is replaced by the API box
+   (markup: #apiBox inside #composerZone). Its search button (and
+   its status line) opens the API picker sheet: the shared relay,
+   every added API (Use / Test), every free-key site (Get key), and
+   the paste-a-key box — all searchable. Its circular button, where
+   Send normally sits, retests everything in attempt order and
+   stops at the first API that answers; that answer flips the
+   health to ok and the normal type box flows back by itself. */
+var apiTesting=false;
+function composerApiMode(){ return apiIncomplete() || state.apiHealth==='error' || state.apiHealth==='quota'; }
+function updateComposerMode(){
+  var z=$('#composerZone'); if(!z) return;
+  z.classList.toggle('api-mode', composerApiMode());
+  if(composerApiMode()) updateApiBoxLabel();
+}
+function updateApiBoxLabel(){
+  var t=$('#apiBoxTitle'), s=$('#apiBoxSub'); if(!t||!s) return;
+  if(apiTesting){ t.textContent='Testing APIs…'; s.textContent='Trying the shared APIs and every added key'; return; }
+  if(relayGone && !apiEntries().length && state.relayOn){ t.textContent='Shared APIs not reachable here'; s.textContent='The relay runs on the deployed site — add your own key'; return; }
+  if(state.apiHealth==='quota'){ t.textContent='API limit reached'; s.textContent='Lots of people are using the shared APIs — use your own key'; return; }
+  if(apiEntries().length){ t.textContent='No API working'; s.textContent=apiEntryLabel(activeApiEntry())+' — tap to select or add'; return; }
+  t.textContent='No API set up'; s.textContent='Select or add an API to start chatting';
+}
+function pingRelay(entry){
+  var p=API_PROVIDERS[entry.provider];
+  var body={provider:entry.provider, model:(p? p.defModel : entry.model), messages:[{role:'user', content:'Reply with OK'}], temperature:0, max_tokens:8};
+  if(entry.provider==='mistral' && mistralAgentOn()) body.agent_id=state.mistralAgentId;
+  return fetch('/api/relay',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})
+    .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j, status:r.status}; }).catch(function(){ return {ok:r.ok, j:null, status:r.status}; }); })
+    .then(function(res){
+      if(res.j==null || res.status===404 || res.status===405){ relayGone=true; return {ok:false, gone:true, msg:'Relay not reachable from this preview'}; }
+      var out=null, j=res.j;
+      if(j){
+        if(j.choices && j.choices[0] && j.choices[0].message) out=j.choices[0].message.content;
+        else if(j.candidates && j.candidates[0] && j.candidates[0].content) out=j.candidates[0].content.parts.map(function(pt){ return pt.text||''; }).join('');
+        else if(Array.isArray(j.content)) out=j.content.map(function(b){ return b && b.type==='text'? (b.text||'') : ''; }).join('');
+      }
+      if(res.ok && out) return {ok:true};
+      var kind=apiFailureKind(res.status, res.j);
+      return {ok:false, kind:kind, msg: res.status===501? 'Not set on the server (HTTP 501)' : 'HTTP '+res.status};
+    })
+    .catch(function(){ relayGone=true; return {ok:false, gone:true, msg:'Relay not reachable from this preview'}; });
+}
+function testAllApis(){
+  if(apiTesting) return;
+  var entries=apiAttemptOrder();
+  if(!entries.length){ toast('Add an API key first'); openApiPicker(); return; }
+  apiTesting=true;
+  var rb=$('#apiBoxRetry'); if(rb) rb.classList.add('testing');
+  updateApiBoxLabel();
+  var sawQuota=false;
+  function finish(ok, msg){
+    apiTesting=false; if(rb) rb.classList.remove('testing');
+    if(ok){ setApiHealth('ok'); toast(msg||'API working'); }
+    else { setApiHealth(sawQuota? 'quota':'error', 'Test failed'); toast(msg||'No API answered — select or add one'); }
+    updateComposerMode();
+  }
+  function step(i){
+    if(i>=entries.length){
+      finish(false, (relayGone && !apiEntries().length)? 'Shared APIs are not reachable from this preview' : (sawQuota? 'Every API is at its limit right now' : 'No API answered — select or add one'));
+      return;
+    }
+    var e=entries[i];
+    if(e.relay){
+      if(relayGone){ step(i+1); return; }
+      pingRelay(e).then(function(r){
+        if(r.ok) finish(true, (API_PROVIDERS[e.provider]? API_PROVIDERS[e.provider].name : 'Shared API')+' is working — via the shared relay');
+        else { if(r.kind==='quota') sawQuota=true; step(i+1); }
+      });
+      return;
+    }
+    testApiEntry(e).then(function(r){
+      if(r.ok) finish(true, apiEntryLabel(e)+' is working');
+      else { if(r.kind==='quota') sawQuota=true; step(i+1); }
+    });
+  }
+  step(0);
+}
+function apiPickRowsHTML(q){
+  q=String(q||'').toLowerCase();
+  function match(n){ return !q || String(n).toLowerCase().indexOf(q)>=0; }
+  var out='';
+  if(match('Shared free APIs app relay')){
+    var rSub= relayGone? 'Not reachable from this preview' : (state.relayOn? 'On — free for everyone via the server' : 'Off on this device');
+    out+='<div class="api-item"><div class="api-row"><span class="api-dot '+(relayGone?'error':(state.relayOn?'ok':''))+'"></span><span class="api-meta"><span class="api-name">Shared free APIs (app relay)</span><span class="api-sub">'+esc(rSub)+'</span></span><button class="api-use" data-pickrelay="1">'+(state.relayOn?'Test':'Turn on')+'</button></div></div>';
+  }
+  var a=activeApiEntry();
+  apiEntries().forEach(function(e){
+    var name=apiEntryLabel(e);
+    if(!match(name)) return;
+    var st=e.status==='ok'?'Ready':e.status==='quota'?'Quota reached':e.status==='error'?'Not working':e.status==='checking'?'Detecting…':e.status==='unknown'?'Provider not recognised':e.status==='unverified'?'Added — checks on test':'Added';
+    out+='<div class="api-item"><div class="api-row'+(a&&e.id===a.id?' active':'')+'"><span class="api-dot '+esc(e.status||'')+'"></span><span class="api-meta"><span class="api-name">'+esc(name)+'</span><span class="api-sub">'+esc(apiKeyMask(e))+' · '+esc(st)+'</span></span><button class="api-use" data-picktest="'+e.id+'">Test</button>'+(a&&e.id===a.id? '<span class="api-active-tag">Active</span>' : '<button class="api-use" data-pickuse="'+e.id+'">Use</button>')+'</div></div>';
+  });
+  var provRows='';
+  FREE_APIS.forEach(function(f){
+    if(!match(f.site+' '+f.note)) return;
+    provRows+='<div class="api-item"><div class="api-row"><span class="api-meta"><span class="api-name">'+esc(f.site)+'</span><span class="api-sub">'+esc(f.note)+'</span></span><a class="api-use" href="'+escA(f.url)+'" target="_blank" rel="noopener" style="text-decoration:none">Get key</a></div></div>';
+  });
+  if(provRows) out+='<p class="set-note" style="margin:14px 0 8px">Get a free key — open a site, create your key, then paste it below.</p>'+provRows;
+  if(!out) out='<p class="set-note">No APIs match your search.</p>';
+  return out;
+}
+function openApiPicker(){
+  openSheet('<h3>APIs</h3><p class="sub">Select a working API, test one, or add a new key — the provider is detected automatically.</p>'
+    +'<div class="set-search" style="position:static;margin:2px 0 12px"><span id="apiPickSearchIc"></span><input id="apiPickSearch" type="text" placeholder="Search APIs" autocomplete="off" aria-label="Search APIs"></div>'
+    +'<div id="apiPickList">'+apiPickRowsHTML('')+'</div>'
+    +'<div class="field" style="margin-top:14px"><label>API key</label><input id="apiPickKey" type="password" placeholder="Paste any API key" autocomplete="off"></div>'
+    +'<button class="btn-primary" id="apiPickAdd">Add API</button>'
+    +'<button class="btn-ghost" id="apiPickFree">Free API keys — the full guide</button>');
+  $('#apiPickSearchIc').innerHTML=I.search;
+  var list=$('#apiPickList');
+  function wireRows(){
+    list.querySelectorAll('[data-pickuse]').forEach(function(b){ b.addEventListener('click',function(){ setActiveApi(b.getAttribute('data-pickuse')); closeSheet(); testAllApis(); }); });
+    list.querySelectorAll('[data-picktest]').forEach(function(b){ b.addEventListener('click',function(){
+      var e=apiEntryById(b.getAttribute('data-picktest')); closeSheet(); if(!e) return;
+      toast('Testing '+apiEntryLabel(e)+'…');
+      testApiEntry(e).then(function(r){
+        if(r.ok){ setApiHealth('ok'); toast(apiEntryLabel(e)+' is working'); }
+        else { setApiHealth(r.kind==='quota'?'quota':'error'); toast('Not working — '+r.msg); }
+        updateComposerMode();
+      });
+    }); });
+    list.querySelectorAll('[data-pickrelay]').forEach(function(b){ b.addEventListener('click',function(){
+      if(!state.relayOn){ state.relayOn=true; state.relayAutoV3=true; saveLocalSoon(); }
+      closeSheet(); testAllApis();
+    }); });
+  }
+  wireRows();
+  $('#apiPickSearch').addEventListener('input',function(){ list.innerHTML=apiPickRowsHTML(this.value); wireRows(); });
+  $('#apiPickAdd').addEventListener('click',function(){
+    var k=$('#apiPickKey').value.trim();
+    if(!k){ toast('Paste a key first'); return; }
+    var btn=this; btn.disabled=true; btn.textContent='Detecting…';
+    addApiKey(k).then(function(e){
+      closeSheet();
+      if(e && e.agent){ toast('Mistral Agent ID saved — Agent API on'); return; }
+      toast('Added — testing…'); testAllApis();
+    });
+  });
+  $('#apiPickFree').addEventListener('click',function(){ closeSheet(); openSettings('freekeys'); });
+}
+/* Sidebar motion — buttery, one continuous flow, fully optimized:
+   - Fully closed, the sidebar is display:none (its controls are out
+     of the tree, as before). The old hitch was paying its first
+     layout + paint DURING the opening slide — that is now avoided
+     two ways: an idle warm-up pass (sbWarm) pre-lays-out and
+     pre-paints the menu off-screen whenever it is closed and idle,
+     and the run itself starts two frames out (double rAF) so the
+     one display:flex layout lands in a pre-animation frame, never
+     mid-slide.
+   - Both layers then move together as pure compositor transforms
+     (translate3d + the original scale / 34px curve), sidebar and
+     stage in the same frame, same easing, no gaps.
+   - A drag release passes the distance it still has to travel, so
+     the settle run is only as long as the remaining flow — never a
+     fresh full-length run that crawls the last few pixels.
+   - Timers are kept and cleared so a fast re-tap never fights a
+     stale timeout, and an interrupted run retargets from wherever
+     the layers currently are. */
+var sbWarmT=null;
+function sbWarm(){
+  if(window.innerWidth>=820 || sbOpen()) return;
+  if(sbWarmT) return;
+  sbWarmT=setTimeout(function(){
+    sbWarmT=null;
+    if(sbOpen() || window.innerWidth>=820) return;
+    /* One hidden pass: lay the menu out and paint it once (it sits
+       translated off-screen, under the stage, visibility hidden),
+       then back to display:none. Style/layout caches and the
+       raster stay warm, so the next real open is a pure move. */
+    sidebar.style.visibility='hidden'; sidebar.style.display='flex';
+    void sidebar.offsetWidth;
+    requestAnimationFrame(function(){ requestAnimationFrame(function(){
+      if(!sbOpen()){ sidebar.style.display='none'; sidebar.style.visibility=''; }
+    }); });
+  }, 900);
+}
+var SB_MS=360, sbAnimT=null, sbHideT=null;
+function setSidebar(open, animate, dur){
   if(sbAnimT){ clearTimeout(sbAnimT); sbAnimT=null; }
   if(sbHideT){ clearTimeout(sbHideT); sbHideT=null; }
   app.classList.remove('dragging');
+  var ms=(typeof dur==='number' && dur>0)? Math.round(dur) : SB_MS;
   if(window.innerWidth>=820){
     app.classList.toggle('anim', !!animate);
-    sidebar.style.transform=''; stage.style.transform=''; stage.style.borderRadius=''; scrim.style.opacity=''; sidebar.style.display='';
+    sidebar.style.transform=''; stage.style.transform=''; stage.style.borderRadius=''; scrim.style.opacity=''; sidebar.style.display=''; sidebar.style.visibility='';
     app.classList.toggle('sb-closed', !open); app.classList.toggle('sb-open', open);
-    if(animate) sbAnimT=setTimeout(function(){ app.classList.remove('anim'); }, SB_MS+30);
+    if(animate){ app.style.setProperty('--sb-ms', ms+'ms'); sbAnimT=setTimeout(function(){ app.classList.remove('anim'); app.style.removeProperty('--sb-ms'); }, ms+30); }
     return;
   }
   app.classList.toggle('sb-open', open); app.classList.toggle('sb-closed', !open);
   if(open){
-    sidebar.style.display='flex';
+    sidebar.style.display='flex'; sidebar.style.visibility='';
     /* MENU COLOUR FIX: the sidebar head avatar is first rendered at
-       boot while the sidebar is display:none (mobile), and some
-       phone WebViews never repaint that SVG's gradient fills when
-       the menu opens — the avatar shape then shows as a dark /
-       wrong-coloured blob in the menu. Re-render the head avatar
-       fresh on every open, while the sidebar is visible, so its
-       shape always paints in its real colours. */
+       boot while the sidebar is hidden (mobile), and some phone
+       WebViews never repaint that SVG's gradient fills when the menu
+       opens — the avatar shape then shows as a dark / wrong-coloured
+       blob in the menu. Re-render the head avatar fresh on every
+       open, while the sidebar is visible, so its shape always paints
+       in its real colours. (Cached: a no-op unless the agent changed.) */
     try{ if(typeof syncSidebarAgent==='function') syncSidebarAgent(); }catch(e){}
   }
   var sbT=open?'translate3d(0,0,0)':'translate3d(-102%,0,0)';
@@ -701,26 +1134,29 @@ function setSidebar(open, animate){
   var stR=open?'34px 0 0 34px':'0px';
   scrim.style.opacity='0';
   if(!animate){
-    app.classList.remove('anim');
+    app.classList.remove('anim'); app.style.removeProperty('--sb-ms');
     sidebar.style.transform=sbT; stage.style.transform=stT; stage.style.borderRadius=stR;
     scrim.style.left=open?sbWidth()+'px':'0px';
     if(!open) sidebar.style.display='none';
     return;
   }
+  app.style.setProperty('--sb-ms', ms+'ms');
   app.classList.add('anim');
-  /* Force the start frame, then apply the target on the next frame —
-     this is what stops the opening frame from being skipped. */
+  /* Commit the start frame, then apply the target two frames out —
+     the transition is registered before the target lands, so the
+     whole run is one unbroken flow from the current position. */
   void stage.offsetWidth;
-  requestAnimationFrame(function(){
+  requestAnimationFrame(function(){ requestAnimationFrame(function(){
     sidebar.style.transform=sbT; stage.style.transform=stT; stage.style.borderRadius=stR;
     scrim.style.left=open?sbWidth()+'px':'0px';
-  });
+  }); });
   if(!open){
-    /* Stage slides back over the sidebar first; only then is it removed,
-       so the close never looks like a disappearance. */
-    sbHideT=setTimeout(function(){ if(!sbOpen()) sidebar.style.display='none'; }, SB_MS+30);
+    /* Stage slides back over the sidebar first; only once it has
+       fully covered it is the sidebar hidden, so the close never
+       looks like a disappearance. */
+    sbHideT=setTimeout(function(){ if(!sbOpen()){ sidebar.style.display='none'; sbWarm(); } }, ms+30);
   }
-  sbAnimT=setTimeout(function(){ app.classList.remove('anim'); }, SB_MS+30);
+  sbAnimT=setTimeout(function(){ app.classList.remove('anim'); app.style.removeProperty('--sb-ms'); }, ms+30);
 }
 (function(){
   var startX=0, startY=0, dragging=false, wasOpen=false, W=0, dragLock=null;
@@ -749,7 +1185,7 @@ function setSidebar(open, animate){
     }
     startX=e.clientX; startY=e.clientY; dragging=true; dragLock=null;
     dragDx=0; dragVel=0; dragLastX=e.clientX; dragLastT=Date.now();
-    sidebar.style.display='flex';
+    sidebar.style.display='flex'; sidebar.style.visibility='';
     app.classList.add('dragging');
     sidebar.classList.add('noanim'); stage.classList.add('noanim');
   },{passive:true});
@@ -761,7 +1197,8 @@ function setSidebar(open, animate){
     sidebar.style.transform='translate3d('+pos+'px,0,0)';
     /* The curve grows with the drag: radius 0→34px, scale 1→.965. */
     stage.style.transform='translate3d('+(pos+W)+'px,0,0) scale('+(1-0.035*prog)+')';
-    stage.style.borderRadius=(34*prog)+'px 0 0 '+(34*prog)+'px';
+    var rr=Math.round(34*prog);
+    stage.style.borderRadius=rr+'px 0 0 '+rr+'px';
     scrim.style.opacity='0';
     scrim.style.left=(pos+W)+'px';
   }
@@ -801,7 +1238,15 @@ function setSidebar(open, animate){
     if(dragVel>0.45) open=true;
     else if(dragVel<-0.45) open=false;
     else open=wasOpen ? dx>-W*0.2 : dx>W*0.2;
-    setSidebar(open,true);
+    /* Continuous flow: the settle run covers ONLY the distance left
+       to travel, shortened further on a fast flick — the finger's
+       motion hands straight over to the animation with no restart
+       and no slow crawl across the last few pixels. */
+    var prog=W? (wasOpen? (W+dx)/W : dx/W) : 0; prog=Math.max(0, Math.min(1, prog));
+    var remain=open? (1-prog) : prog;
+    var dur=Math.max(130, Math.min(SB_MS, SB_MS*remain*1.1));
+    if(Math.abs(dragVel)>0.45) dur=Math.min(dur, 200);
+    setSidebar(open,true,dur);
   }
   document.addEventListener('pointerup',up,{passive:true});
   document.addEventListener('pointercancel',function(){ if(dragging){ dragging=false; if(dragRaf){ cancelAnimationFrame(dragRaf); dragRaf=0; } app.classList.remove('dragging'); sidebar.classList.remove('noanim'); stage.classList.remove('noanim'); setSidebar(wasOpen,true);} });
@@ -882,10 +1327,11 @@ function detailSheet(title, bullets){
   $('#sheetCloseBtn').addEventListener('click',closeSheet);
 }
 var DETAILS={
-  apis:{t:'API Keys & Automatic Failover', b:['Just paste a key — the provider, base URL and model are detected and selected automatically. Nothing else to fill in.','Every added key shows its models: the list under the key is the real model list from that key\u2019s own provider, with the auto-selected model picked. Tap it to choose a different model for that key, or tap Show models to load the list.','Add as many keys as you like, from any supported provider: OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, xAI, DeepSeek, NVIDIA, Mistral, Together, or another OpenAI-compatible key.','Sending tries your active key first with its chosen model, then every other model on that key, then the next key and every model on it, and so on through all keys and all their models. An error is only shown when every model on every key has failed.','Keys are held for this session only in this preview and are never shown in full after saving.','Without a key, replies come from the built-in local reply engine.']},
+  apis:{t:'API Keys & Automatic Failover', b:['Just paste a key — the provider, base URL and model are detected and selected automatically. Nothing else to fill in.','Every added key shows its models: the list under the key is the real model list from that key\u2019s own provider, with the auto-selected model picked. Tap it to choose a different model for that key, or tap Show models to load the list.','Add as many keys as you like, from any supported provider: OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, xAI, DeepSeek, NVIDIA, Mistral, Together, Hugging Face, Cohere, GitHub Models, or another OpenAI-compatible key. Free keys: the Free API keys page (in APIs & Providers) lists every site that gives a key away free, with its Vercel variable name.','Mistral Agent: paste an agent id (ag_…, created in Mistral console → Agents) into the Mistral Agent ID field — or paste it into the key box, it is recognised automatically — and Mistral chats use the Agents API by themselves, no switch. The agent brings its own saved instructions and tools (web search, code interpreter, document library). Clear the id to go back to normal Mistral chat. Through the app relay, the server\u2019s MISTRAL_AGENT_ID does the same for everyone automatically.','Sending tries your active key first with its chosen model, then every other model on that key, then the next key and every model on it, and so on through all keys and all their models. An error is only shown when every model on every key has failed.','Keys and chats are saved locally on this device and restored automatically on every open. Keys are stored encrypted (AES-GCM, sealed under a device key that never leaves this device), are never shown after saving — only the provider, model and last 4 digits appear — and are never included in backups.','App relay: the app can also call every free provider through this site\u2019s own server relay (POST /api/relay), sending no key at all. The relay reads the keys from the Vercel project\u2019s environment variables — each provider under the name it was added with, standard name as fallback (GROQ_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY, HUGGINGFACE_API_KEY/HF_TOKEN, DEEPSEEK_API_KEY, CHATGPT_API_KEY/OPENAI_API_KEY, MISTRAL_API_KEY/MISTRAL2_API_KEY, KIMI_API_KEY/MOONSHOT_API_KEY, TOGETHER_API_KEY, COHERE_API_KEY, GITHUB_TOKEN, NVIDIA_API_KEY, ANTHROPIC_API_KEY, XAI_API_KEY — plus MISTRAL_AGENT_ID for the Mistral Agent), server-side only, so those keys are never in the app or sent to the browser. Turn it on and read the full setup under APIs & Providers \u2192 App relay.','Without a key or the relay, replies come from the built-in local reply engine.']},
+  freekeys:{t:'Free API Keys', b:['Every site listed gives you a key for free — a free tier, free models, or a free trial key. On each provider card, “Get a free API key” opens that provider\u2019s own site; “Use my API key” opens the key box in APIs & Providers, where the pasted key is detected automatically.','The shared APIs are free for everyone through the app relay. When lots of people are using them and the shared limit is over, the chat says so and offers the same two actions: use your own API key, or get a free one from this list.','Variable names (for the app relay, in Vercel → Settings → Environment Variables, Production, then redeploy) — the relay accepts each name exactly as added, with the standard name as fallback, no renaming needed: Groq GROQ_API_KEY · OpenRouter OPENROUTER_API_KEY · Gemini GEMINI_API_KEY (fallback GOOGLE_API_KEY) · Hugging Face HUGGINGFACE_API_KEY / HF_TOKEN · DeepSeek DEEPSEEK_API_KEY · OpenAI CHATGPT_API_KEY / OPENAI_API_KEY · Mistral MISTRAL_API_KEY / MISTRAL2_API_KEY (the second key is used automatically when the first hits its limit) · Kimi KIMI_API_KEY (fallback MOONSHOT_API_KEY) · Together TOGETHER_API_KEY · Cohere COHERE_API_KEY · GitHub Models GITHUB_TOKEN · NVIDIA NIM NVIDIA_API_KEY · Anthropic ANTHROPIC_API_KEY · xAI XAI_API_KEY · Mistral Agent MISTRAL_AGENT_ID.','Gemini: in AI Studio, Create API key shows a project picker — pick the auto-created project or tap Create new project in that same popup; no Google Cloud setup or billing is needed.','Free means limited: rate limits, only some models free, or trial credits. It is never unlimited for everyone, and a shared relay can be used by anyone who finds it — watch usage and spending on the provider side.','No key is ever baked into this app, plain or encrypted: anyone running the app could extract it. Keys live either sealed on your own device, or only on the server behind the relay.']},
   usage:{t:'Usage & Limits', b:['Pick the API you have at the top — the page then shows that API only.','This session counts are counted by the app itself, request by request: requests sent, replies received, failures, quota hits, and the token totals your provider returns with each reply. They reset when the page reloads, like the rest of this preview.','OpenRouter limit: tap Check live usage & limit and the app asks OpenRouter directly, with your saved key, how much this key has used, its limit and what remains. Nothing is estimated.','Google Gemini and custom endpoints do not offer a per-key limit check the app can call, so their limits live on the provider side — the page says so instead of inventing a number, and still shows your status and session counts.']},
   connectors:{t:'Connectors & Online Search', b:['Online Search is the only connector in this build.','When it is on, /search looks up live sources on Wikipedia and the open web.']},
-  memory:{t:'Local Memory System', b:['Everything you say in any chat is saved to memory automatically, locally in this app, with no limit on entries.','Before every reply, the saved memory is searched by the incoming message\u2019s keywords, and the reply is built using the related memories found.','Memory never holds keys, secrets, emails or phone numbers — those are stripped out before a note is saved.','Turn it off any time and saving and searching both stop. The + sheet Memory switch and this switch always match.']},
+  memory:{t:'Local Memory System', b:['Everything you say in any chat is saved to memory automatically, locally in this app, always \u2014 in detail: the message with its date and time, the chat and the agent, plus a short summary of each reply, in a time-stamped log kept on this device. A rolling summary (how much, since when, main topics, stated preferences, latest entries) is rebuilt and saved locally too, and is read with the matching entries before every reply so answers stay personal.','Before every reply, the saved memory is searched by the incoming message\u2019s keywords, and the reply is built using the related memories found.','Memory never holds keys, secrets, emails or phone numbers — those are stripped out before a note is saved.','Turn it off any time and saving and searching both stop. The + sheet Memory switch and this switch always match.']},
   appearance:{t:'Appearance & Liquid Glass', b:['The phone preview at the top shows the agent avatar, its name label and your bubbles exactly as they will look in chat.','Chat theme is a row of colour circles — White is the default — and it recolours your bubbles and accents across the app.','Avatar size is Small, Medium, Large, Extra large or Hidden, and it sets the agent head size in chat.','Mode is System, Light or Dark; System follows your device setting.','Red appears only for delete and error states.']},
   agent:{t:'Agent', b:['The Agent page is the main agent\u2019s own page: avatar with the pencil menu (Change avatar / Edit name), name, live status, and tabs for Today, Approvals history, Reminders + Daily, and the profile with its VIBE and the SOUL / MEMORY cards.','Sub-agents live under it: the Sub-agents page lists every agent, and the New sub-agent page creates one with its own name, avatar, instructions and memory.','Any agent can be made the main agent at any time from its menu on the Sub-agents page.']},
   agents:{t:'Agents', b:['Settings \u2192 Agents opens the Agent page — the main agent\u2019s page with Today, Approvals, Reminders + Daily, and its profile.','Under it, the Sub-agents page holds the full agents list: create as many agents as you like and chat with any of them.','Each agent has its own name, avatar, custom instructions and custom memory.','Any agent can be made the main agent at any time from its menu.','History and memory are shared by all agents by default; turn on individual history or memory for one agent in its Edit page and only that agent keeps its own.','Animation speed for the Agents UI lives on the Sub-agents page — drag the slider slowly and the live preview changes as you drag.']},
@@ -963,6 +1409,8 @@ document.addEventListener('click',function(e){
       else if(act==='copyai') copyText(m.text);
       else if(act==='play' && m.code) openPreview(m.code.body);
       else if(act==='canvasopen' && m.code) openCanvasFull(m);
+      else if(act==='usemykey') openSettings('apis');
+      else if(act==='getfreekey') openSettings('freekeys');
       else if(act==='avconfirm' && m.avatarProposal && !m.avatarProposal.resolved) confirmAvatarProposal(mChat, m);
       else if(act==='avcancel' && m.avatarProposal && !m.avatarProposal.resolved){ m.avatarProposal.resolved='cancelled'; renderAll(); toast('Okay — the avatar was not changed'); }
     }
@@ -1102,7 +1550,7 @@ function handleMsgAction(a, chat, m){
   else if(a==='regen'){
     var idx=chat.messages.indexOf(m), prev='';
     for(var i=idx-1;i>=0;i--){ if(chat.messages[i].role==='user'){ prev=chat.messages[i].text; break; } }
-    if(state.apiKey){ var oldCode=m.code||null; chat.messages.splice(idx,1); renderAll(); callProvider(chat, null, oldCode? {contextCode:oldCode} : null); toast('Regenerating…'); return; }
+    if(providerRouteOn()){ var oldCode=m.code||null; chat.messages.splice(idx,1); renderAll(); callProvider(chat, null, oldCode? {contextCode:oldCode} : null); toast('Regenerating…'); return; }
     toast('Regenerating…');
     setTimeout(function(){
       if(m.code){ var r=codeReply(prev||'a small example'); m.text=r.text; m.code=r.code; }
@@ -1158,7 +1606,7 @@ function recordLike(chat, m){
   var clean=memorySanitize(msgFullText(m)).slice(0,220);
   if(!clean) return;
   for(var i=0;i<MEM.length;i++) if(MEM[i].msgId==='like:'+m.id) return;
-  MEM.push({id:'mem'+(++uid), msgId:'like:'+m.id, chatId:chat.id, chatTitle:chat.title, text:'Liked message — a preference signal; the user double-tapped this: '+clean, keys:memoryKeywords(clean), ts:Date.now()});
+  var _lst=memStamp(Date.now()); MEM.push({id:'mem'+(++uid), msgId:'like:'+m.id, chatId:chat.id, chatTitle:chat.title, agent:memAgentName(), agentId:memAgentId(), role:'user', text:'Liked message — a preference signal; the user double-tapped this: '+clean, keys:memoryKeywords(clean), ts:Date.now(), date:_lst.date, time:_lst.time, when:_lst.label});
 }
 function removeLike(chat, m){
   for(var i=MEM.length-1;i>=0;i--) if(MEM[i].msgId==='like:'+m.id) MEM.splice(i,1);
@@ -1328,6 +1776,42 @@ function scheduleReaction(chat, m){
    every note passes the sanitiser below before it is stored, and
    anything that looks like a credential value is removed, not kept. */
 var MEM=[];
+/* Detailed local memory log + summary (saved locally, always):
+   MEM_LOG is the chronological, time-stamped detail — every saved
+   message with its date, time, chat, agent and role, assistant
+   replies kept as short summaries — and MEM_SUMMARY is the rolling
+   personal summary rebuilt from MEM (span, main topics, stated
+   preferences, latest entries). Both live in the same local store
+   as MEM, are restored on every open, and the summary plus the
+   time-stamped hits are what the agent reads before replying, so
+   answers stay personal. Nothing here leaves the device. */
+var MEM_LOG=[], MEM_SUMMARY='';
+function memStamp(ts){
+  var d=new Date(ts||Date.now()); function p(n){ return (n<10?'0':'')+n; }
+  var date=d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+  var time=p(d.getHours())+':'+p(d.getMinutes());
+  return {date:date, time:time, label:date+' '+time};
+}
+function memAgentName(){ try{ var a=(typeof chatAgent==='function')? chatAgent() : null; return a? a.name : ''; }catch(e){ return ''; } }
+function memAgentId(){ try{ var a=(typeof chatAgent==='function')? chatAgent() : null; return a? a.id : ''; }catch(e){ return ''; } }
+function rebuildMemSummary(){
+  if(!MEM.length){ MEM_SUMMARY=''; return MEM_SUMMARY; }
+  var chatsSeen={}, agentsSeen={}, freq={}, prefs=[], i, e;
+  for(i=0;i<MEM.length;i++){ e=MEM[i]; if(e.chatTitle) chatsSeen[e.chatTitle]=1; if(e.agent) agentsSeen[e.agent]=1;
+    (e.keys||[]).forEach(function(k){ freq[k]=(freq[k]||0)+1; });
+    if(/^(likes|liked|favourite|favorite|lives|prefers|my name)/i.test(e.text) && prefs.length<6) prefs.push(e.text);
+  }
+  var topics=Object.keys(freq).sort(function(a,b){ return freq[b]-freq[a]; }).slice(0,8);
+  var sorted=MEM.slice().sort(function(a,b){ return (a.ts||0)-(b.ts||0); });
+  var first=sorted[0], last=sorted[sorted.length-1];
+  var recent=sorted.slice(-3).map(function(x){ return x.text; });
+  MEM_SUMMARY=MEM.length+' saved memories'
+    +(first&&last? ', from '+memStamp(first.ts).label+' to '+memStamp(last.ts).label : '')
+    +(topics.length? '. Main topics: '+topics.join(', ')+'.' : '.')
+    +(prefs.length? ' Stated preferences/facts: '+prefs.join(' ')+' ' : '')
+    +'Most recent: '+recent.join(' · ');
+  return MEM_SUMMARY;
+}
 /* Memory pool for the current conversation: the shared MEM for every
    agent by default, or the chat agent's own private memory when that
    agent has individual memory turned on in its Agent page. */
@@ -1335,6 +1819,11 @@ function memoryPool(){ var a=(typeof chatAgent==='function')? chatAgent() : null
 var MEM_STOP={'the':1,'and':1,'for':1,'you':1,'your':1,'this':1,'that':1,'with':1,'from':1,'are':1,'was':1,'what':1,'when':1,'how':1,'can':1,'will':1,'have':1,'has':1,'had':1,'not':1,'but':1,'all':1,'any':1,'its':1,'it':1,'in':1,'on':1,'of':1,'to':1,'a':1,'an':1,'is':1,'me':1,'my':1,'i':1};
 function memorySanitize(t){
   var s=String(t||'');
+  /* A saved API key never enters memory, even pasted mid-chat:
+     strip every vault key on sight before the pattern rules run. */
+  if(typeof vaultPlain!=='undefined' && vaultPlain){
+    for(var vid in vaultPlain){ var vk=vaultPlain[vid]; if(vk && s.indexOf(vk)>=0) s=s.split(vk).join('[secret removed]'); }
+  }
   s=s.replace(/[\w.+-]+@[\w-]+\.[\w.]+/g,'[email removed]');
   s=s.replace(/\+?\d(?:[\s-]?\d){8,}/g,'[number removed]');
   s=s.replace(/(api[_-]?key|secret|password|passwd|token|bearer)\s*[:=]?\s*\S+/gi,'$1 [secret removed]');
@@ -1349,8 +1838,22 @@ function memoryKeywords(t){
   return out;
 }
 function saveMemory(chat, m){
-  if(!m || m.role!=='user') return;
+  if(!m || (m.role!=='user' && m.role!=='ai' && m.role!=='assistant')) return;
   var clean=memorySanitize(m.text||'');
+  if(!clean) return;
+  var ts=(typeof m.ts==='number' && m.ts>0)? m.ts : Date.now();
+  var st=memStamp(ts), an=memAgentName(), aid=memAgentId();
+  /* Detailed log: BOTH sides, time-stamped, capped so the local
+     store stays bounded — assistant replies as short summaries. */
+  var lrole=(m.role==='user')? 'user' : 'assistant';
+  var dupLog=false;
+  for(var j=0;j<MEM_LOG.length;j++){ if(MEM_LOG[j].chatId===chat.id && MEM_LOG[j].msgId===m.id && MEM_LOG[j].role===lrole){ dupLog=true; break; } }
+  if(!dupLog){
+    MEM_LOG.push({msgId:m.id, chatId:chat.id, chatTitle:chat.title, agent:an, agentId:aid, role:lrole, text:(lrole==='assistant'? clean.slice(0,300) : clean.slice(0,600)), ts:ts, date:st.date, time:st.time, when:st.label});
+    if(MEM_LOG.length>500) MEM_LOG.splice(0, MEM_LOG.length-500);
+    if(typeof saveLocalSoon==='function') saveLocalSoon();
+  }
+  if(m.role!=='user') return;
   var extra=[];
   if(m.links) m.links.forEach(function(e){ extra.push(e.domain+' '+e.url); });
   if(m.attachments) m.attachments.forEach(function(a){ extra.push(typeof a==='string'?a:(a.name||'')); });
@@ -1358,7 +1861,8 @@ function saveMemory(chat, m){
   if(!full) return;
   var pool=memoryPool();
   for(var i=0;i<pool.length;i++){ if(pool[i].chatId===chat.id && pool[i].msgId===m.id) return; }
-  pool.push({id:'mem'+(++uid), msgId:m.id, chatId:chat.id, chatTitle:chat.title, text:full, keys:memoryKeywords(full), ts:Date.now()});
+  pool.push({id:'mem'+(++uid), msgId:m.id, chatId:chat.id, chatTitle:chat.title, agent:an, agentId:aid, role:'user', text:full, keys:memoryKeywords(full), ts:ts, date:st.date, time:st.time, when:st.label});
+  if(typeof saveLocalSoon==='function') saveLocalSoon();
 }
 function searchMemory(query){
   var qk=memoryKeywords(query), ql=String(query||'').toLowerCase();
@@ -1377,8 +1881,11 @@ function searchMemory(query){
   return scored.slice(0,5).map(function(s){ return s.e; });
 }
 function memoryContextText(hits){
-  if(!hits || !hits.length) return '';
-  return hits.map(function(e){ return '• ('+e.chatTitle+') '+e.text; }).join('\n');
+  var out=[];
+  var sum=MEM_SUMMARY || rebuildMemSummary();
+  if(sum) out.push('Saved memory summary (local, always kept): '+sum);
+  if(hits && hits.length) out.push(hits.map(function(e){ return '• ('+(e.when||memStamp(e.ts).label)+' · '+e.chatTitle+(e.agent? ' · '+e.agent : '')+') '+e.text; }).join('\n'));
+  return out.join('\n');
 }
 /* =============== User-added skills ===============
    get-more-perspectives, match-my-writing-style and focus-my-energy.
@@ -1895,6 +2402,7 @@ function pushAI(chat, reply){
     ty.remove();
     if(typeof reply==='string') chat.messages.push({id:mid(), role:'ai', text:reply});
     else { var nm={id:mid(), role:'ai', text:reply.text, code:reply.code}; if(reply.avatarProposal) nm.avatarProposal=reply.avatarProposal; chat.messages.push(nm); }
+    if(state.memory){ try{ saveMemory(chat, chat.messages[chat.messages.length-1]); }catch(e){} }
     renderAll();
   }, 600);
 }
@@ -2061,12 +2569,12 @@ function sendText(raw){
     var cmd=text.split(' ')[0].toLowerCase(), rest=text.slice(cmd.length).trim();
     if(cmd==='/help'){ chat.messages.push({id:mid(),role:'user',text:text}); renderAll(); pushAI(chat,'Commands:\n'+COMMANDS.map(function(c){return c.c+' — '+c.d;}).join('\n')); return; }
     if(cmd==='/skills'){ chat.messages.push({id:mid(),role:'user',text:text}); renderAll(); pushAI(chat,'Skill library ('+SKILLS.length+'):\n'+SKILLS.map(function(s){ return SKILL_DESCS[s]? s+' — '+SKILL_DESCS[s] : s; }).join('\n')); return; }
-    if(SKILL_COMMANDS[cmd]){ var snm=SKILL_COMMANDS[cmd]; if(state.skillsOn[snm]===false){ toast(snm+' is off — turn it on in Skills'); return; } chat.messages.push({id:mid(),role:'user',text:text}); renderAll(); if(state.apiKey && rest){ state.skillOnce=snm; callProvider(chat, memHits); return; } pushAI(chat, skillReply(snm, rest)); return; }
+    if(SKILL_COMMANDS[cmd]){ var snm=SKILL_COMMANDS[cmd]; if(state.skillsOn[snm]===false){ toast(snm+' is off — turn it on in Skills'); return; } chat.messages.push({id:mid(),role:'user',text:text}); renderAll(); if(providerRouteOn() && rest){ state.skillOnce=snm; callProvider(chat, memHits); return; } pushAI(chat, skillReply(snm, rest)); return; }
     if(cmd==='/skill'){ state.skillOnce=rest||'frontend-design'; toast('Skill set for next reply: '+state.skillOnce); return; }
     if(cmd==='/agent'){ openSettings('agentpage'); return; }
     if(cmd==='/chat'){ state.route='chat'; updateTargetLine(); toast('Next message: chat mode'); return; }
     if(cmd==='/code' && !rest){ state.route='code'; updateTargetLine(); toast('Next message: code mode'); return; }
-    if(cmd==='/code' && rest){ chat.messages.push({id:mid(),role:'user',text:text}); renderAll(); if(state.apiKey){ state.codeOnce=true; callProvider(chat, memHits); } else pushAI(chat, codeReply(rest)); return; }
+    if(cmd==='/code' && rest){ chat.messages.push({id:mid(),role:'user',text:text}); renderAll(); if(providerRouteOn()){ state.codeOnce=true; callProvider(chat, memHits); } else pushAI(chat, codeReply(rest)); return; }
     if(cmd==='/clear'){ chat.messages=[]; renderAll(); toast('Chat cleared'); return; }
     if(cmd==='/settings'){ openSettings('list'); return; }
     if(cmd==='/dashboard'){ openSettings('dashboard'); return; }
@@ -2097,7 +2605,7 @@ function sendText(raw){
   if(!(chatAgent() && chatAgent().onboarding)) agentAutoLearn(text);
   if(chat.title==='New chat') chat.title=text? text.slice(0,34) : (sentAtts.length? (sentAtts[0].name||'Shared file') : (sentLinks.length? sentLinks[0].domain : 'New chat'));
   renderAll();
-  if(state.route==='code'){ state.route=null; updateTargetLine(); if(state.apiKey){ state.codeOnce=true; callProvider(chat, memHits); } else pushAI(chat, codeReply(text||'a shared file page')); return; }
+  if(state.route==='code'){ state.route=null; updateTargetLine(); if(providerRouteOn()){ state.codeOnce=true; callProvider(chat, memHits); } else pushAI(chat, codeReply(text||'a shared file page')); return; }
   /* New-agent onboarding: while it runs, every reply is one of the
      setup answers — it fills the agent's name, memory, instructions
      and vibe, ahead of every other chat command and any provider. */
@@ -2121,11 +2629,11 @@ function sendText(raw){
   /* Canvas: "write code in canvas", or Canvas mode on in the +
      sheet, builds with the canvas card UI instead of a plain reply. */
   if(canvasWanted(text)){
-    if(state.apiKey){ var pendingCanvas=pushCanvasPending(chat, text); callProvider(chat, memHits, {codeMode:true, canvasMsg:pendingCanvas}); }
+    if(providerRouteOn()){ var pendingCanvas=pushCanvasPending(chat, text); callProvider(chat, memHits, {codeMode:true, canvasMsg:pendingCanvas}); }
     else pushCanvas(chat, text);
     return;
   }
-  if(state.apiKey){ callProvider(chat, memHits); return; }
+  if(providerRouteOn()){ callProvider(chat, memHits); return; }
   pushAI(chat, localReply(text || (sentLinks.length? 'Shared link: '+sentLinks[0].url : 'Shared: '+(sentAtts[0]? (sentAtts[0].name||'a file') : 'a file')), memHits));
 }
 function doSearch(chat, q){
@@ -2323,6 +2831,18 @@ function callProvider(chat, memHits, opts){
     var temperature=codeMode? Math.min(state.tempVal, 0.4) : state.tempVal;
     var p=API_PROVIDERS[entry.provider] || API_PROVIDERS.openai;
     var model=modelOverride || entry.model || p.defModel;
+    if(entry.relay){
+      /* App relay FIRST: same-origin call, no key in the request
+         at all — the server adds its env-var key (see relayEntries)
+         and converts formats server-side for Gemini / Anthropic.
+         For Mistral, this device's agent id travels if it has
+         one; if not, the relay uses its own MISTRAL_AGENT_ID
+         automatically, so everyone on the relay gets the agent
+         with nothing to set on their device. */
+      var rBody={provider:entry.provider, model:model, messages:requestMsgs, temperature:temperature, max_tokens:codeMode?8192:2048};
+      if(entry.provider==='mistral' && mistralAgentOn()) rBody.agent_id=state.mistralAgentId;
+      return {url:'/api/relay', headers:{'Content-Type':'application/json'}, body:rBody};
+    }
     if(p.type==='gemini'){
       var systems=[], convo=[];
       requestMsgs.forEach(function(m){
@@ -2342,7 +2862,7 @@ function callProvider(chat, memHits, opts){
       });
       var aBody={model:model, messages:aConvo, temperature:temperature, max_tokens:codeMode?8192:2048};
       if(aSystems.length) aBody.system=aSystems.join('\n\n---\n\n');
-      return {url:p.base+'/messages', headers:{'Content-Type':'application/json','x-api-key':entry.key,'anthropic-version':'2023-06-01'}, body:aBody};
+      return {url:p.base+'/messages', headers:{'Content-Type':'application/json','x-api-key':entry.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'}, body:aBody};
     }
     var reqHeaders={'Content-Type':'application/json', Authorization:'Bearer '+entry.key};
     var outMsgs=requestMsgs, maxTok=codeMode?8192:2048;
@@ -2355,6 +2875,12 @@ function callProvider(chat, memHits, opts){
       var gSys=[], gRest=[];
       requestMsgs.forEach(function(m){ if(m.role==='system') gSys.push(m.content); else gRest.push(m); });
       if(gSys.length) outMsgs=[{role:'system', content:gSys.join('\n\n---\n\n')}].concat(gRest);
+    }
+    if(entry.provider==='mistral' && mistralAgentOn()){
+      /* Mistral Agent API — auto-selected because an agent id
+         is present: the saved agent (its instructions + tools)
+         answers via /agents/completions, no model is sent. */
+      return {url:p.base+'/agents/completions', headers:reqHeaders, body:{agent_id:state.mistralAgentId, messages:outMsgs}};
     }
     return {url:(entry.base||p.base).replace(/\/$/,'')+'/chat/completions', headers:reqHeaders, body:{model:model, messages:outMsgs, temperature:temperature, max_tokens:maxTok}};
   }
@@ -2379,7 +2905,7 @@ function callProvider(chat, memHits, opts){
     ty.remove(); discardCanvasPending(chat, canvasMsg);
     if(apiEntries().length){
       setApiHealth('error','Unrecognised key');
-      chat.messages.push({id:mid(), role:'ai', text:'The added key\u2019s provider could not be detected from its format, so it was not sent anywhere. Add a key from a supported provider — OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, xAI, DeepSeek, NVIDIA, Mistral or Together.'});
+      chat.messages.push({id:mid(), role:'ai', text:'The added key\u2019s provider could not be detected from its format, so it was not sent anywhere. Add a key from a supported provider — OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, xAI, DeepSeek, NVIDIA, Mistral, Together, Hugging Face, Cohere or GitHub Models. Free keys: Settings → APIs & Providers → Free API keys.'});
     } else {
       setApiHealth('unset');
       chat.messages.push({id:mid(), role:'ai', text:'Add an API key first — paste one in APIs & Providers and everything else is selected automatically.'});
@@ -2436,17 +2962,44 @@ function callProvider(chat, memHits, opts){
   var lastFailKind='error';
   var lastFailDetail='';
   var totalTried=0;
+  var relayQuotaHit=false;
+  var relayGoneHit=false;
+  var keyTried=false;
   function attemptApi(idx){
+    var cur=attemptEntries[idx];
+    if(cur && cur.relay && relayGone){ attemptApi(idx+1); return; }
     if(idx>=attemptEntries.length){
       /* Every model on every added API was tried automatically
          and none worked — only now does an error show. */
       ty.remove(); discardCanvasPending(chat, canvasMsg);
       setApiHealth(lastFailKind, 'All APIs and models failed');
-      chat.messages.push({id:mid(), role:'ai', text:'None of your APIs worked — every model on every added key was tried automatically ('+totalTried+' attempt'+(totalTried===1?'':'s')+' across '+attemptEntries.length+' API'+(attemptEntries.length===1?'':'s')+'), in every way, before showing this error. Add another key, or check the keys in Settings → APIs & Providers.'});
+      if(relayQuotaHit){
+        /* The shared free APIs (app relay) ran out: their limit
+           is over because lots of people are using them right
+           now. The message carries two working actions: "Use my
+           own API key" opens the API key box, and "Get a free
+           API key" opens the Free API keys page, whose rows open
+           each provider's own site. */
+        chat.messages.push({id:mid(), role:'ai', limitCta:true, text:'The free shared API is at its limit right now — lots of people are using it. Use your own API key to keep chatting without waiting: it takes a minute and free keys work. Tap “Use my own API key” to open the key box, or “Get a free API key” for the list of sites that give one free.'});
+      } else if(relayGoneHit && !keyTried){
+        /* Nothing but the relay was tried and the relay is not
+           running on this origin at all (a static preview has no
+           /api/relay — the deployed site does): say exactly that
+           instead of blaming the user's keys, with the same two
+           working actions as the limit message. */
+        chat.messages.push({id:mid(), role:'ai', limitCta:true, text:'The shared free APIs run through this site\u2019s own server relay, and the relay is not reachable from this preview — it only runs on the deployed site, so the shared providers could not even be tried here. To chat in this preview, add your own API key: tap \u201cUse my own API key\u201d to open the key box, or \u201cGet a free API key\u201d for the sites that give one free.'});
+      } else {
+        chat.messages.push({id:mid(), role:'ai', text:'None of your APIs worked — every model on every added key was tried automatically ('+totalTried+' attempt'+(totalTried===1?'':'s')+' across '+attemptEntries.length+' API'+(attemptEntries.length===1?'':'s')+'), in every way, before showing this error. Add another key, or check the keys in Settings → APIs & Providers.'});
+      }
       renderAll(); return;
     }
     var entry=attemptEntries[idx];
-    if(entry.models && entry.models.length){
+    if(entry.relay){
+      /* Relay entries have no key to fetch a model list with —
+         the relay is called directly with its default model, and
+         the provider is never contacted from the client. */
+      attemptModel(idx, entry, apiModelCandidates(entry), 0, true);
+    } else if(entry.models && entry.models.length){
       attemptModel(idx, entry, apiModelCandidates(entry), 0, false);
     } else {
       /* No model list known for this key yet — fetch it from its
@@ -2460,6 +3013,7 @@ function callProvider(chat, memHits, opts){
   }
   function attemptModel(apiIdx, entry, models, mIdx, didFreshFetch){
     if(mIdx>=models.length){
+      if(entry.relay){ attemptApi(apiIdx+1); return; }
       if(!didFreshFetch){
         /* The cached list is exhausted — fetch the provider's
            list once more for this key and try any model that was
@@ -2482,15 +3036,28 @@ function callProvider(chat, memHits, opts){
     }
     var model=models[mIdx];
     totalTried++;
+    if(!entry.relay) keyTried=true;
     postToProvider(msgs, entry, model)
     .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j, status:r.status}; }).catch(function(){ return {ok:r.ok, j:null, status:r.status}; }); })
     .then(function(res){
       var out=extractReplyText(res.j);
+      if(entry.relay && !(out && res.ok) && (res.j==null || res.status===404 || res.status===405)){
+        /* No relay function answered on this origin (network-level
+           absence, a 404/405, or a non-JSON body — e.g. a static
+           preview serving its index page): mark the relay gone so
+           every remaining relay entry is skipped at once, and move
+           on to the user's own keys. */
+        relayGone=true; relayGoneHit=true;
+        lastFailKind='error'; lastFailDetail='Relay not reachable from this preview';
+        state.usage.failed++;
+        attemptApi(apiIdx+1);
+        return;
+      }
       if(!(out && res.ok)){
         var kind=apiFailureKind(res.status, res.j);
         lastFailKind=kind;
         lastFailDetail='HTTP '+res.status+' · '+model;
-        if(kind==='quota') state.usage.quota++; else state.usage.failed++;
+        if(kind==='quota'){ state.usage.quota++; if(entry.relay) relayQuotaHit=true; } else state.usage.failed++;
         /* This model failed — keep trying: next model on the
            SAME key, not the next key yet. */
         attemptModel(apiIdx, entry, models, mIdx+1, didFreshFetch);
@@ -2554,6 +3121,10 @@ function callProvider(chat, memHits, opts){
       }
     })
     .catch(function(){
+      /* A relay call that rejects outright never reached a relay
+         function on this origin — the relay is gone here; skip the
+         rest of its entries and fall through to the user's keys. */
+      if(entry.relay){ relayGone=true; relayGoneHit=true; lastFailKind='error'; lastFailDetail='Relay not reachable from this preview'; state.usage.failed++; attemptApi(apiIdx+1); return; }
       /* Network / CORS on this model: keep trying — next model
          on the same key, then the next key and all its models. */
       lastFailKind='error'; lastFailDetail='Network or CORS · '+model;
@@ -2637,24 +3208,34 @@ function guardPreviewsClosed(){
 if(window.visualViewport){
   var vv=window.visualViewport;
   var kbBase=window.innerHeight;
-  function onVV(){
+  var vvLast={kb:-1, fixed:-1, open:null}, vvRaf=0;
+  function onVVNow(){
+    vvRaf=0;
     if(window.innerHeight>kbBase) kbBase=window.innerHeight;
     var layoutResized=(kbBase-window.innerHeight)>40;
-    var kb=layoutResized? 0 : Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-    document.documentElement.style.setProperty('--kb', kb+'px');
+    var kb=layoutResized? 0 : Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    var kbFixed=Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    /* Writes are skipped when nothing actually changed — during a
+       keyboard animation or a scroll these events fire continuously,
+       and rewriting the same custom properties each time forced a
+       full style recalculation on every event. */
+    if(kb!==vvLast.kb){ vvLast.kb=kb; document.documentElement.style.setProperty('--kb', kb+'px'); }
     /* Fixed elements (sheets) anchor to the layout viewport, so for
        them the RAW visual-viewport delta is the exact keyboard
        overlap in every shell: 0 when the layout fully resized, the
        full keyboard height when it did not, and just the uncovered
        remainder when it resized only part way. */
-    document.documentElement.style.setProperty('--kbFixed', Math.max(0, window.innerHeight - vv.height - vv.offsetTop)+'px');
+    if(kbFixed!==vvLast.fixed){ vvLast.fixed=kbFixed; document.documentElement.style.setProperty('--kbFixed', kbFixed+'px'); }
     /* Keyboard open in EITHER shell: the visual viewport is much
        shorter than the full-height baseline. */
     var kbOpen=(kbBase - vv.height)>120 || kb>80;
-    document.documentElement.classList.toggle('kb-open', kbOpen);
+    if(kbOpen!==vvLast.open){ vvLast.open=kbOpen; document.documentElement.classList.toggle('kb-open', kbOpen); }
     guardPreviewsClosed();
   }
-  vv.addEventListener('resize',onVV); vv.addEventListener('scroll',onVV); onVV();
+  /* Coalesced to one run per animation frame: the raw events can
+     arrive dozens of times inside a single frame. */
+  function onVV(){ if(!vvRaf) vvRaf=requestAnimationFrame(onVVNow); }
+  vv.addEventListener('resize',onVV); vv.addEventListener('scroll',onVV); onVVNow();
   var kbInput=$('#chatInput');
   if(kbInput){
     /* Focus starts the keyboard animation before the viewport
@@ -2705,9 +3286,10 @@ $('#splitClose').addEventListener('click',function(e){ e.stopPropagation(); exit
 $('#chatsBtn').innerHTML=I.menu+'<span class="dot"></span>';
 $('#tempBtn').innerHTML=I.temp;
 $('#dotsBtn').innerHTML=I.dotsV;
-$('#modelPillChev').innerHTML=I.chevD;
 $('#plusBtn').innerHTML=I.plus;
 sendBtn.innerHTML=I.send;
+$('#apiBoxSearch').innerHTML=I.search;
+$('#apiBoxRetry').innerHTML=I.refresh;
 $('#sbNewIc').innerHTML=I.compose;
 $('#sbNewTop').innerHTML=I.plus;
 $('#sbSettings').innerHTML=I.gear;
@@ -2744,11 +3326,13 @@ $('#dotsBtn').addEventListener('click',function(){
     {id:'clear', icon:I.trash, label:'Clear this chat', danger:true}
   ], this);
 });
-/* The "+ API / Model" pill is an API/key/model control, so it opens
-   the + sheet straight at its inline Model section — provider, base
-   URL, key, model, Save and Remove all live there now; it never
-   opens Settings. */
-$('#modelPill').addEventListener('click',function(){ openPlusSheet(true); });
+/* The API box (shown in the composer's place while no API is
+   working): search and the status line open the API picker sheet —
+   select / test / add, never in the top header — and the circular
+   button where Send sits retests every API until one answers. */
+$('#apiBoxSearch').addEventListener('click',function(){ openApiPicker(); });
+$('#apiBoxMain').addEventListener('click',function(){ openApiPicker(); });
+$('#apiBoxRetry').addEventListener('click',function(){ testAllApis(); });
 $('#sbNew').addEventListener('click',newChat);
 $('#sbNewTop').addEventListener('click',function(){ sbCreateAgent(); });
 $('#sbSettings').addEventListener('click',function(){ setSidebar(false,true); openSettings('list'); });
@@ -3217,7 +3801,7 @@ function openPlusSheet(view){
       var k=$('#plusKey').value.trim();
       if(!k){ toast('Paste a key first'); return; }
       plusAdd.disabled=true; plusAdd.textContent='Detecting…';
-      addApiKey(k).then(function(e){ toast(e? 'Added — '+apiEntryLabel(e) : 'Added'); openPlusSheet('model'); });
+      addApiKey(k).then(function(e){ toast(e && e.agent? 'Mistral Agent ID saved — Agent API on' : e? 'Added — '+apiEntryLabel(e) : 'Added'); openPlusSheet('model'); });
     });
   }
   /* Inline Design system (Design menu only) */
@@ -3356,6 +3940,9 @@ function renderSettings(view){
 }
 function renderSettingsInner(view){
   if(view==='apis') return settingsApis();
+  if(view==='freekeys') return settingsFreeKeys();
+  if(view==='relay') return settingsRelay();
+  if(view==='relaycode') return settingsRelayCode();
   if(view==='usage') return settingsUsage();
   if(view==='ai') return settingsAI();
   if(view==='connectors') return settingsConnectors();
@@ -3378,7 +3965,7 @@ function renderSettingsInner(view){
   if(view==='goals') return settingsGoals();
   if(view==='terminal') return settingsSimple('Terminal','commands',[['Commands run','0'],['Runs in','Play preview pane']], '<p class="set-note">Terminal-style commands from chats are listed here. Code previews run in the Play pane.</p>', null);
   if(view==='history') return settingsHistory();
-  if(view==='safety') return settingsSimple('Privacy & safety','safety',[['Key storage','This session only'],['Chats','This preview only'],['Connectors','Online Search only']], '<p class="set-note">Your key is used only for calls to the provider you picked in APIs & Providers.</p>', null);
+  if(view==='safety') return settingsSimple('Privacy & safety','safety',[['Key storage','Saved locally on this device'],['Chats','Saved locally on this device'],['Connectors','Online Search only']], '<p class="set-note">Your keys and chats stay on this device and are restored on every open. Your key is used only for calls to the provider you picked in APIs & Providers.</p>', null);
   if(view==='about') return settingsSimple('About', null, [['App', appNameShort()],['Version','v1.2'],['Build','This code, as main']], '<p class="set-note">Open source, your key, your chats.</p>', null);
   settingsList();
 }
@@ -3396,7 +3983,7 @@ function settingsList(){
   agentsShowAll=false; agentsFromLib=false;
   var groups=[
     {rows:[
-      {id:'apis', icon:I.key, label:'APIs & Providers', val:!state.apiKey?'Not set':state.apiHealth==='quota'?'Quota reached':state.apiHealth==='error'?'Not working':(state.model||keySummary()), q:'apis'},
+      {id:'apis', icon:I.key, label:'APIs & Providers', val:(state.relayOn && !state.apiKey)?'App relay on':!state.apiKey?'Not set':state.apiHealth==='quota'?'Quota reached':state.apiHealth==='error'?'Not working':(state.model||keySummary()), q:'apis'},
       {id:'usage', icon:I.activity, label:'Usage & limits', val:!state.apiKey?'No API':(state.usage.requests? state.usage.requests+(state.usage.requests===1?' request':' requests') : 'Not used yet'), q:'usage'},
       {id:'ai', icon:I.sliders, label:'AI Customization', val:state.style+' · '+state.tempVal},
       {id:'connectors', icon:I.link, label:'Connectors & Online Search', val: state.webSearch?'Web Search On':'Off', q:'connectors'},
@@ -3460,14 +4047,104 @@ function settingsApis(){
     +'<button class="btn-primary" id="apiAdd">Add API</button>'
     +'<p class="set-note" id="apiTestMsg" aria-live="polite">'+esc(apiTestMsgText)+'</p>'
     +'<p class="set-note">Status: <b>'+esc(apiStatusText())+'</b></p>'
+    +(state.relayOn? '<p class="set-note">Shared free APIs are <b>on</b> — free for everyone through the app relay. When lots of people are using them and their limit is over, the chat will say so and offer your own key instead. Your own key, added above, is always tried after the shared ones and has no shared limit.</p>' : '<p class="set-note">Shared free APIs are off on this device — turn them on under App relay below.</p>')
+    +'<div class="field"><label>Mistral Agent ID — optional, auto-on when filled</label><input id="mistralAgentIn" type="text" placeholder="ag_… (from Mistral console → Agents)" autocomplete="off" value="'+escA(state.mistralAgentId||'')+'"></div>'
+    +'<p class="set-note" id="mistralAgentNote">'+(mistralAgentOn()? 'Agent on — Mistral chats use your saved agent (Agents API) automatically.' : 'No agent id — Mistral uses normal chat. Paste an ag_… id and the Agent API turns on by itself; clear it to turn off.')+'</p>'
+    +'<button class="btn-ghost" id="apiFreeBtn">Free API keys — where to get your own</button>'
+    +'<button class="btn-ghost" id="apiRelayBtn">App relay — server keys for everyone</button>'
     +'</div></div>';
   wireBack(function(){ renderSettings('list'); });
   wireApiList(setView, function(){ renderSettings('apis'); });
+  $('#apiRelayBtn').addEventListener('click',function(){ renderSettings('relay'); });
+  $('#apiFreeBtn').addEventListener('click',function(){ renderSettings('freekeys'); });
+  var maIn=$('#mistralAgentIn');
+  if(maIn) maIn.addEventListener('change',function(){
+    var v=this.value.trim();
+    if(!v){ setMistralAgentId(''); toast('Mistral Agent off'); renderSettings('apis'); return; }
+    if(setMistralAgentId(v)){ toast('Mistral Agent on — auto'); renderSettings('apis'); }
+    else toast('That is not an agent id — it starts with ag_');
+  });
   $('#apiAdd').addEventListener('click',function(){
     var k=$('#apiKeyIn').value.trim();
     if(!k){ toast('Paste a key first'); return; }
     var btn=this; btn.disabled=true; btn.textContent='Detecting…';
-    addApiKey(k).then(function(e){ toast(e? 'Added — '+apiEntryLabel(e) : 'Added'); renderSettings('apis'); });
+    addApiKey(k).then(function(e){
+      if(e && e.agent){ toast('Mistral Agent ID saved — Agent API on'); renderSettings('apis'); return; }
+      toast(e? 'Added — '+apiEntryLabel(e) : 'Added'); renderSettings('apis');
+    });
+  });
+}
+/* =============== Free API keys ===============
+   The directory: each row is one free-key site — short line
+   only (site, what is free, its Vercel variable name). Tapping
+   a row opens that site in the browser so the user gets their
+   own key; the full naming detail sits behind the ? on this
+   page's header, per the app's short-line rule. */
+function settingsFreeKeys(){
+  setView.innerHTML=setHead('Free API keys','freekeys')+'<div class="set-scroll"><div class="set-inner">'
+    +'<p class="set-note">The shared APIs in this app are free for everyone, through the app relay. When lots of people are using them and the shared limit is over, use your own key — this page is the full guide: every provider, how to get its key, and the exact server variable name for it.</p>'
+    +'<p class="set-note">For each provider: tap <b>Get a free API key</b> to open that provider\u2019s own site and create your key, then tap <b>Use my API key</b> to open the key box and paste it — the provider and model are detected automatically.</p>'
+    + FREE_APIS.map(function(f){
+        return '<div class="set-group" style="padding:13px 15px">'
+          +'<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><b style="font-size:16px">'+esc(f.site)+'</b><span style="color:var(--muted);font-size:13px">'+esc(f.note)+'</span></div>'
+          +'<p class="set-note" style="margin:7px 0 0">'+esc(f.how||'')+'</p>'
+          +'<p class="set-note" style="margin:5px 0 0">Server variable: <b>'+esc(freeApiEnvText(f))+'</b></p>'
+          +'<div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap"><a class="fk-get" href="'+escA(f.url)+'" target="_blank" rel="noopener">Get a free API key</a><button class="fk-use" data-fkuse="1">Use my API key</button></div>'
+          +'</div>';
+      }).join('')
+    +'<p class="set-note">Free almost always means rate-limited, free models only, or a trial — not unlimited. Strongest free combo: Groq + OpenRouter free models + Gemini. Server variable names work exactly as added in Vercel — for example MISTRAL2_API_KEY is read as a Mistral key, CHATGPT_API_KEY as the OpenAI key, and KIMI_API_KEY as the Kimi (Moonshot) key; the standard names work too, no renaming needed.</p>'
+    +'<button class="btn-ghost" id="fkRelayBtn">App relay — share via server variables</button>'
+    +'</div></div>';
+  wireBack(function(){ renderSettings('apis'); });
+  setView.querySelectorAll('[data-fkuse]').forEach(function(b){ b.addEventListener('click',function(){ renderSettings('apis'); }); });
+  $('#fkRelayBtn').addEventListener('click',function(){ renderSettings('relay'); });
+}
+/* =============== App relay settings ===============
+   The relay itself runs on the server (Vercel) — this page is
+   its control and its documentation: the exact environment
+   variable names, the on/off switch for using it, and the full
+   server function source to copy into the project's api/ folder. */
+function relaySourceText(){
+  var el=document.getElementById('relaytext');
+  return el? el.textContent.replace(/^\n+|\s+$/g,'') : '';
+}
+function settingsRelay(){
+  setView.innerHTML=setHead('App relay','apis')+'<div class="set-scroll"><div class="set-inner">'
+    +'<p class="set-note">Every free provider through this site\u2019s own server, for everyone — on by default. The keys live only in the server\u2019s environment variables \u2014 the app never receives them and sends no key when it calls the relay. Variable names work exactly as added in Vercel, no renaming: MISTRAL2_API_KEY is read as a Mistral key, CHATGPT_API_KEY as the OpenAI key, KIMI_API_KEY as the Kimi key; the standard names (MISTRAL_API_KEY, OPENAI_API_KEY, MOONSHOT_API_KEY, HF_TOKEN, GOOGLE_API_KEY) work as fallbacks too.</p>'
+    +'<div class="set-group" style="padding:6px 15px">'
+    + FREE_APIS.map(function(f){ return '<div class="kv"><span>'+esc(f.site)+' key variable</span><b>'+esc(freeApiEnvText(f))+'</b></div>'; }).join('')
+    +'<div class="kv"><span>Mistral Agent variable</span><b>MISTRAL_AGENT_ID</b></div>'
+    +'<div class="kv"><span>Relay endpoint</span><b>POST /api/relay</b></div>'
+    +'<div class="kv"><span>Where variables live</span><b>Vercel \u2192 Settings \u2192 Environment Variables</b></div>'
+    +'</div>'
+    +'<p class="set-note">Mistral Agent for everyone: set MISTRAL_AGENT_ID (an ag_… id) next to MISTRAL_API_KEY and every relay user gets that saved agent automatically — nothing to set on their device. A device\u2019s own Agent ID, if it has one, wins over the server\u2019s.</p>'
+    +'<button class="sheet-row" id="relayTog"><span>Use app relay</span><span class="switch" role="switch" aria-checked="'+(!!state.relayOn)+'"></span></button>'
+    +'<p class="set-note">'+(state.relayOn? 'On \u2014 the relay is tried first, then your own keys.' : 'Off \u2014 only your own keys are used.')+'</p>'
+    +'<button class="btn-ghost" id="relayCodeBtn">View relay server code</button>'
+    +'</div></div>';
+  wireBack(function(){ renderSettings('apis'); });
+  $('#relayTog').addEventListener('click',function(){
+    state.relayOn=!state.relayOn;
+    if(state.relayOn && state.apiHealth==='unset') setApiHealth('changed');
+    if(!state.relayOn && !apiEntries().length) setApiHealth('unset');
+    saveLocalSoon();
+    renderSettings('relay');
+    toast(state.relayOn? 'App relay on' : 'App relay off');
+  });
+  $('#relayCodeBtn').addEventListener('click',function(){ renderSettings('relaycode'); });
+}
+function settingsRelayCode(){
+  var src=relaySourceText();
+  setView.innerHTML=setHead('Relay server code','apis')+'<div class="set-scroll"><div class="set-inner">'
+    +'<p class="set-note">Save this as <b>api/relay.js</b> in the Vercel project, set the provider variables you have keys for (and MISTRAL_AGENT_ID for the Mistral Agent) in the project\u2019s environment variables, then redeploy. The keys stay server-side \u2014 nothing in this code or the app exposes them to the browser.</p>'
+    +'<pre style="white-space:pre-wrap;word-break:break-word;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;overflow:auto;-webkit-user-select:text;user-select:text">'+esc(src)+'</pre>'
+    +'<button class="btn-primary" id="relayCopy">Copy relay code</button>'
+    +'</div></div>';
+  wireBack(function(){ renderSettings('relay'); });
+  $('#relayCopy').addEventListener('click',function(){
+    function done(){ toast('Relay code copied'); }
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(src).then(done, function(){ toast('Copy failed \u2014 long-press the code to copy'); }); }
+    else toast('Long-press the code to copy');
   });
 }
 /* =============== Usage & limits ===============
@@ -3591,16 +4268,22 @@ function settingsConnectors(){
 }
 function settingsMemory(){
   var recent=MEM.slice(-30).reverse();
+  var sum=MEM_SUMMARY || rebuildMemSummary();
+  var logRecent=MEM_LOG.slice(-30).reverse();
   setView.innerHTML=setHead('Memory','memory')+'<div class="set-scroll"><div class="set-inner">'
     +'<div class="set-group"><button class="set-row" id="memTog"><span class="ric">'+I.bookmark+'</span><span>Memory</span><span class="switch" role="switch" aria-checked="'+state.memory+'"></span></button></div>'
-    +'<p class="set-note">On: everything you say in any chat is saved to memory automatically, with no limit. Before every reply, memory is searched by the message&rsquo;s keywords and the reply uses what matches. Memory never holds keys, secrets, emails or phone numbers — those are stripped before anything is saved. The + sheet switch always matches this one.</p>'
+    +'<p class="set-note">On: everything you say in any chat is saved to memory automatically, in detail — the message, its date and time, the chat and the agent — plus a short summary of each reply, all kept locally on this device, always. A rolling summary is rebuilt from it and read, with the matching entries, before every reply, so answers stay personal. Memory never holds keys, secrets, emails or phone numbers — those are stripped before anything is saved. The + sheet switch always matches this one.</p>'
     +'<div class="kv"><span>Saved memories</span><b>'+MEM.length+'</b></div>'
-    +(recent.length? '<div class="set-group" style="margin-top:12px">'+recent.map(function(e){ return '<div class="set-row"><span style="flex:1;min-width:0"><span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(e.text)+'</span><span style="display:block;color:var(--muted);font-size:12.5px;font-weight:400;margin-top:2px">'+esc(e.chatTitle)+'</span></span></div>'; }).join('')+'</div>' : '<p class="set-note">No memories yet — send a message in any chat and it is saved here automatically.</p>')
+    +'<div class="kv"><span>Detailed log entries</span><b>'+MEM_LOG.length+'</b></div>'
+    +(localSavedAt? '<div class="kv"><span>Last saved locally</span><b>'+esc(memStamp(localSavedAt).label)+'</b></div>' : '')
+    +(sum? '<p class="set-note" style="margin-top:10px"><b style="color:var(--text)">Summary:</b> '+esc(sum)+'</p>' : '')
+    +(recent.length? '<div class="set-group" style="margin-top:12px">'+recent.map(function(e){ return '<div class="set-row"><span style="flex:1;min-width:0"><span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(e.text)+'</span><span style="display:block;color:var(--muted);font-size:12.5px;font-weight:400;margin-top:2px">'+esc(e.chatTitle)+(e.agent? ' · '+esc(e.agent) : '')+' · '+esc(e.when||memStamp(e.ts).label)+'</span></span></div>'; }).join('')+'</div>' : '<p class="set-note">No memories yet — send a message in any chat and it is saved here automatically.</p>')
+    +(logRecent.length? '<p class="set-note" style="margin-top:12px"><b style="color:var(--text)">Detailed log</b> — newest first, both sides:</p><div class="set-group">'+logRecent.map(function(e){ return '<div class="set-row"><span style="flex:1;min-width:0"><span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(e.role==='assistant'? 'Reply: ' : '')+esc(e.text)+'</span><span style="display:block;color:var(--muted);font-size:12.5px;font-weight:400;margin-top:2px">'+esc(e.when||'')+' · '+esc(e.chatTitle||'')+(e.agent? ' · '+esc(e.agent) : '')+'</span></span></div>'; }).join('')+'</div>' : '')
     +(MEM.length? '<button class="btn-ghost" id="memClear" style="color:var(--danger)">Clear all memory</button>' : '')
     +'</div></div>';
   wireBack(function(){ renderSettings('list'); });
   $('#memTog').addEventListener('click',function(){ state.memory=!state.memory; this.querySelector('.switch').setAttribute('aria-checked',String(state.memory)); });
-  var mc=$('#memClear'); if(mc) mc.addEventListener('click',function(){ MEM.length=0; renderSettings('memory'); toast('Memory cleared'); });
+  var mc=$('#memClear'); if(mc) mc.addEventListener('click',function(){ MEM.length=0; MEM_LOG.length=0; MEM_SUMMARY=''; renderSettings('memory'); toast('Memory cleared'); });
 }
 /* =============== Appearance (phone preview layout) ===============
    Matches the reference: a phone-shaped preview at the top (agent
@@ -4978,17 +5661,45 @@ function createAgentSheet(){
   openSheet('<h3>Create agent</h3>'
     +'<div class="field"><label>Name</label><input id="naName" type="text" placeholder="e.g. Nova" autocomplete="off"></div>'
     +'<div class="field"><label>Avatar</label>'+avatarPickerHTML()+'</div>'
+    +'<div class="field"><label>Vibe</label><textarea id="naVibe" rows="2" style="'+TA_STYLE+'" placeholder="e.g. Calm, precise, research-minded"></textarea></div>'
+    +'<div class="field"><label>Custom instructions</label><textarea id="naIns" rows="4" style="'+TA_STYLE+'" placeholder="How this agent should behave, its job, its rules"></textarea></div>'
+    +'<div class="field"><label>Custom memory</label><textarea id="naMem" rows="4" style="'+TA_STYLE+'" placeholder="What this agent should always remember"></textarea></div>'
+    +'<div class="set-group" style="margin-bottom:6px">'
+    +'<button class="set-row" id="naHist"><span style="flex:1">Individual history<span class="sub2">Off: chats are shared with all agents (default). On: this agent keeps its own chats.</span></span><span class="switch" role="switch" aria-checked="false"></span></button>'
+    +'<button class="set-row" id="naMemTog"><span style="flex:1">Individual memory<span class="sub2">Off: memory is shared with all agents (default). On: this agent keeps its own memory.</span></span><span class="switch" role="switch" aria-checked="false"></span></button>'
+    +'<button class="set-row" id="naMain"><span style="flex:1">Make main agent<span class="sub2">On: this agent becomes the main agent as soon as it is created.</span></span><span class="switch" role="switch" aria-checked="false"></span></button>'
+    +'</div>'
     +'<button class="btn-primary" id="naGo">Create agent</button>'
     +'<button class="btn-ghost" id="naSkip">Skip — just chat</button>'
-    +'<p class="sub" style="margin-top:10px">No memory or instruction fields here any more — tap Create and the agent opens in chat, greets you, and asks for its name, memory and instructions there. Skip starts a plain chat instead, and the agent learns as you go.</p>');
+    +'<p class="sub" style="margin-top:10px">Fill in as much as you like — it is all written into the agent at Create. Leave vibe, instructions and memory blank and the agent instead opens in chat, greets you, and asks for them there. Skip starts a plain chat instead, and the agent learns as you go.</p>');
   wireAvatarPicker(sheet, pick);
+  var naOpts={hist:false, mem:false, main:false};
+  function wireNaSwitch(id, key){
+    var b=document.getElementById(id); if(!b) return;
+    b.addEventListener('click',function(){ naOpts[key]=!naOpts[key]; b.querySelector('.switch').setAttribute('aria-checked', String(naOpts[key])); });
+  }
+  wireNaSwitch('naHist','hist'); wireNaSwitch('naMemTog','mem'); wireNaSwitch('naMain','main');
   $('#naGo').addEventListener('click',function(){
     var nm=$('#naName').value.trim(); if(!nm){ toast('Give the agent a name first — or tap Skip'); return; }
     if(findAgentByName(nm)){ toast('That name is taken'); return; }
-    var a=createAgentRecord(nm, '', pick.id);
+    var vibe=$('#naVibe').value.trim();
+    var ins=agentTextSanitize($('#naIns').value.trim());
+    var mem=agentTextSanitize($('#naMem').value.trim());
+    var a=createAgentRecord(nm, ins, pick.id);
+    if(vibe) a.vibe=vibe;
+    if(mem) a.memoryText=mem;
+    a.individualHistory=naOpts.hist; a.individualMemory=naOpts.mem;
+    if(a.individualHistory) ensureAgentChat(a);
     syncAgentFile(a);
+    if(naOpts.main) makeMainAgent(a);
     closeSheet();
-    startAgentOnboarding(a);
+    if(vibe || ins || mem){
+      a.autoLearn=true; syncAgentFile(a);
+      setChatAgent(a.id); closeSettings();
+      toast('Chatting with '+a.name+' — created with your settings');
+    } else {
+      startAgentOnboarding(a);
+    }
   });
   $('#naSkip').addEventListener('click',function(){
     var nm=$('#naName').value.trim() || ('Agent '+(AGENTS.length+1));
@@ -5109,7 +5820,7 @@ function settingsAgent(){
     +'<p class="ag-status">'+esc(agStatusLine())+'</p></div>'
     +'<div class="ag-tabbar" style="--i:1" role="tablist">'+tabs.map(function(t){ return '<button class="ag-tab'+(agentTab===t[0]?' sel':'')+'" data-agtab="'+t[0]+'" role="tab" aria-label="'+t[2]+'">'+t[1]+'</button>'; }).join('')+'</div>'
     +'<div class="set-group" style="--i:2"><button class="set-row" id="agSubBtn"><span class="ric">'+I.layers+'</span><span style="flex:1">Sub-agents<span class="sub2">All agents, animation speed, set the main agent</span></span><span class="val">'+subs.length+' sub</span>'+I.chevR+'</button>'
-    +'<button class="set-row" id="agCreateBtn"><span class="ric">'+I.plus+'</span><span style="flex:1">New sub-agent<span class="sub2">Name & swipe-picked avatar — then it sets itself up with you in chat</span></span>'+I.chevR+'</button>'
+    +'<button class="set-row" id="agCreateBtn"><span class="ric">'+I.plus+'</span><span style="flex:1">New sub-agent<span class="sub2">Full options — name, avatar, vibe, instructions, memory & more</span></span>'+I.chevR+'</button>'
     +(ca.id!==m.id? '<button class="set-row" id="agChatMain"><span class="ric">'+I.chat+'</span><span style="flex:1">Chat with '+esc(m.name)+'<span class="sub2">You are chatting with '+esc(ca.name)+' right now</span></span>'+I.chevR+'</button>' : '')
     +'</div>'
     +'<div id="agTabBody" style="--i:3">'+tabBodyHTML()+'</div>'
@@ -5185,20 +5896,21 @@ function settingsSubAgents(){
   settingsAgentHub(true);
 }
 /* =============== New sub-agent page (under Agents) ===============
-   A full page for creating a sub-agent: name and a swipeable avatar
-   picker only — no memory or instruction fields. Create opens the
-   new agent in chat, where it greets the user and asks for its
-   name, memory and instructions; Skip starts a plain chat and the
-   agent auto-fills those from the conversation. */
+   A full page for creating a sub-agent with the FULL option set —
+   the same options its Edit page has: name, swipeable avatar
+   picker, vibe, custom instructions, custom memory, individual
+   history, individual memory, and make-main. Everything filled in
+   here is written into the agent at Create. If vibe, instructions
+   and memory are all left blank, Create keeps the old behaviour:
+   the new agent opens in chat and sets itself up by asking; Skip
+   starts a plain chat and the agent auto-fills from conversation. */
 function settingsAgentCreate(){
-  /* New sub-agent as ONE small window, not a full messy page: a
-     centred card holding only the Name field, the swipe avatar
-     picker, Create and Skip. The how-it-works detail lives behind
-     the ? in the window's title bar — no long text under the buttons.
-     Typing fix: NO programmatic auto-focus any more. Focusing from
-     a timer left the field "focused" with no keyboard on phone
+  /* New sub-agent as ONE window holding every creation option. The
+     how-it-works detail lives behind the ? in the window's title
+     bar. Typing fix: NO programmatic auto-focus any more. Focusing
+     from a timer left the field "focused" with no keyboard on phone
      webviews, so later taps did nothing; the user's own tap now
-     focuses it, and the field keeps its pointer events away from
+     focuses it, and every field keeps its pointer events away from
      every global gesture handler. */
   var pick={id:'cue'};
   setView.innerHTML=setHead('New sub-agent', null)+'<div class="set-scroll"><div class="set-inner">'
@@ -5206,6 +5918,15 @@ function settingsAgentCreate(){
     +'<div class="nc-win-head"><span class="nc-win-title">New sub-agent</span><button class="qbtn" id="ncHelp" aria-label="How creating a sub-agent works">?</button></div>'
     +'<div class="field"><label for="ncName">Name</label><input id="ncName" type="text" placeholder="e.g. Nova" autocomplete="off" enterkeyhint="done"></div>'
     +'<div class="field" style="margin-bottom:14px"><label>Avatar</label>'+avatarPickerHTML()+'</div>'
+    +'<div class="field"><label for="ncVibe">Vibe</label><textarea id="ncVibe" rows="2" style="'+TA_STYLE+'" placeholder="e.g. Calm, precise, research-minded"></textarea></div>'
+    +'<div class="field"><label for="ncIns">Custom instructions</label><textarea id="ncIns" rows="4" style="'+TA_STYLE+'" placeholder="How this agent should behave, its job, its rules"></textarea></div>'
+    +'<div class="field"><label for="ncMem">Custom memory</label><textarea id="ncMem" rows="4" style="'+TA_STYLE+'" placeholder="What this agent should always remember"></textarea></div>'
+    +'<p class="set-note">Instructions and memory are this agent&rsquo;s own. They are sent with its chats and kept in its system file. Passwords, keys, secrets, emails and phone numbers are stripped automatically — they never belong in a file.</p>'
+    +'<div class="set-group" style="margin-bottom:14px">'
+    +'<button class="set-row" id="ncHist"><span style="flex:1">Individual history<span class="sub2">Off: chats are shared with all agents (default). On: this agent keeps its own chats.</span></span><span class="switch" role="switch" aria-checked="false"></span></button>'
+    +'<button class="set-row" id="ncMemTog"><span style="flex:1">Individual memory<span class="sub2">Off: memory is shared with all agents (default). On: this agent keeps its own memory.</span></span><span class="switch" role="switch" aria-checked="false"></span></button>'
+    +'<button class="set-row" id="ncMain"><span style="flex:1">Make main agent<span class="sub2">On: this agent becomes the main agent as soon as it is created.</span></span><span class="switch" role="switch" aria-checked="false"></span></button>'
+    +'</div>'
     +'<button class="btn-primary" id="ncGo">Create sub-agent</button>'
     +'<button class="btn-ghost" id="ncSkip">Skip — just chat</button>'
     +'</div>'
@@ -5213,14 +5934,22 @@ function settingsAgentCreate(){
   wireBack(function(){ renderSettings('subagents'); });
   wireAvatarPicker(setView, pick);
   var ni=$('#ncName');
-  if(ni){
-    ni.addEventListener('pointerdown',function(e){ e.stopPropagation(); });
-    ni.addEventListener('touchstart',function(e){ e.stopPropagation(); },{passive:true});
-    ni.addEventListener('click',function(){ if(document.activeElement!==ni) ni.focus(); });
+  ['ncName','ncVibe','ncIns','ncMem'].forEach(function(fid){
+    var f=document.getElementById(fid); if(!f) return;
+    f.addEventListener('pointerdown',function(e){ e.stopPropagation(); });
+    f.addEventListener('touchstart',function(e){ e.stopPropagation(); },{passive:true});
+  });
+  if(ni) ni.addEventListener('click',function(){ if(document.activeElement!==ni) ni.focus(); });
+  var ncOpts={hist:false, mem:false, main:false};
+  function wireNcSwitch(id, key){
+    var b=document.getElementById(id); if(!b) return;
+    b.addEventListener('click',function(){ ncOpts[key]=!ncOpts[key]; b.querySelector('.switch').setAttribute('aria-checked', String(ncOpts[key])); });
   }
+  wireNcSwitch('ncHist','hist'); wireNcSwitch('ncMemTog','mem'); wireNcSwitch('ncMain','main');
   $('#ncHelp').addEventListener('click',function(){
     detailSheet('New sub-agent', [
-      'Tap Create and the agent opens in chat: it greets you by name, asks what it should call itself, then asks about its memory and instructions — your answers fill those in.',
+      'Every option is here: name, avatar, vibe, custom instructions, custom memory, individual history, individual memory, and make-main. Whatever you fill in is written into the agent the moment you tap Create.',
+      'Leave vibe, instructions and memory blank and Create instead opens the agent in chat, where it greets you and asks for them — your answers fill those in.',
       'Skip starts a plain chat instead, and the agent learns as you go.',
       'Either way, everything stays editable later in its Edit page, under Sub-agents.'
     ]);
@@ -5228,9 +5957,23 @@ function settingsAgentCreate(){
   $('#ncGo').addEventListener('click',function(){
     var nm=$('#ncName').value.trim(); if(!nm){ toast('Give the agent a name first — or tap Skip'); if(ni) ni.focus(); return; }
     if(findAgentByName(nm)){ toast('That name is taken'); return; }
-    var a=createAgentRecord(nm, '', pick.id);
+    var vibe=$('#ncVibe').value.trim();
+    var ins=agentTextSanitize($('#ncIns').value.trim());
+    var mem=agentTextSanitize($('#ncMem').value.trim());
+    var a=createAgentRecord(nm, ins, pick.id);
+    if(vibe) a.vibe=vibe;
+    if(mem) a.memoryText=mem;
+    a.individualHistory=ncOpts.hist; a.individualMemory=ncOpts.mem;
+    if(a.individualHistory) ensureAgentChat(a);
     syncAgentFile(a);
-    startAgentOnboarding(a);
+    if(ncOpts.main) makeMainAgent(a);
+    if(vibe || ins || mem){
+      a.autoLearn=true; syncAgentFile(a);
+      setChatAgent(a.id); closeSettings();
+      toast('Chatting with '+a.name+' — created with your settings');
+    } else {
+      startAgentOnboarding(a);
+    }
   });
   $('#ncSkip').addEventListener('click',function(){
     var nm=$('#ncName').value.trim() || ('Agent '+(AGENTS.length+1));
@@ -5797,7 +6540,7 @@ function fireScheduled(){
       var msg={id:mid(), role:'user', text:s.text};
       chat.messages.push(msg);
       if(state.memory) saveMemory(chat, msg);
-      if(state.apiKey) callProvider(chat); else pushAI(chat, localReply(s.text));
+      if(providerRouteOn()) callProvider(chat); else pushAI(chat, localReply(s.text));
     }
   });
   if(fired){
@@ -5887,9 +6630,11 @@ $('#micBtn').addEventListener('click',function(){
 $('#afFilePicker').addEventListener('change',function(){ afHandleUploads(this.files); this.value=''; });
 $('#afImagePicker').addEventListener('change',function(){ afHandleUploads(this.files); this.value=''; });
 function settingsHistory(){
-  settingsSimple('History & backups', null, [['Saved chats', String(chats.length)],['Storage','This preview session']], '<button class="btn-primary" id="expBtn">Download backup (JSON)</button>', function(){
+  var savedTxt=(typeof localSavedAt!=='undefined' && localSavedAt)? new Date(localSavedAt).toLocaleString([], {day:'numeric', month:'short', hour:'numeric', minute:'2-digit'}) : 'On every change';
+  settingsSimple('History & backups', null, [['Saved chats', String(chats.length)],['Saved APIs', String(apiEntries().length)],['Storage','Locally on this device — always'],['Last saved', savedTxt]], '<button class="btn-primary" id="expBtn">Download backup (JSON)</button>', function(){
     $('#expBtn').addEventListener('click',function(){
-      var blob=new Blob([JSON.stringify(chats,null,2)],{type:'application/json'});
+      var backup={exportedAt:new Date().toISOString(), chats:chats, apis:(typeof apiKeysForStore==='function'? apiKeysForStore().map(function(e){ return {provider:e.provider, model:e.model, key:'•••• •••• '+(e.last4||''), note:'Keys are never included in a backup — add the key again after restoring.'}; }) : []), activeApiId:state.activeApiId||'', agents:(typeof AGENTS!=='undefined'? AGENTS : []), files:(typeof AGENT_FILES!=='undefined'? AGENT_FILES : []), goals:{tracking:goalsTracking, list:goalsList, scheduled:SCHED}};
+      var blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
       var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='gptopen-backup.json'; a.click();
       setTimeout(function(){ URL.revokeObjectURL(a.href); },2000);
     });
@@ -5906,6 +6651,174 @@ function applyAccent(){
   var lum=(0.2126*r+0.7152*g+0.0722*b)/255;
   document.documentElement.style.setProperty('--accent-ink', lum>0.6 ? '#0b0b0c' : '#ffffff');
 }
+/* =============== Local saving — APIs & chats, always ===============
+   Everything the user adds here is saved on THIS device, in this
+   browser's local storage, the moment it changes — every API key
+   (with its provider, model and model list), every chat and every
+   message, the agents and their avatars, the System files and
+   Library files, the saved memory, goals, scheduled messages and
+   the app settings — and it is all restored automatically on the
+   next open, so nothing is lost on reload, close or restart.
+   Saving itself sends nothing anywhere: the data never leaves the
+   device except the calls the user themselves makes to their own
+   providers. Picked-file preview URLs (blob:) cannot survive a
+   reload, so only those are dropped from the saved copy — the
+   file's name, size and any readable text stay saved. */
+var LOCAL_KEYS={chats:'axo.local.v1.chats', state:'axo.local.v1.state', agents:'axo.local.v1.agents', files:'axo.local.v1.files', mem:'axo.local.v1.mem', goals:'axo.local.v1.goals', meta:'axo.local.v1.meta'};
+var localSaveOk=null, localSavedAt=0, localWritten={}, localSaveTimer=null;
+function localStore(){
+  try{
+    if(localSaveOk===false) return null;
+    var s=window.localStorage; if(!s) return null;
+    if(localSaveOk===null){ var t='__axo_local_test__'; s.setItem(t,'1'); s.removeItem(t); localSaveOk=true; }
+    return s;
+  }catch(e){ localSaveOk=false; return null; }
+}
+function localWrite(key, str){
+  var s=localStore(); if(!s) return false;
+  if(localWritten[key]===str) return true;
+  try{ s.setItem(key, str); localWritten[key]=str; return true; }catch(e){ return false; }
+}
+function localJSON(key){
+  var s=localStore(); if(!s) return null;
+  var v=null;
+  try{ v=s.getItem(key); }catch(e){ return null; }
+  if(v==null) return null;
+  localWritten[key]=v;
+  try{ return JSON.parse(v); }catch(e){ return null; }
+}
+function stripBlobUrl(k, v){ return (typeof v==='string' && v.indexOf('blob:')===0)? '' : v; }
+/* Key vault state (the vault itself lives with the API section):
+   plaintext keys exist ONLY in memory (vaultPlain). What reaches
+   local storage is apiKeysForStore() output — sealed AES-GCM
+   ciphertext plus display metadata, never a readable key.
+   vaultReady gates the state slice of every save: until the vault
+   has sealed/unsealed what loadLocal() found, that slice is held
+   back (everything else still saves) so a key can never be written
+   out unsealed, and never dropped mid-migration either. */
+var vaultReady=false, vaultBroken=false, vaultPlain={}, lastMemSummarySig='';
+function localStateSubset(){
+  var keys=['currentId','theme','accent','accentName','chatTheme','chatThemeName','memory','webSearch','deepThink','canvasMode','avatarSize','mode','style','tempVal','autoPlay','agentMode','apiKeys','activeApiId','relayOn','relayAutoV3','mistralAgentId','skillsOn','usage','showArchived','panel','panelCustomised','voiceCard','voiceSnapshotShown','energyProfile','energyOffered','energyNotes','lastEnergy'];
+  var o={};
+  keys.forEach(function(k){ if(state[k]!==undefined) o[k]=state[k]; });
+  if(o.apiKeys && typeof apiKeysForStore==='function') o.apiKeys=apiKeysForStore();
+  return o;
+}
+var localDirty=true;
+function saveLocal(){
+  if(!localDirty) return true;
+  var ok=true;
+  function w(key, val, replacer){
+    var str;
+    try{ str=JSON.stringify(val, replacer||null); }catch(e){ return; }
+    if(str===undefined) return;
+    if(!localWrite(key, str)) ok=false;
+  }
+  w(LOCAL_KEYS.chats, chats, stripBlobUrl);
+  /* The state slice carries the API entries, so it waits for the
+     vault (see vaultReady above); the save stays dirty and the
+     debounced retry persists it the moment the vault is ready. */
+  if(vaultReady) w(LOCAL_KEYS.state, localStateSubset(), stripBlobUrl);
+  w(LOCAL_KEYS.agents, {list:AGENTS, mainId:mainAgentId, chatId:chatAgentId, speed:agentsAnimSpeed, avatar:{shape:avatarShape, face:avatarFace, color:avatarColor, acc:avatarAcc, preset:agentPreset}});
+  w(LOCAL_KEYS.files, {files:AGENT_FILES, folders:AGENT_FOLDERS, meta:AF_META, seq:afSeq, auto:agentFilesAuto});
+  /* The memory summary is rebuilt only when the memory lists
+     actually changed — rebuilding it (a full sort of every entry)
+     on every save was steady wasted work on phones. */
+  try{
+    var memSig=MEM.length+'/'+MEM_LOG.length+'/'+((MEM[MEM.length-1]||{}).ts||0)+'/'+((MEM_LOG[MEM_LOG.length-1]||{}).ts||0);
+    if(memSig!==lastMemSummarySig){ lastMemSummarySig=memSig; rebuildMemSummary(); }
+  }catch(e){}
+  w(LOCAL_KEYS.mem, {list:MEM, log:MEM_LOG, summary:MEM_SUMMARY});
+  w(LOCAL_KEYS.goals, {tracking:goalsTracking, list:goalsList, sched:SCHED, notifs:NOTIFS});
+  w(LOCAL_KEYS.meta, {uid:uid, savedAt:Date.now()});
+  if(ok && localStore()){ localSavedAt=Date.now(); localDirty=!vaultReady; }
+  return ok;
+}
+function saveLocalSoon(){
+  localDirty=true;
+  if(localSaveTimer) return;
+  localSaveTimer=setTimeout(function(){ localSaveTimer=null; saveLocal(); }, 500);
+}
+function loadLocal(){
+  var c=localJSON(LOCAL_KEYS.chats);
+  if(c && c.length){
+    var clean=c.filter(function(x){ return x && typeof x.id==='string' && Array.isArray(x.messages); });
+    if(clean.length) chats=clean;
+  }
+  if(!chatById('main')) chats.unshift({id:'main', title:'Main chat', main:true, messages:[]});
+  var st=localJSON(LOCAL_KEYS.state);
+  if(st && typeof st==='object') Object.keys(st).forEach(function(k){ state[k]=st[k]; });
+  /* One-off, in-flight state is never revived from storage. */
+  state.temp=false; state.attachments=[]; state.pendingLinks=[]; state.replyTo=null; state.splitId=null; state.view='chat';
+  /* Shared free APIs update (one-time): the site owner has now
+     deployed the provider keys on the server, so the app relay
+     turns ON for everyone once. After this migration the user's
+     own relay switch choice is respected and persists as before. */
+  if(!state.relayAutoV3){ state.relayOn=true; state.relayAutoV3=true; }
+  if(!chatById(state.currentId)) state.currentId='main';
+  var ag=localJSON(LOCAL_KEYS.agents);
+  if(ag && ag.list && ag.list.length){
+    AGENTS=ag.list;
+    if(ag.mainId && agentById(ag.mainId)) mainAgentId=ag.mainId;
+    if(ag.chatId && agentById(ag.chatId)) chatAgentId=ag.chatId;
+    if(typeof ag.speed==='number' && ag.speed>0) agentsAnimSpeed=ag.speed;
+    if(ag.avatar){
+      avatarShape=ag.avatar.shape||avatarShape; avatarFace=ag.avatar.face||avatarFace;
+      avatarColor=ag.avatar.color||avatarColor; avatarAcc=ag.avatar.acc||avatarAcc;
+      agentPreset=ag.avatar.preset||agentPreset;
+    }
+  }
+  var fl=localJSON(LOCAL_KEYS.files);
+  if(fl){
+    if(fl.files && fl.files.length) AGENT_FILES=fl.files;
+    if(fl.folders) AGENT_FOLDERS=fl.folders;
+    if(fl.meta && typeof fl.meta==='object') AF_META=fl.meta;
+    if(typeof fl.seq==='number') afSeq=fl.seq;
+    if(typeof fl.auto==='boolean') agentFilesAuto=fl.auto;
+  }
+  var mm=localJSON(LOCAL_KEYS.mem);
+  if(mm && mm.length!==undefined) MEM=mm; /* older saves: MEM was a bare array */
+  else if(mm && typeof mm==='object'){
+    if(Array.isArray(mm.list)) MEM=mm.list;
+    if(Array.isArray(mm.log)) MEM_LOG=mm.log;
+    if(typeof mm.summary==='string') MEM_SUMMARY=mm.summary;
+  }
+  var gl=localJSON(LOCAL_KEYS.goals);
+  if(gl){
+    if(gl.tracking) goalsTracking=gl.tracking;
+    if(gl.list) goalsList=gl.list;
+    if(gl.sched) SCHED=gl.sched;
+    if(gl.notifs) NOTIFS=gl.notifs;
+  }
+  var mt=localJSON(LOCAL_KEYS.meta);
+  if(mt){
+    if(typeof mt.uid==='number' && mt.uid>uid) uid=mt.uid;
+    if(typeof mt.savedAt==='number') localSavedAt=mt.savedAt;
+  }
+  try{ syncLegacyApi(); }catch(e){}
+  try{ syncMainGlobals(); }catch(e){}
+  try{ setAgentsAnimSpeed(agentsAnimSpeed); }catch(e){}
+  state.apiHealth=(apiEntries().length || state.relayOn)? 'changed' : 'unset';
+}
+loadLocal();
+vaultBoot();
+/* Save on every render (debounced), on a steady timer as a safety
+   net for changes that render elsewhere, and whenever the page is
+   hidden, closed or reloaded — so a change is always kept. */
+if(typeof renderAll==='function'){ var _localRA=renderAll; renderAll=function(){ var r=_localRA.apply(null, arguments); saveLocalSoon(); return r; }; }
+if(typeof renderSettings==='function'){ var _localRS=renderSettings; renderSettings=function(){ var r=_localRS.apply(null, arguments); saveLocalSoon(); return r; }; }
+if(typeof setApiHealth==='function'){ var _localSH=setApiHealth; setApiHealth=function(){ var r=_localSH.apply(null, arguments); saveLocalSoon(); return r; }; }
+/* Safety-net save: 10s and only while visible — the old 2s timer
+   woke the main thread constantly on phones for saves that the
+   debounced render saves, pagehide and visibility flushes already
+   cover. Nothing is lost: hiding or closing the page still saves
+   immediately via the handlers below. */
+setInterval(function(){ if(!document.hidden) saveLocal(); }, 10000);
+window.addEventListener('pagehide', saveLocal);
+window.addEventListener('beforeunload', saveLocal);
+document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='hidden') saveLocal(); });
+saveLocal();
+
 /* =============== Boot =============== */
 /* Memory covers ALL chats from the start: the messages already in
    every chat are saved to memory at boot (sanitised, like new ones). */
@@ -5913,7 +6826,7 @@ chats.forEach(function(c){ c.messages.forEach(function(m){ saveMemory(c, m); });
 applyAccent();
 applyAppearanceMode(state.mode);
 if(window.innerWidth>=820){ app.classList.remove('sb-closed'); app.classList.add('sb-open'); }
-else { sidebar.style.display='none'; }
+else { sidebar.style.display='none'; sbWarm(); }
 updateApiPill();
 renderAll(); updateTargetLine(); autoGrow(); updateSend(); syncBnav();
 

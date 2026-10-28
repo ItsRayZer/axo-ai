@@ -4250,7 +4250,7 @@ function emotionForText(t){
   return 'idle';
 }
 function chatAgentHeadHTML(){
-  var sz={small:56, medium:84, large:112, xl:148}[state.avatarSize]||112;
+  var sz={small:56, medium:84, large:112, xl:128}[state.avatarSize]||112;
   var a=chatAgent();
   /* Top avatar, clean: the mascot alone — fully transparent, no
      background disc or circle behind it, and no name pill / text

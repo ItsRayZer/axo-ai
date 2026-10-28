@@ -879,7 +879,7 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
 :root{--agent-speed:1;}
 html[data-theme="white"] .sb-logo{filter:invert(1);}
 html[data-theme="white"] .lib-ico img{filter:invert(1);}
-#agentHeadBar{display:none; justify-content:center; position:relative; z-index:6; flex:none; padding:0; margin-top:-12px; background:transparent;}
+#agentHeadBar{display:none; justify-content:center; position:relative; z-index:6; flex:none; padding:0; margin-top:-24px; background:transparent;}
 #agentHeadBar .chat-agent-head{padding:0 0 2px; background:transparent;}
 /* Top avatar presence: the mascot drawing carries its own padding
    inside its square, which made it read small at the top. The slot

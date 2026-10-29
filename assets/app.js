@@ -3320,12 +3320,13 @@ function avatarChatCommand(text, atts){
     setTimeout(function(){ openSettings('avataredit'); }, 650);
     return 'Opening Change Avatar — big preview at the top, the colour ring under it, faces in the middle and shapes below. Tap the blue check at the top right to save.';
   }
-  var presets={axo:'mia', mia:'mia', cute:'mia', default:'mia', muse:'muse', fox:'fox', dragon:'fox', lumi:'lumi', rabbit:'lumi', bunny:'lumi', moon:'lumi'};
+  var presets={axo:'mia', mia:'mia2', cute:'mia', default:'mia', muse:'muse', fox:'fox', dragon:'fox', lumi:'lumi', rabbit:'lumi', bunny:'lumi', moon:'lumi'};
   var preset=null;
   Object.keys(presets).forEach(function(k){ if(low.indexOf(k)>=0) preset=presets[k]; });
   if(preset && !shape){
     agentPreset=preset; agentAvatar=''; var caPre=chatAgent(); if(caPre){ caPre.preset=preset; caPre.avatar=''; if(caPre.id===mainAgentId) syncMainGlobals(); autoGenerateEmotes(caPre); }
-    return 'Done — my avatar is now the '+preset+' preset, animated and moving at the top of the chat. Open Settings → Agent → Change Avatar any time to build your own shape, face and colour.';
+    var preName=preset; for(var pi=0;pi<AVATAR_PRESETS.length;pi++) if(AVATAR_PRESETS[pi].id===preset) preName=AVATAR_PRESETS[pi].name.split(' — ')[0];
+    return 'Done — my avatar is now the '+preName+' preset, animated and moving at the top of the chat. Open Settings → Agent → Change Avatar any time to build your own shape, face and colour.';
   }
   avatarTargetAgentId=(chatAgent()? chatAgent().id : chatAgentId); applyCustomAvatar(shape||avatarShape, face||avatarFace, color||avatarColor, acc||avatarAcc); avatarTargetAgentId=null;
   return 'Done — I built your prompted avatar: a '+(colorName?colorName+' ':'')+avatarShape+' with a '+avatarFace+' face. It is live at the top of the chat, circular, with my name below it, and always animated. Say another description, upload an image, or open Change Avatar to tweak the shape, face and colour.';
@@ -5530,7 +5531,7 @@ function mdRender(md){
    by all agents by default; an agent with individual history or
    individual memory turned on (in its Edit page) keeps its own. */
 var AGENTS=[
-  {id:'mia', name:'Axo', vibe:'Sharp, warm, playful, a bit possessive, loyal. Roasts with love, matches his mood, stays clean and supportive in study, sad and crisis modes.', instructions:'', memoryText:'', preset:'mia', avatar:'', shape:'triangle', face:'wink', color:'#b57948', acc:'none', individualHistory:false, individualMemory:false, privateMem:[]},
+  {id:'mia', name:'Axo', vibe:'Warm, sharp, playful, loyal, natural and spirited. Talks like a real person: quick-witted and lively, teases lightly, cheers you on and always takes your side. Never stiff or corporate.', instructions:'Chat style, the default voice of this app: warm, sharp, playful, loyal, natural and spirited. Talk like a real person, with quick wit and light teasing; be genuinely helpful, cheer the user on, take their side, and keep every reply human and full of energy. Never sound stiff or corporate.', memoryText:'', preset:'mia', avatar:'', shape:'triangle', face:'wink', color:'#b57948', acc:'none', individualHistory:false, individualMemory:false, privateMem:[]},
   {id:'nova', name:'Nova', vibe:'Calm, precise, research-minded. The sub-agent: digs deep, checks facts, drafts and organises, then hands the result back clean.', instructions:'You are Nova, a sub-agent in this app, working under the main agent. Your job is the deep work: research, fact-checking, drafting, summarising and organising. Read the shared standing files (IDENTITY.md, SOUL.md, AGENTS.md, USER.md, MEMORY.md, TOOLS.md, HEARTBEAT.md) and the shared memory/ folder like every agent here, write durable facts back to MEMORY.md and day-to-day notes to a dated file in memory/, and never put a password, key, secret, email address or phone number in any file. Keep your results complete but tight and ready to present — the main agent shows them to the user. Only report what you actually did or found: started is not finished, a guess is not a fact.', memoryText:'', preset:'muse', avatar:'', shape:'circle', face:'open', color:'#3d9bff', acc:'none', individualHistory:false, individualMemory:false, privateMem:[]}
 ];
 var mainAgentId='mia', chatAgentId='mia', editingAgentId='mia', avatarTargetAgentId=null;
@@ -6165,9 +6166,9 @@ var CHARACTERS={
  mia:{preset:'mia2', label:'Mia', sub:'The Warm Spark', sheet:'', glow:'#ff8fab',
   emotes:{idle:'hero',happy:'happy',excited:'excited',curious:'curious',confused:'confused',sad:'sad',angry:'angry',laughing:'laughing',thinking:'thinking',surprised:'surprised',sleepy:'sleepy',proud:'excited',typing:'thinking',dancing:'dancing',sleeping:'sleeppose',coding:'coding',working:'running',writing:'sitting',searching:'orb',fixing:'front',reading:'curious'},
   colourways:[['original','Original',''],['blush','Blush','saturate(1.22) brightness(1.03)'],['berry','Berry','hue-rotate(-24deg) saturate(1.18)'],['honey','Honey','sepia(.3) saturate(1.25)'],['plum','Plum','hue-rotate(38deg) saturate(1.1)']],
-  persona:{traits:'Warm, Sharp, Playful, Loyal', role:'Companion & Co-pilot', specialty:'Chat, Cheer, Plan, Keep Company',
-   vibe:'Warm, sharp, playful and loyal, with a fun, lightly possessive streak. A spirited companion who talks like a real person, teases lightly, cheers you on and always takes your side.',
-   instructions:'You are Mia, a warm and spirited companion. Chat style: natural and lively, warm, sharp and playful, with quick wit, light teasing and a fun, lightly possessive streak; be loyal, take the user\u2019s side, cheer them on, and keep every reply human and full of energy. Never sound stiff or corporate.'}}
+  persona:{traits:'Warm, Sharp, Playful, Loyal, Natural, Spirited', role:'Companion & Co-pilot', specialty:'Chat, Cheer, Plan, Keep Company',
+   vibe:'Warm, sharp, playful, loyal, natural and spirited. A companion who talks like a real person, teases lightly, cheers you on and always takes your side.',
+   instructions:'You are Mia, a warm and spirited companion. Chat style: warm, sharp, playful, loyal, natural and spirited, with quick wit and light teasing; take the user\u2019s side, cheer them on, and keep every reply human and full of energy. Never sound stiff or corporate.'}}
 };
 var CHAR_BY_PRESET={mia:'axo', axo:'axo', muse:'muse', fox:'fox', lumi:'lumi', mia2:'mia'};
 function charIdForPreset(p){ return CHAR_BY_PRESET[p]||null; }
@@ -7127,7 +7128,7 @@ function openAvatarLibrary(){
   else openSettings('avataredit');
 }
 
-var agentVibe='Sharp, warm, playful, a bit possessive, loyal. Roasts with love, matches his mood, stays clean and supportive in study, sad and crisis modes.';
+var agentVibe='Warm, sharp, playful, loyal, natural and spirited. Talks like a real person: quick-witted and lively, teases lightly, cheers you on and always takes your side. Never stiff or corporate.';
 var AGENT_TODAY=[];
 var AGENT_APPROVALS=[];
 var AGENT_REMINDERS=[];
@@ -7782,21 +7783,42 @@ function wireAgentCarousel(carc, nav){
   if(!carc) return;
   var main=carc.querySelector('.ag-carousel-main');
   var g=null, verdict=null, endAt=0;
+  var wrapEl=main? main.querySelector('.ag-avatar-wrap') : null;
+  function peekEls(){ return main? Array.prototype.slice.call(main.querySelectorAll('.ag-peek')) : []; }
   function setDrag(dx){
     if(!main) return;
     main.style.transition='none';
     main.style.transform='translateX('+dx+'px)';
-    main.style.opacity=String(Math.max(.35, 1-Math.abs(dx)/340));
+    var p=Math.min(1, Math.abs(dx)/170);
+    main.style.opacity=String(Math.max(.55, 1-p*.35));
+    /* Continuous growth under the finger: the centred agent
+       eases down a touch while the peek being dragged toward
+       grows from its small peek scale toward full size and
+       fades in, so the switch is already under way during the
+       drag and simply completes on release - the same unbroken
+       motion, no jump and no snap at the hand-off. */
+    if(wrapEl){ wrapEl.style.transition='none'; wrapEl.style.transform='scale('+(1-p*.12).toFixed(3)+')'; }
+    peekEls().forEach(function(pk){
+      var dirn=parseInt(pk.getAttribute('data-dir')||'0',10);
+      var toward=(dx<0 && dirn===1) || (dx>0 && dirn===-1);
+      pk.style.transition='none';
+      if(toward){ pk.style.transform='scale('+(.86+p*.6).toFixed(3)+')'; pk.style.opacity=String(.55+p*.45); }
+      else { pk.style.opacity=String(Math.max(.2, .55*(1-p*.6))); }
+    });
   }
   function clearDrag(){
     if(!main) return;
     main.style.transition=''; main.style.transform=''; main.style.opacity='';
+    if(wrapEl){ wrapEl.style.transition='none'; wrapEl.style.transform=''; }
+    peekEls().forEach(function(pk){ pk.style.transition='none'; pk.style.transform=''; pk.style.opacity=''; });
   }
   function springBack(){
     if(!main) return;
-    main.style.transition='transform .26s cubic-bezier(.22,1,.36,1), opacity .22s ease';
+    main.style.transition='transform .45s cubic-bezier(.32,.72,0,1), opacity .35s ease';
     main.style.transform=''; main.style.opacity='';
-    setTimeout(function(){ if(main) main.style.transition=''; }, 300);
+    if(wrapEl){ wrapEl.style.transition='transform .45s cubic-bezier(.32,.72,0,1)'; wrapEl.style.transform=''; }
+    peekEls().forEach(function(pk){ pk.style.transition=''; pk.style.transform=''; pk.style.opacity=''; });
+    setTimeout(function(){ if(main) main.style.transition=''; if(wrapEl) wrapEl.style.transition=''; }, 500);
   }
   function begin(x, y, id){
     g={x:x, y:y, dx:0, dy:0, lock:null, t0:Date.now(), lastX:x, lastT:Date.now(), vel:0, id:id};
@@ -7862,84 +7884,105 @@ function settingsAgent(){
      one in the created-agents list (AGENTS order). The slot after
      the LAST created agent — and the only slot in the
      single-agent case — is the create-new-agent tile, rendered
-     as a peek in the same carousel UI; swiping past the last
-     agent centres that tile, and tapping it (peek or centred)
-     opens the New sub-agent flow. Tapping an agent peek selects
-     that agent for chatting and opens its chat. */
+     as a peek in the same carousel UI; swiping or tapping past
+     the last agent centres that tile. Tapping an agent peek only
+     SELECTS that agent: it glides to the middle and becomes the
+     current chat's agent (sticky selection, applied on the spot
+     through the per-chat assignment), but it never opens the
+     chat — the chat itself opens only from the explicit
+     "Chat with X" row, or by backing out to the chat, which then
+     shows the last selected agent. */
   var agIdx=AGENTS.indexOf(m);
   var prevA=(AGENTS.length>1 && agIdx>0)? AGENTS[agIdx-1] : null;
   var nextA=(AGENTS.length>1 && agIdx>=0 && agIdx<AGENTS.length-1)? AGENTS[agIdx+1] : null;
   function peekHTML(a, side){
-    return '<button class="ag-peek '+side+'" data-agpeek="'+a.id+'" data-dir="'+(side==='prev'?-1:1)+'" aria-label="Chat with '+escA(a.name)+'"><span class="agent-ava-slot">'+avatarHTMLFor(a,'idle')+'</span></button>';
+    return '<button class="ag-peek '+side+'" data-agpeek="'+a.id+'" data-dir="'+(side==='prev'?-1:1)+'" aria-label="Select '+escA(a.name)+'"><span class="agent-ava-slot">'+avatarHTMLFor(a,'idle')+'</span></button>';
   }
   function createPeekHTML(){
     return '<button class="ag-peek next ag-peek-create" data-agcreate="1" data-dir="1" aria-label="Create new agent"><span class="ag-create-vis">'+I.plus+'</span></button>';
   }
-  /* Selecting an agent — from a carousel peek or tile — switches
-     the chatting agent to it and opens its chat. */
-  function chatWithAgent(t){
-    if(!t) return;
-    setChatAgent(t.id); closeSettings(); toast('Chatting with '+t.name);
+  /* One continuous glide for every carousel switch, shared by
+     agent-to-agent moves and the centred create tile. The
+     re-render swaps the page underneath, and this animates BOTH
+     sides in the same unbroken 560ms Apple-eased window: the
+     outgoing header is kept as a ghost that shrinks and slides
+     away while fading out late, and the incoming header starts
+     as the small side peek (offset toward the side it came
+     from, scaled down) and grows big as it glides into the
+     middle and lands centred. They overlap the whole time, so
+     there is never an empty black gap or a flash between
+     agents. The page's own entrance stagger is silenced for
+     this render (inline animation:none on the rebuilt blocks),
+     so nothing fades in from zero mid-switch either. */
+  function carouselGlide(dir, ghostHTML){
+    setView.querySelectorAll('.agent-flow>*').forEach(function(el){ el.style.animation='none'; });
+    if(!ghostHTML) return;
+    if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var nc=$('#agCarousel'); if(!nc) return;
+    var main=nc.querySelector('.ag-carousel-main'); if(!main) return;
+    var g=document.createElement('div');
+    g.className='ag-carousel-ghost'; g.setAttribute('aria-hidden','true'); g.innerHTML=ghostHTML;
+    nc.appendChild(g);
+    var EASE='cubic-bezier(.32,.72,0,1)', DUR=560;
+    try{
+      main.animate([
+        {transform:'translateX('+(dir*104)+'px) scale(.78)', opacity:.35},
+        {transform:'translateX('+(dir*30)+'px) scale(.93)', opacity:.85, offset:.55},
+        {transform:'translateX(0) scale(1)', opacity:1}
+      ],{duration:DUR, easing:EASE});
+      var wrap=main.querySelector('.ag-avatar-wrap');
+      if(wrap) wrap.animate([{transform:'scale(.6)'},{transform:'scale(1.04)', offset:.72},{transform:'scale(1)'}],{duration:DUR, easing:EASE});
+      var ga=g.animate([
+        {transform:'translateX(0) scale(1)', opacity:1},
+        {transform:'translateX('+(-dir*44)+'px) scale(.92)', opacity:.92, offset:.45},
+        {transform:'translateX('+(-dir*104)+'px) scale(.78)', opacity:0}
+      ],{duration:DUR, easing:EASE});
+      ga.onfinish=function(){ if(g.parentNode) g.remove(); };
+    }catch(e){ if(g.parentNode) g.remove(); }
+    setTimeout(function(){ if(g.parentNode) g.remove(); }, DUR+140);
   }
-  /* Move the Agent page to another created agent with the
-     overlap cross-slide: the outgoing header is kept as a ghost
-     over the new page and slides out while the incoming header
-     is already sliding in — neither waits for the other. The
-     destination page is the full Agent page for that agent, so
-     a sub-agent reached this way shows the same Make it MAIN
-     agent row (makeMainAgent) as everywhere else. */
+  function carouselGhostHTML(){
+    var oldC=$('#agCarousel');
+    var oldMain=oldC? oldC.querySelector('.ag-carousel-main') : null;
+    return oldMain? oldMain.innerHTML : null;
+  }
+  /* Move the Agent page to another created agent. Selecting an
+     agent here is STICKY: the target becomes the current chat's
+     agent on the spot (setChatAgent, the per-chat assignment),
+     so backing out to the chat lands on this agent — closeSettings
+     re-renders the chat with it immediately. Selecting never
+     opens or leaves the chat by itself. The destination page is
+     the full Agent page for that agent, so a sub-agent reached
+     this way shows the same Make it MAIN agent row
+     (makeMainAgent) as everywhere else. */
   function goAgentPage(target, dir){
     if(!target || (target.id===m.id && !agentShowCreate)) return;
-    var oldC=$('#agCarousel');
-    var oldMain=oldC? oldC.querySelector('.ag-carousel-main') : null;
-    var ghostHTML=oldMain? oldMain.innerHTML : null;
+    var ghostHTML=carouselGhostHTML();
     agentPageId=target.id; agentShowCreate=false;
+    setChatAgent(target.id);
     renderSettings('agentpage');
-    if(!ghostHTML) return;
-    if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    var nc=$('#agCarousel'); if(!nc) return;
-    var main=nc.querySelector('.ag-carousel-main'); if(!main) return;
-    var g=document.createElement('div');
-    g.className='ag-carousel-ghost'; g.setAttribute('aria-hidden','true'); g.innerHTML=ghostHTML;
-    nc.appendChild(g);
-    try{
-      main.animate([{transform:'translateX('+(dir*72)+'px)', opacity:.15},{transform:'translateX(0)', opacity:1}],{duration:380, easing:'cubic-bezier(.22,1,.36,1)'});
-      var ga=g.animate([{transform:'translateX(0)', opacity:1},{transform:'translateX('+(-dir*72)+'px)', opacity:0}],{duration:380, easing:'cubic-bezier(.22,1,.36,1)'});
-      ga.onfinish=function(){ if(g.parentNode) g.remove(); };
-    }catch(e){ if(g.parentNode) g.remove(); }
-    setTimeout(function(){ if(g.parentNode) g.remove(); }, 480);
+    carouselGlide(dir, ghostHTML);
   }
-  /* Swipe past the last created agent: the create-new-agent tile
-     becomes the centred carousel card, with the same overlap
-     cross-slide as moving between agents. */
+  /* Swipe or tap past the last created agent: the
+     create-new-agent tile becomes the centred carousel card,
+     with the same continuous glide as moving between agents.
+     Centring the tile is not an agent selection — the chat
+     keeps whichever agent was selected last. */
   function goCreatePage(dir){
     if(agentShowCreate) return;
-    var oldC=$('#agCarousel');
-    var oldMain=oldC? oldC.querySelector('.ag-carousel-main') : null;
-    var ghostHTML=oldMain? oldMain.innerHTML : null;
+    var ghostHTML=carouselGhostHTML();
     agentShowCreate=true;
     renderSettings('agentpage');
-    if(!ghostHTML) return;
-    if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    var nc=$('#agCarousel'); if(!nc) return;
-    var main=nc.querySelector('.ag-carousel-main'); if(!main) return;
-    var g=document.createElement('div');
-    g.className='ag-carousel-ghost'; g.setAttribute('aria-hidden','true'); g.innerHTML=ghostHTML;
-    nc.appendChild(g);
-    try{
-      main.animate([{transform:'translateX('+(dir*72)+'px)', opacity:.15},{transform:'translateX(0)', opacity:1}],{duration:380, easing:'cubic-bezier(.22,1,.36,1)'});
-      var ga=g.animate([{transform:'translateX(0)', opacity:1},{transform:'translateX('+(-dir*72)+'px)', opacity:0}],{duration:380, easing:'cubic-bezier(.22,1,.36,1)'});
-      ga.onfinish=function(){ if(g.parentNode) g.remove(); };
-    }catch(e){ if(g.parentNode) g.remove(); }
-    setTimeout(function(){ if(g.parentNode) g.remove(); }, 480);
+    carouselGlide(dir, ghostHTML);
   }
   /* The create-new-agent tile, centred at the end of the
      carousel: the same carousel UI — a peek of the last created
      agent on the left, the big round tile centred, name and
      status lines under it. Tapping the tile (or the New
      sub-agent row under it) opens the existing New sub-agent
-     creation flow. Tapping the peek selects that agent and opens
-     its chat; swiping right browses back to that agent's page. */
+     creation flow. Tapping the peek or swiping right selects
+     that agent and glides it back to the middle; neither opens
+     a chat. */
   if(agentShowCreate){
     var lastA=AGENTS[AGENTS.length-1];
     setView.innerHTML=setHead('Agent','agent')+'<div class="set-scroll"><div class="set-inner agent-flow">'
@@ -7950,7 +7993,7 @@ function settingsAgent(){
       +'<p class="ag-status">Create a new agent — name, avatar, vibe, instructions &amp; memory</p>'
       +'</div></div></div>'
       +'<div class="set-group" style="--i:1"><button class="set-row" id="agCreateTileBtn"><span class="ric">'+I.plus+'</span><span style="flex:1">New sub-agent<span class="sub2">Full options — name, avatar, vibe, instructions, memory &amp; more</span></span>'+I.chevR+'</button></div>'
-      +(lastA? '<p class="set-note" style="--i:2">Swipe right to go back to '+esc(lastA.name)+', or tap their picture to chat with them.</p>' : '')
+      +(lastA? '<p class="set-note" style="--i:2">Swipe right to go back to '+esc(lastA.name)+', or tap their picture to bring them to the middle.</p>' : '')
       +'</div></div>';
     wireBack(function(){ agentShowCreate=false; if(lastA) agentPageId=lastA.id; renderSettings('agentpage'); });
     function openCreateFlow(){ renderSettings('agentcreate'); }
@@ -7958,7 +8001,7 @@ function settingsAgent(){
     $('#agCreateTileBtn').addEventListener('click',openCreateFlow);
     var carc2=$('#agCarousel');
     if(carc2){
-      carc2.querySelectorAll('[data-agpeek]').forEach(function(b){ b.addEventListener('click',function(){ var t=agentById(b.getAttribute('data-agpeek')); if(t) chatWithAgent(t); }); });
+      carc2.querySelectorAll('[data-agpeek]').forEach(function(b){ b.addEventListener('click',function(){ var t=agentById(b.getAttribute('data-agpeek')); if(t) goAgentPage(t,-1); }); });
       wireAgentCarousel(carc2, { right:function(){ if(lastA) goAgentPage(lastA,-1); } });
     }
     return;
@@ -8054,19 +8097,24 @@ function settingsAgent(){
   var cm=$('#agChatMain'); if(cm) cm.addEventListener('click',function(){ setChatAgent(m.id); closeSettings(); toast('Chatting with '+m.name); });
   wireTabBody();
   /* Carousel wiring: tapping an agent peek SELECTS that agent —
-     the chat switches to it and opens. Tapping the create peek
-     at the end of the list opens the New sub-agent flow. Swiping
-     the header left / right BROWSES the carousel: between the
-     created agents' pages, and past the last agent onto the
-     centred create-new-agent tile (and back). The create tile
-     always sits after the last agent, so the wiring also runs in
-     the single-agent case, where it is the only other slot. A
+     it glides to the middle and becomes the current chat's
+     agent (sticky, via goAgentPage), but the chat does NOT open:
+     opening a chat happens only from the "Chat with X" row
+     above, or by backing out to the chat. Tapping the create
+     peek at the end of the list likewise only centres the
+     create tile (goCreatePage); the centred tile itself opens
+     the New sub-agent flow. Swiping the header left / right
+     BROWSES the carousel the same way: between the created
+     agents' pages, and past the last agent onto the centred
+     create-new-agent tile (and back). The create tile always
+     sits after the last agent, so the wiring also runs in the
+     single-agent case, where it is the only other slot. A
      swipe's trailing click is swallowed so it never lands on the
      centred avatar / pencil underneath the finger. */
   var carc=$('#agCarousel');
   if(carc){
-    carc.querySelectorAll('[data-agpeek]').forEach(function(b){ b.addEventListener('click',function(){ var t=agentById(b.getAttribute('data-agpeek')); if(t) chatWithAgent(t); }); });
-    var crp=carc.querySelector('[data-agcreate]'); if(crp) crp.addEventListener('click',function(){ renderSettings('agentcreate'); });
+    carc.querySelectorAll('[data-agpeek]').forEach(function(b){ b.addEventListener('click',function(){ var t=agentById(b.getAttribute('data-agpeek')); if(t) goAgentPage(t, parseInt(b.getAttribute('data-dir')||'1',10)); }); });
+    var crp=carc.querySelector('[data-agcreate]'); if(crp) crp.addEventListener('click',function(){ goCreatePage(1); });
     wireAgentCarousel(carc, {
       left:function(){ if(nextA) goAgentPage(nextA,1); else goCreatePage(1); },
       right:function(){ if(prevA) goAgentPage(prevA,-1); }
@@ -8136,10 +8184,14 @@ function wireAe2Tabs(fn){
    personality) editing a draft. Below, the small "Instructions
    & memory" tab replaces the page with the vibe, custom
    instructions and custom memory in a clean minimal layout; the
-   Avatar tab stays below there too. The agent's NAME is preset:
-   it is simply the name of the character picked on the Avatar
-   tab (Axo, Muse, Fox or Lumi — numbered if that name is already
-   taken), shown as a quiet read-only line, never typed. The one
+   Avatar tab stays below there too. The agent's NAME is typed
+   in one minimal place: a small chat bubble at the very top of
+   the page, above the avatar stage, where the new agent
+   introduces itself - "My name is ..." with the name inside the
+   quotes as the typing box, updating live as it is typed. Left
+   empty, the name falls back to the picked character's own
+   name (Axo, Muse, Fox or Lumi), numbered if already taken;
+   a typed name is numbered the same way if it collides. The one
    action is a small Create pill at the top of the header, in
    the place the ? button used to sit (that icon is gone). What
    is filled in on either tab is kept while switching, and
@@ -8160,31 +8212,52 @@ function settingsAgentCreate(){
 }
 function ncCapture(){
   if(!ncState) return;
+  var nm=$('#ncNameIn'); if(nm) ncState.name=nm.value;
   var v=$('#ncVibe'); if(v) ncState.vibe=v.value;
   var i2=$('#ncIns'); if(i2) ncState.ins=i2.value;
   var m2=$('#ncMem'); if(m2) ncState.mem=m2.value;
 }
-/* The preset name for the agent being created: the picked
-   character's own name (Axo / Muse / Fox / Lumi), numbered
-   (Axo 2, Axo 3…) when an agent already carries it, so Create
-   never has to stop and ask for a name. */
-function ncPresetName(){
-  var cid=ncAv? charIdForPreset(ncAv.preset) : null;
-  var base=(cid && CHARACTERS[cid])? CHARACTERS[cid].label : 'Axo';
+/* Any name, typed or preset, is numbered (Nova 2, Nova 3...)
+   when an agent already carries it, so Create never has to
+   stop and ask about a clash. */
+function ncResolveName(base){
   function taken(n){ return AGENTS.some(function(a){ return a.name.toLowerCase()===n.toLowerCase(); }); }
   var nm=base, k=2;
   while(taken(nm)){ nm=base+' '+(k++); }
   return nm;
+}
+/* The preset name for the agent being created: the picked
+   character's own name (Axo / Muse / Fox / Lumi), used when
+   the name bubble is left empty. */
+function ncPresetName(){
+  var cid=ncAv? charIdForPreset(ncAv.preset) : null;
+  var base=(cid && CHARACTERS[cid])? CHARACTERS[cid].label : 'Axo';
+  return ncResolveName(base);
+}
+/* The name bubble at the top of the create screen: the new
+   agent introduces itself, "My name is ..." - the quoted part
+   is the typing box itself, so the bubble reads live as the
+   user types. Shown on both create tabs, above everything. */
+function ncNameBubbleHTML(s){
+  return '<div class="nc-name-bubble-wrap"><label class="nc-name-bubble"><span>My name is</span><span class="nc-q">&ldquo;</span><input id="ncNameIn" type="text" value="'+escA(s.name||'')+'" placeholder="'+escA(ncPresetName())+'" autocomplete="off" autocapitalize="words" maxlength="40" aria-label="New agent name"><span class="nc-q">&rdquo;</span></label></div>';
+}
+function wireNcName(){
+  var f=document.getElementById('ncNameIn'); if(!f) return;
+  function fit(){ f.style.width=Math.max(3, (f.value||f.placeholder||'').length+1)+'ch'; }
+  fit();
+  f.addEventListener('pointerdown',function(e){ e.stopPropagation(); });
+  f.addEventListener('touchstart',function(e){ e.stopPropagation(); },{passive:true});
+  f.addEventListener('input',function(){ if(ncState) ncState.name=f.value; fit(); });
 }
 function renderAgentCreate(){
   var s=ncState;
   var head='<div class="set-head"><button class="circle-btn" id="setBack" aria-label="Back">'+I.back+'</button><h2>New sub-agent</h2><button class="nc-create-top" id="ncGoTop">Create</button></div>';
   var body='';
   if(ncTab==='avatar'){
-    body='<div class="ae2-page"><div id="ncAvMount"></div></div>';
+    body='<div class="ae2-page">'+ncNameBubbleHTML(s)+'<div id="ncAvMount"></div></div>';
   } else {
     body='<div class="ae2-page ae2-clean">'
-      +'<div class="nc-name-line"><span class="nl-label">Name</span><span class="nl-val">'+esc(ncPresetName())+'</span><span class="nl-note">from the character you pick</span></div>'
+      +ncNameBubbleHTML(s)
       +'<div class="field"><label for="ncVibe">Vibe</label><textarea id="ncVibe" rows="2" style="'+TA_STYLE+'" placeholder="e.g. Calm, precise, research-minded">'+esc(s.vibe)+'</textarea></div>'
       +'<div class="field"><label for="ncIns">Custom instructions</label><textarea id="ncIns" rows="4" style="'+TA_STYLE+'" placeholder="How this agent should behave, its job, its rules">'+esc(s.ins)+'</textarea></div>'
       +'<div class="field"><label for="ncMem">Custom memory</label><textarea id="ncMem" rows="4" style="'+TA_STYLE+'" placeholder="What this agent should always remember">'+esc(s.mem)+'</textarea></div>'
@@ -8208,6 +8281,7 @@ function renderAgentCreate(){
      page or anywhere else. The half-filled draft is dropped. */
   wireBack(function(){ ncActive=false; ncState=null; ncAv=null; closeSettings(); });
   $('#ncGoTop').addEventListener('click',ncCreateGo);
+  wireNcName();
   wireAe2Tabs(function(t){ if(t===ncTab) return; ncCapture(); ncTab=t; renderAgentCreate(); });
   if(ncTab==='avatar'){
     mountAvatarEditor($('#ncAvMount'), ncAv, { onUpload:function(done){ avPickPhotoFile(function(url){ ncAv.photo=url; ncAv.mode='photo'; ncAv.emote='idle'; done(); }); } });
@@ -8237,9 +8311,12 @@ function agentFirstChat(a, withSettings){
 }
 function ncCreateGo(){
   ncCapture();
-  /* Names are preset — the agent is created under its picked
-     character's name, auto-numbered if taken. No name step. */
-  var nm=ncPresetName();
+  /* The name comes from the top bubble: what was typed there is
+     the agent's name, exactly as typed (auto-numbered only if
+     another agent already carries it). Left empty, it falls
+     back to the picked character's preset name. */
+  var typed=(ncState.name||'').trim();
+  var nm=typed? ncResolveName(typed) : ncPresetName();
   var vibe=ncState.vibe.trim();
   var ins=agentTextSanitize(ncState.ins.trim());
   var mem=agentTextSanitize(ncState.mem.trim());
@@ -9256,6 +9333,32 @@ function loadLocal(){
     if(typeof fl.seq==='number') afSeq=fl.seq;
     if(typeof fl.auto==='boolean') agentFilesAuto=fl.auto;
   }
+  /* One-time default persona: the default chatting style is now
+     the warm, sharp, playful, loyal, natural and spirited voice,
+     with no personal details baked in. A saved default agent or
+     SOUL.md still carrying the OLD default wording is migrated
+     once, marked so anything the user later writes themselves is
+     never overwritten again. Mia is not a default agent preset:
+     no agent is created for her here; she stays an avatar choice
+     (preset mia2) in the Avatar editor only. */
+  try{
+    var s1=localStore();
+    if(s1 && !s1.getItem('axo.defaultPersonaV1')){
+      var NEW_VIBE='Warm, sharp, playful, loyal, natural and spirited. Talks like a real person: quick-witted and lively, teases lightly, cheers you on and always takes your side. Never stiff or corporate.';
+      var NEW_INSTR='Chat style, the default voice of this app: warm, sharp, playful, loyal, natural and spirited. Talk like a real person, with quick wit and light teasing; be genuinely helpful, cheer the user on, take their side, and keep every reply human and full of energy. Never sound stiff or corporate.';
+      AGENTS.forEach(function(x){
+        if(x && x.id==='mia' && /matches his mood|a bit possessive/.test(x.vibe||'')){
+          x.vibe=NEW_VIBE;
+          if(!x.instructions) x.instructions=NEW_INSTR;
+        }
+      });
+      var soulF=afFind('SOUL.md');
+      if(soulF && soulF.content.indexOf('Be the assistant the user would actually want to talk to')>-1){
+        soulF.content=soulF.content.split('Be the assistant the user would actually want to talk to: concise when brevity serves, thorough when the question deserves depth. Not a corporate drone, not a sycophant — just good company that gets things done.').join('The default voice of every agent here is warm, sharp, playful, loyal, natural and spirited: talk like a real person, with quick wit and light teasing, cheer the user on, take their side, and keep every reply human and full of energy. Never stiff or corporate: concise when brevity serves, thorough when the question deserves depth, and never a sycophant.');
+      }
+      s1.setItem('axo.defaultPersonaV1','1');
+    }
+  }catch(e){}
   var mm=localJSON(LOCAL_KEYS.mem);
   if(mm && mm.length!==undefined) MEM=mm; /* older saves: MEM was a bare array */
   else if(mm && typeof mm==='object'){
@@ -9366,7 +9469,7 @@ function maybeShowIntro(){
      the step-2 picker cards use. */
   var avaEl=$('#introAva');
   avaEl.classList.add('intro-group');
-  avaEl.innerHTML=['lumi','mia','muse','fox','axo'].map(function(cid){
+  avaEl.innerHTML=['lumi','muse','fox','axo'].map(function(cid){
     return '<span class="g-ava g-'+cid+'"><span class="mini-ava" style="width:100%;height:100%;display:block">'+charAvatarHTML(cid,'idle',null)+'</span></span>';
   }).join('');
   var v=$('#introView'); v.hidden=false;
@@ -9435,7 +9538,7 @@ function maybeShowIntro(){
     toast('Chatting with '+a.name+' \u2014 on the Gptopen Model');
   }
   var famEl=$('#introFamily');
-  ['axo','muse','fox','lumi','mia'].forEach(function(cid){
+  ['axo','muse','fox','lumi'].forEach(function(cid){
     var c=CHARACTERS[cid];
     var b=document.createElement('button');
     b.className='intro-fam-card'; b.type='button';
@@ -9466,7 +9569,7 @@ function maybeShowIntro(){
      characters and Own face. Colourway, Shape and Face picks use
      the editor's tile UI (.av-pickgrid / .av-pick, the same
      pickTile markup and data-avpick contract), not chips. */
-  var INTRO_LOOKS=['axo','muse','fox','lumi','mia','custom'];
+  var INTRO_LOOKS=['axo','muse','fox','lumi','custom'];
   function introLookPreview(look){
     if(look==='custom') return customAvatarSVG(introDraft.shape, introDraft.face, introDraft.color, 'none');
     return charAvatarHTML(look,'idle',null);

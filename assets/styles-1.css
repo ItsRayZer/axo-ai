@@ -4,7 +4,7 @@
   --bg:#000000; --surface:#1c1c1e; --surface2:#2c2c2e; --text:#ffffff; --text2:#e5e5ea;
   --muted:#98989d; --border:rgba(255,255,255,.08); --border2:rgba(255,255,255,.14);
   --input:rgba(255,255,255,.06); --hover:rgba(255,255,255,.07); --rowbg:rgba(255,255,255,.055);
-  --overlay:rgba(0,0,0,.55); --glass:rgba(28,28,30,.72); --glass2:rgba(44,44,46,.78);
+  --overlay:rgba(0,0,0,.55); --glass:rgba(28,28,30,.72); --glass2:rgba(44,44,46,.78); --glass-strong:rgba(44,44,46,.94);
   --danger:#ff453a; --kb:0px; --kbFixed:0px; --sidebar-w:min(312px,calc(100vw - 66px));
   --peek:#161618; --peek-desk:#141416; --pill:#232326;
   --ease:cubic-bezier(.32,.72,0,1);
@@ -16,7 +16,7 @@ html[data-theme="white"]{
   --bg:#ffffff; --surface:#f2f2f7; --surface2:#e5e5ea; --text:#111111; --text2:#333333;
   --muted:#6b6b70; --border:rgba(0,0,0,.09); --border2:rgba(0,0,0,.16);
   --input:rgba(0,0,0,.045); --hover:rgba(0,0,0,.05); --rowbg:rgba(0,0,0,.04);
-  --overlay:rgba(0,0,0,.35); --glass:rgba(255,255,255,.78); --glass2:rgba(242,242,247,.85);
+  --overlay:rgba(0,0,0,.35); --glass:rgba(255,255,255,.78); --glass2:rgba(242,242,247,.85); --glass-strong:rgba(255,255,255,.94);
   --peek:#f2f2f7; --peek-desk:#f5f5f7; --pill:#e9e9ee;
 }
 @media (min-width:820px){ :root{ --sidebar-w:284px; } }
@@ -288,7 +288,7 @@ header.chat-head .head-pill{margin-left:auto;}
 #cvFab{position:absolute; right:18px; bottom:calc(20px + env(safe-area-inset-bottom)); width:54px; height:54px; border-radius:50%; border:1px solid var(--border2); background:var(--glass-strong); -webkit-backdrop-filter:blur(20px) saturate(1.4); backdrop-filter:blur(20px) saturate(1.4); color:var(--text); display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 12px 32px rgba(0,0,0,.45);}
 #cvFab svg{width:23px; height:23px;}
 #cvFab[hidden]{display:none;}
-.cv-composer{position:absolute; left:12px; right:12px; bottom:calc(12px + env(safe-area-inset-bottom)); display:flex; align-items:flex-end; gap:8px; background:var(--glass-strong); -webkit-backdrop-filter:blur(20px) saturate(1.4); backdrop-filter:blur(20px) saturate(1.4); border:1px solid var(--border2); border-radius:28px; padding:6px 6px 6px 16px; box-shadow:0 16px 40px rgba(0,0,0,.45);}
+.cv-composer{position:absolute; left:12px; right:12px; bottom:calc(12px + env(safe-area-inset-bottom)); display:flex; align-items:flex-end; gap:8px; background:var(--surface); border:1px solid var(--border2); border-radius:28px; padding:6px 6px 6px 16px; box-shadow:0 16px 40px rgba(0,0,0,.45);}
 .cv-composer[hidden]{display:none;}
 .cv-composer textarea{flex:1; border:0; background:transparent; color:var(--text); font:inherit; font-size:16px; resize:none; outline:none; max-height:min(240px,36dvh); padding:8px 0;}
 .cv-composer .send-btn{flex:none;}
@@ -442,7 +442,10 @@ html.kb-open .cv-composer{bottom:6px;}
 .msg-file .fmeta{min-width:0;}
 .msg-file .fname{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .msg-file .fsz{color:var(--muted); font-size:11.5px; font-weight:400;}
-.composer{display:flex; align-items:flex-end; gap:8px; background:var(--glass); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border:1px solid var(--border2); border-radius:28px; padding:6px; margin-bottom:calc(12px + env(safe-area-inset-bottom)); box-shadow:0 10px 34px rgba(0,0,0,.28);}
+/* The chat box keeps a solid, visible surface - never fully
+   transparent, no glass see-through: messages behind it never
+   show through the composer. */
+.composer{display:flex; align-items:flex-end; gap:8px; background:var(--surface); border:1px solid var(--border2); border-radius:28px; padding:6px; margin-bottom:calc(12px + env(safe-area-inset-bottom)); box-shadow:0 10px 34px rgba(0,0,0,.28);}
 .plus-btn{width:40px; height:40px; border-radius:50%; background:var(--rowbg); display:grid; place-items:center; flex:none; color:var(--text);}
 .plus-btn:active{background:var(--hover);}
 #chatInput{flex:1; border:none; outline:none; background:none; resize:none; color:var(--text); font-size:16px; line-height:1.4; padding:9px 2px; max-height:min(300px,42dvh); min-width:0; overflow-x:hidden; scrollbar-width:none; -ms-overflow-style:none;}
@@ -468,7 +471,7 @@ html.kb-open .cv-composer{bottom:6px;}
    The moment any model answers, the normal type box flows back.
    Both swaps are one Apple-style flow: fade + rise + unblur, and a
    slow sheen drifts across the glass while the box is up. */
-#apiBox{display:none; align-items:center; gap:8px; background:var(--glass); backdrop-filter:blur(24px) saturate(1.5); -webkit-backdrop-filter:blur(24px) saturate(1.5); border:1px solid var(--border2); border-radius:28px; padding:6px; margin-bottom:calc(12px + env(safe-area-inset-bottom)); box-shadow:0 10px 34px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.09); position:relative; overflow:hidden;}
+#apiBox{display:none; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border2); border-radius:28px; padding:6px; margin-bottom:calc(12px + env(safe-area-inset-bottom)); box-shadow:0 10px 34px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.09); position:relative; overflow:hidden;}
 #composerZone.api-mode .composer{display:none;}
 #composerZone.api-mode #apiBox{display:flex; animation:apiSwapIn .5s var(--ease);}
 #composerZone:not(.api-mode) .composer{animation:apiSwapIn .45s var(--ease);}
@@ -1373,8 +1376,6 @@ button.ca-ava{border:0; padding:0; cursor:pointer; background:transparent;}
 .intro-group .g-muse{width:94px; height:94px; left:2px; bottom:4px; z-index:2; animation-delay:.5s;}
 .intro-group .g-fox{width:94px; height:94px; right:2px; bottom:4px; z-index:2; animation-delay:1s;}
 .intro-group .g-lumi{width:82px; height:82px; left:50%; margin-left:-41px; top:0; z-index:1; animation-delay:1.5s;}
-.intro-group .g-mia{width:80px; height:80px; right:6px; top:0; z-index:1; animation-delay:2s;}
-.intro-group .g-mia img{border-radius:50%;}
 #introAva.intro-group .mini-ava{width:100% !important; height:100% !important;}
 #introAva.intro-group svg{width:100% !important; height:100% !important;}
 @media (prefers-reduced-motion:reduce){
@@ -1410,6 +1411,20 @@ button.ca-ava{border:0; padding:0; cursor:pointer; background:transparent;}
 .nc-name-line .nl-label{font-size:13px; letter-spacing:.02em; color:var(--muted); font-weight:600;}
 .nc-name-line .nl-val{font-size:16.5px; font-weight:650; color:var(--text);}
 .nc-name-line .nl-note{font-size:12.5px; color:var(--muted);}
+/* New sub-agent name bubble - minimal, at the very top of the
+   create screen, above the avatar stage: a small chat bubble
+   where the new agent introduces itself, "My name is ..." -
+   the name inside the quotes is the typing box itself, so the
+   bubble updates live as the user types. A tiny tail points
+   down toward the avatar below. Empty keeps the picked
+   character's preset name as the placeholder, and Create falls
+   back to it. */
+.nc-name-bubble-wrap{display:flex; justify-content:center; padding:4px 16px 18px;}
+.nc-name-bubble{position:relative; display:inline-flex; align-items:baseline; gap:5px; max-width:100%; background:var(--surface); border:1px solid var(--border2); border-radius:20px; padding:10px 16px; font-size:15.5px; line-height:1.35; color:var(--muted); box-shadow:0 8px 24px rgba(0,0,0,.18);}
+.nc-name-bubble::after{content:""; position:absolute; left:50%; bottom:-6px; width:12px; height:12px; margin-left:-6px; background:var(--surface); border-right:1px solid var(--border2); border-bottom:1px solid var(--border2); transform:rotate(45deg); border-bottom-right-radius:3px;}
+.nc-name-bubble .nc-q{color:var(--muted); font-weight:600; flex:none;}
+.nc-name-bubble input{border:none; outline:none; background:none; color:var(--text); font:inherit; font-size:15.5px; font-weight:700; letter-spacing:-.01em; padding:0; margin:0; min-width:3ch; max-width:56vw; text-align:left;}
+.nc-name-bubble input::placeholder{color:var(--muted); opacity:.75; font-weight:650;}
 .ae2-page{animation:ae2In .34s var(--ease) both;}
 @keyframes ae2In{from{opacity:0; transform:translateY(10px);}to{opacity:1; transform:translateY(0);}}
 @media (prefers-reduced-motion:reduce){.ae2-page{animation:none;} .ae2-tabs button{transition:none;}}
@@ -1675,23 +1690,30 @@ header.chat-head,#agentHeadBar,#agentHeadBar .chat-agent-head,
    The Agent page header is a carousel: the current agent stays
    centred (avatar + name + status, exactly as before) and the
    previous / next ALREADY-CREATED agents peek in from the left
-   and right edges. Tapping a peek SELECTS that agent: it becomes
-   the agent you are chatting with and its chat opens. Swiping
-   browses the carousel instead — the incoming header slides in
-   while the outgoing ghost is still sliding out (the same
-   overlap cross-slide as the top chat head's agent switch).
+   and right edges. Switching agents - by swipe or by tapping a
+   peek - is ONE smooth, continuous, Apple-like motion with no
+   black screen or flash between agents: the incoming agent
+   overlaps the outgoing one (cross-slide + cross-fade), grows
+   big as it glides to the middle and lands centred, while the
+   outgoing one shrinks and slides away in the same unbroken
+   window - neither waits for the other, and there is never an
+   empty gap between them. Tapping a side peek only SELECTS
+   that agent and animates it to the middle; it never opens a
+   chat. A chat opens ONLY from the explicit "Chat with X" row.
    At the END of the created-agents list the next slot is a
    "create new agent" tile in the same peek style: on the last
    agent (and in the single-agent case, where there are no agent
-   peeks) it peeks in from the right, swiping past the last agent
-   centres it as a full tile in the same carousel UI, and tapping
-   it — peek or centred tile — opens the New sub-agent flow. */
+   peeks) it peeks in from the right, swiping or tapping past
+   the last agent centres it as a full tile in the same
+   carousel UI, and tapping the centred tile opens the New
+   sub-agent flow. */
 .ag-carousel{position:relative; overflow:hidden; touch-action:pan-y;}
-.ag-carousel-main{position:relative; will-change:transform;}
-.ag-peek{position:absolute; top:6px; width:58px; height:58px; z-index:2; display:grid; place-items:center; background:transparent !important; border:none !important; box-shadow:none !important; padding:0; cursor:pointer; opacity:.55; transform:scale(.86); transition:opacity .2s ease, transform .2s ease;}
+.ag-carousel-main{position:relative; will-change:transform,opacity; transform-origin:50% 30%;}
+.ag-carousel-main .ag-avatar-wrap{transform-origin:50% 50%; will-change:transform;}
+.ag-peek{position:absolute; top:6px; width:58px; height:58px; z-index:2; display:grid; place-items:center; background:transparent !important; border:none !important; box-shadow:none !important; padding:0; cursor:pointer; opacity:.55; transform:scale(.86); transform-origin:50% 50%; will-change:transform,opacity; transition:opacity .5s cubic-bezier(.32,.72,0,1), transform .6s cubic-bezier(.32,.72,0,1);}
 .ag-peek.prev{left:-16px;}
 .ag-peek.next{right:-16px;}
-.ag-peek:active{opacity:.9; transform:scale(.94);}
+.ag-peek:active{opacity:.9; transform:scale(.96);}
 .ag-peek-create{opacity:.8;}
 .ag-create-vis{width:58px; height:58px; border-radius:50%; border:1.5px dashed var(--border2); background:var(--surface); color:var(--text); display:grid; place-items:center; pointer-events:none;}
 .ag-create-vis svg{width:24px; height:24px;}
@@ -1699,12 +1721,12 @@ header.chat-head,#agentHeadBar,#agentHeadBar .chat-agent-head,
 .ag-create-vis.lg svg{width:38px; height:38px;}
 .ag-create-center{width:104px; height:104px; border-radius:50%; background:transparent !important; border:none !important; box-shadow:none !important; display:grid; place-items:center; cursor:pointer; padding:0;}
 .ag-create-center:active .ag-create-vis{transform:scale(.94);}
-.ag-create-vis{transition:transform .2s ease;}
+.ag-create-vis{transition:transform .45s cubic-bezier(.32,.72,0,1);}
 .ag-peek .agent-ava-slot{width:58px; height:58px; display:block; pointer-events:none;}
 .ag-peek .agent-ava-slot svg,.ag-peek .agent-ava-slot img{width:58px !important; height:58px !important; display:block; object-fit:cover;}
 .ag-peek .agent-ava-slot img{border-radius:50%;}
 .ag-peek .av-svg{animation:none !important;}
-.ag-carousel-ghost{position:absolute; inset:0; z-index:4; pointer-events:none; background:transparent;}
+.ag-carousel-ghost{position:absolute; inset:0; z-index:4; pointer-events:none; background:transparent; will-change:transform,opacity; transform-origin:50% 30%;}
 @media (prefers-reduced-motion:reduce){.ag-peek{transition:none;}}
 
 /* ---------- Temporary chat — eyes closed & peeking ----------

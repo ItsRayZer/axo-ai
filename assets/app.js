@@ -895,7 +895,7 @@ function apiDetectProviderLocal(key){
      never probed against another provider's endpoint. A format
      no rule recognises detects as '' and the key is not sent
      anywhere at all. */
-  var k=String(key||'');
+  var k=String(key||'').trim();
   if(/^AIza/.test(k)) return 'gemini';
   if(/^sk-or-/.test(k)) return 'openrouter';
   if(/^sk-ant-/.test(k)) return 'anthropic';

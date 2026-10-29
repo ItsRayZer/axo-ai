@@ -200,6 +200,14 @@
       <button class="intro-primary" id="introNext" disabled>Continue</button>
       <button class="intro-skip" id="introSkipName">Skip for now</button>
     </div>
+    <div class="intro-step" id="introStepInvite" hidden>
+      <h1 class="intro-h" id="introQInvite" aria-label="Have an invite code?">Have an invite code?</h1>
+      <p class="intro-sub" id="introSubInvite">An invite unlocks unlimited GptOpen. No code? You still get 10 free messages.</p>
+      <div class="intro-field"><input id="introInvite" type="text" placeholder="Invite code" autocomplete="off" autocapitalize="characters" enterkeyhint="go" maxlength="24" aria-label="Invite code"></div>
+      <button class="intro-primary" id="introInviteApply">Apply</button>
+      <p class="intro-hint" id="introInviteHint" hidden></p>
+      <button class="intro-skip" id="introInviteSkip">Skip</button>
+    </div>
     <div class="intro-step" id="introStep2" hidden>
       <h1 class="intro-h" id="introQ2" aria-label="Meet your agent"></h1>
       <p class="intro-sub" id="introSub2">Pick one of the family — each has its own personality, ready on the Gptopen Model. Or make your own below.</p>
@@ -335,6 +343,15 @@ var I = {
 function $(s){ return document.querySelector(s); }
 function el(html){ var d=document.createElement('div'); d.innerHTML=html; return d.firstElementChild; }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+/* Em-dash rule (owner standing order): agent replies never show
+   the em-dash character. The system instruction below tells the
+   model so, and this character-safe swap catches any that slip
+   through anyway — it replaces ONLY the em-dash character with a
+   plain hyphen and eats nothing else. Applied to agent message
+   text at render (msgHTML) and when a provider reply is stored,
+   so it covers normal, temporary and sub-agent chats alike; user
+   messages and code blocks are never touched. */
+function noEmDash(s){ return String(s==null?'':s).replace(/\u2014/g,'-'); }
 var toastT=null;
 function toast(msg){ var t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(function(){ t.classList.remove('show'); },2400); }
 
@@ -500,7 +517,7 @@ function agentCoreMessage(){
     if(ca.memoryText) parts.push('# Custom memory for '+ca.name+'\n'+ca.memoryText);
   }
   if(!parts.length) return '';
-  return 'You are '+(ca? ca.name : agentName)+', the agent in this app. The following are your own standing instruction files, editable by the user in Settings → System files. Follow them. The Library is a different store: it holds only files you made for the user when asked (artefacts saved from chats, under workspace/) — these core system files never appear there, and files you make for the user are not system files. In particular: read them at the start of every conversation, and keep them written and updated as you learn — durable facts to MEMORY.md, daily notes to a dated file in the shared memory/ folder, setup quirks to TOOLS.md, preferences to USER.md, identity changes to IDENTITY.md, persona notes to SOUL.md. The memory/ folder and MEMORY.md are shared by all agents in this app: whichever agent is chatting can read and update them, and an update by one agent is there for every other agent. Never put a password, key, secret, email or phone number in any file; credentials live only in secure storage and are never auto-filled from a file. Goals and scheduled messages live on the Goals page (bottom bar); when the user asks in chat to add, update, stop or delete a goal or a scheduled message, the app applies it directly — say briefly what changed.\n\n'+AGENT_POWERS_TEXT+'\n\n'+parts.join('\n\n---\n\n');
+  return 'You are '+(ca? ca.name : agentName)+', the agent in this app. WRITING RULE: never use the em-dash character anywhere in your replies. Write naturally with commas, periods or plain hyphens instead. The following are your own standing instruction files, editable by the user in Settings → System files. Follow them. The Library is a different store: it holds only files you made for the user when asked (artefacts saved from chats, under workspace/) — these core system files never appear there, and files you make for the user are not system files. In particular: read them at the start of every conversation, and keep them written and updated as you learn — durable facts to MEMORY.md, daily notes to a dated file in the shared memory/ folder, setup quirks to TOOLS.md, preferences to USER.md, identity changes to IDENTITY.md, persona notes to SOUL.md. The memory/ folder and MEMORY.md are shared by all agents in this app: whichever agent is chatting can read and update them, and an update by one agent is there for every other agent. Never put a password, key, secret, email or phone number in any file; credentials live only in secure storage and are never auto-filled from a file. Goals and scheduled messages live on the Goals page (bottom bar); when the user asks in chat to add, update, stop or delete a goal or a scheduled message, the app applies it directly — say briefly what changed.\n\n'+AGENT_POWERS_TEXT+'\n\n'+parts.join('\n\n---\n\n');
 }
 function afAppendLearned(path, bullet){
   /* Create the file on first real use, so any agent can start

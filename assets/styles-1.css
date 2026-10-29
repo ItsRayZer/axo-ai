@@ -372,6 +372,11 @@ header.chat-head .head-pill{margin-left:auto;}
    overlay keyboard, where the --kb lift does the work). */
 html.kb-open #bottomNav{display:none !important;}
 html.kb-open .composer{margin-bottom:6px;}
+/* The error composer (API box) gets the same keyboard anchoring
+   as the type box: its bottom margin collapses to the same 6px,
+   so the box — and the Retry button in its send slot — sits in
+   its proper place just above the keyboard, never floating. */
+html.kb-open #apiBox{margin-bottom:6px;}
 html.kb-open .bottomblur{height:104px;}
 html.kb-open .cv-composer{bottom:6px;}
 .cv-composer{transform:translateY(calc(-1 * var(--kb)));}
@@ -472,21 +477,10 @@ html.kb-open .cv-composer{bottom:6px;}
    label above the composer naming the provider and the model actually
    in use; tapping it opens the picker sheet (ChatGPT-style rows,
    current model checked). */
-#composerModelLabel{display:flex; align-items:center; gap:6px; max-width:100%; margin:0 2px 7px; padding:5px 10px; border-radius:999px; background:var(--rowbg); border:1px solid var(--border); color:var(--muted); font-size:12px; font-weight:600; text-align:left;}
-#composerModelLabel:active{background:var(--hover); color:var(--text);}
-#composerModelLabel .cml-text{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text2);}
-#composerModelLabel .cml-chev{flex:none; opacity:.7;}
-#composerZone.api-mode #composerModelLabel{display:none;}
-.mpick-providers{display:flex; gap:8px; margin:4px 0 12px; flex-wrap:wrap;}
-.mpick-prov{padding:8px 14px; border-radius:999px; background:var(--input); border:1px solid var(--border); font-size:14px; font-weight:600; color:var(--muted);}
-.mpick-prov.sel{background:var(--accent); color:var(--accent-ink); border-color:transparent;}
-.mpick-row{display:flex; align-items:center; gap:11px; width:100%; text-align:left; padding:12px 13px; border-radius:14px; background:var(--rowbg); border:1px solid var(--border); margin-bottom:8px; color:var(--text);}
-.mpick-row:active{background:var(--hover);}
-.mpick-row .mp-meta{flex:1; min-width:0; display:flex; flex-direction:column; gap:1px;}
-.mpick-row .mp-name{font-size:14.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-.mpick-row .mp-sub{font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-.mpick-row .mp-check{flex:none; width:22px; height:22px; border-radius:50%; background:var(--accent); color:var(--accent-ink); display:grid; place-items:center; font-size:13px; font-weight:800;}
-.mpick-row .mp-tag{flex:none; font-size:10.5px; font-weight:700; color:var(--muted); border:1px solid var(--border2); padding:2px 7px; border-radius:999px; text-transform:uppercase; letter-spacing:.04em;}
+/* Model pill / picker — REMOVED from the chat UI entirely: no
+   model name, no dropdown, nothing above the composer. The
+   silent auto-choose keeps working invisibly underneath. */
+
 
 /* ---------- Menus, sheets, dialogs ---------- */
 .menu-pop{position:fixed; z-index:1300; min-width:228px; background:var(--glass2); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px); border:1px solid var(--border2); border-radius:16px; padding:6px; box-shadow:0 18px 50px rgba(0,0,0,.4); display:none;}
@@ -648,16 +642,10 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
 .api-use{font-size:13px; font-weight:600; color:var(--text); background:var(--hover); border-radius:999px; padding:6px 11px; flex:none;}
 .api-x{width:28px; height:28px; border-radius:50%; display:grid; place-items:center; color:var(--muted); flex:none; font-size:15px; line-height:1;}
 .api-x:active{background:var(--hover); color:var(--danger);}
-/* Per-key models: the models that key can actually use, fetched
-   from its own provider — a picker when the list is known, a
-   Show models button to load it on demand. */
+/* Per-key model picker — REMOVED: no model names are shown or
+   pickable anywhere; the model behind a key is chosen silently
+   and automatically, under the single name GptOpen. */
 .api-item{display:flex; flex-direction:column; gap:8px;}
-.api-models{padding:2px 2px 0;}
-.api-models-lbl{display:block; font-size:12.5px; color:var(--muted); margin:0 0 6px;}
-.api-modelsel{width:100%; background:var(--input); border:1px solid var(--border); border-radius:12px; padding:10px 12px; outline:none; color:var(--text); font-size:14.5px;}
-.api-modelsel option{background:var(--surface); color:var(--text);}
-.api-showmodels{font-size:13px; font-weight:600; color:var(--text); background:var(--hover); border-radius:999px; padding:7px 13px;}
-.api-showmodels:disabled{opacity:.55;}
 #previewFrame{width:100%; height:52dvh; border:1px solid var(--border); border-radius:14px; background:#fff;}
 /* ---------- + sheet: everything works in-sheet, no Settings trip ---------- */
 .plus-sec{margin-top:16px; border-top:1px solid var(--border); padding-top:12px;}
@@ -1621,3 +1609,97 @@ button.home-hero-ava{border:0; padding:0; cursor:pointer; font:inherit; color:in
 }
 .sph-ava,.avatar{border:none !important;}
 .intro-ava,.intro-group .g-ava,.g-ava{filter:none !important;}
+
+/* ---------- Agent message header — FINAL layout ----------
+   The agent's message header (the pinned top head, and the
+   in-chat status row) is rebuilt to the owner's layout:
+   - The avatar floats on FULL transparency: no black slab, no
+     disc, no ring, no shadow, no backdrop behind it — the busy
+     ring animation that painted a dark shadow under the avatar
+     is gone, only the gentle float remains.
+   - The agent's text sits UNDER the avatar, never above it and
+     never overlapping it: the top head's status pill drops its
+     -20px overlap and sits below the avatar with a clean gap,
+     and the in-chat status row stacks vertically — avatar on
+     top, its name/verb pill underneath.
+   - The header area on both sides of the avatar stays clean:
+     nothing is rendered beside the avatar in either header. */
+header.chat-head,#agentHeadBar,#agentHeadBar .chat-agent-head,
+.chat-agent-head,.ca-stack,.ca-ava,button.ca-ava,
+.status-inline-ava,.status-inline-ava svg,.status-inline-ava img{
+  background:transparent !important; background-color:transparent !important;
+  box-shadow:none !important; border:none !important;
+  backdrop-filter:none !important; -webkit-backdrop-filter:none !important;
+}
+.chat-agent-head.is-busy .ca-ava{animation:caFloat 2.2s ease-in-out infinite !important; box-shadow:none !important;}
+.agent-status-pill{margin-top:8px !important; padding:11px 20px !important;}
+.status-inline{flex-direction:column !important; align-items:flex-start !important; gap:8px !important;}
+.status-inline-pill{margin:0 !important;}
+.status-inline-ava{overflow:visible !important; border-radius:0 !important;}
+
+/* ---------- Agent page preview carousel ----------
+   The Agent page header is a carousel: the current agent stays
+   centred (avatar + name + status, exactly as before) and the
+   previous / next ALREADY-CREATED agents peek in from the left
+   and right edges. Swipe or tap a peek to move to that agent —
+   the incoming header slides in while the outgoing ghost is
+   still sliding out (the same overlap cross-slide as the top
+   chat head's agent switch). The carousel only ever moves
+   between agents that already exist — it never creates one;
+   "New sub-agent" stays the only creation entry. With a single
+   agent there are no peeks and no swipe. */
+.ag-carousel{position:relative; overflow:hidden;}
+.ag-carousel-main{position:relative;}
+.ag-peek{position:absolute; top:6px; width:58px; height:58px; z-index:2; display:grid; place-items:center; background:transparent !important; border:none !important; box-shadow:none !important; padding:0; cursor:pointer; opacity:.55; transform:scale(.86); transition:opacity .2s ease, transform .2s ease;}
+.ag-peek.prev{left:-16px;}
+.ag-peek.next{right:-16px;}
+.ag-peek:active{opacity:.9; transform:scale(.94);}
+.ag-peek .agent-ava-slot{width:58px; height:58px; display:block; pointer-events:none;}
+.ag-peek .agent-ava-slot svg,.ag-peek .agent-ava-slot img{width:58px !important; height:58px !important; display:block; object-fit:cover;}
+.ag-peek .agent-ava-slot img{border-radius:50%;}
+.ag-peek .av-svg{animation:none !important;}
+.ag-carousel-ghost{position:absolute; inset:0; z-index:4; pointer-events:none; background:transparent;}
+@media (prefers-reduced-motion:reduce){.ag-peek{transition:none;}}
+
+/* ---------- Temporary chat — eyes closed & peeking ----------
+   While Temporary chat is on, the chat's agent avatar (the pinned
+   top head, and the empty-chat home hero) rests with its eyes
+   CLOSED, then one eye PEEKS open, glances side to side, and
+   sinks shut again — one slow 5.6s loop, transform/opacity only.
+   Three layers work together:
+   1. The avatar's own open-eye groups (.char-eyes / .av-eyes /
+      .emo-blinkeyes — every avatar family draws its idle eyes in
+      one of these blink groups) are held shut for the whole loop,
+      their normal blink replaced by the held-shut keyframes.
+   2. An overlay in the avatar's own 96x96 eye zone
+      (.temp-peek-eyes, injected by headHTMLForAgent /
+      homeHeroHTML only while temp is on) paints the two closed
+      lash arcs; the right arc lifts away while the peeking eye
+      beneath it opens to a slit, its pupil darts left then
+      right, and then it closes and the arc returns.
+   3. The avatar sways slower and leans a touch toward the peek,
+      in the same 5.6s timing, so the whole head reads as one
+      sleepy, curious motion.
+   Reduced motion: no shut and no overlay — eyes stay open. */
+.chat-agent-head.is-temp .ca-ava,.home-hero.is-temp .home-hero-ava{position:relative;}
+.temp-peek-eyes{position:absolute; inset:0; display:block; pointer-events:none; z-index:3;}
+.temp-peek-eyes svg{width:100%; height:100%; display:block; overflow:visible;}
+.temp-peek-eyes .tp-lash{fill:none; stroke:#33302e; stroke-width:3.2; stroke-linecap:round;}
+.temp-peek-eyes .tp-lash-r{animation:tpLashR 5.6s ease-in-out infinite;}
+@keyframes tpLashR{0%,50%{opacity:1;}57%,80%{opacity:0;}88%,100%{opacity:1;}}
+.temp-peek-eyes .tp-eye{transform-box:fill-box; transform-origin:center; opacity:0; animation:tpPeek 5.6s ease-in-out infinite;}
+@keyframes tpPeek{0%,50%{opacity:0; transform:scaleY(.08);}57%{opacity:1; transform:scaleY(.62);}64%{transform:scaleY(.5);}72%{transform:scaleY(.66);}80%{opacity:1; transform:scaleY(.55);}88%,100%{opacity:0; transform:scaleY(.08);}}
+.temp-peek-eyes .tp-pupil{animation:tpGlance 5.6s ease-in-out infinite;}
+@keyframes tpGlance{0%,58%{transform:translateX(0);}64%,70%{transform:translateX(-1.7px);}76%{transform:translateX(1.7px);}82%,100%{transform:translateX(0);}}
+.chat-agent-head.is-temp .char-eyes,.chat-agent-head.is-temp .av-eyes,.chat-agent-head.is-temp .emo-blinkeyes,
+.home-hero.is-temp .char-eyes,.home-hero.is-temp .av-eyes,.home-hero.is-temp .emo-blinkeyes{animation:tpShut 5.6s ease-in-out infinite !important;}
+@keyframes tpShut{0%,100%{transform:scaleY(.07);}44%{transform:scaleY(.07);}48%{transform:scaleY(.2);}52%,92%{transform:scaleY(.07);}96%{transform:scaleY(.16);}}
+.chat-agent-head.is-temp .ca-stack{animation:tpSway 5.6s ease-in-out infinite; will-change:transform;}
+.home-hero.is-temp .home-hero-ava{animation:tpSway 5.6s ease-in-out infinite !important;}
+@keyframes tpSway{0%,100%{transform:rotate(0deg) translateY(0);}50%{transform:rotate(-.7deg) translateY(.6px);}62%,78%{transform:rotate(1.6deg) translateY(-1px);}88%{transform:rotate(0deg) translateY(0);}}
+@media (prefers-reduced-motion:reduce){
+  .temp-peek-eyes{display:none !important;}
+  .chat-agent-head.is-temp .char-eyes,.chat-agent-head.is-temp .av-eyes,.chat-agent-head.is-temp .emo-blinkeyes,
+  .home-hero.is-temp .char-eyes,.home-hero.is-temp .av-eyes,.home-hero.is-temp .emo-blinkeyes,
+  .chat-agent-head.is-temp .ca-stack,.home-hero.is-temp .home-hero-ava{animation:none !important;}
+}

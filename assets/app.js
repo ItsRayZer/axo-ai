@@ -110,7 +110,11 @@ function msgHTML(m, chatId){
        added key can be picked; Use my own API key opens the API
        key box; Get a free API key opens the Free API keys page. */
     h+='<div class="limit-cta">'
-      +'<button type="button" class="btn-primary" data-act="retrylast" data-id="'+m.id+'">Retry</button>'
+      /* No Retry button in the message: Retry lives in the
+         composer, in the Send slot (the API box's circular
+         Test/Retry button) — a wide Retry bar inside the message
+         floated detached above the type box when the keyboard
+         opened. The composer Retry re-runs the failed request. */
       +'<button type="button" class="btn-ghost" data-act="choosediff" data-id="'+m.id+'">Choose API</button>'
       +'<button type="button" class="btn-ghost" data-act="usemykey" data-id="'+m.id+'">Use my own API key</button>'
       +'<button type="button" class="btn-ghost" data-act="getfreekey" data-id="'+m.id+'">Get a free API key</button></div>';
@@ -272,6 +276,22 @@ function renderMain(){
     else sc.scrollTop=Math.min(oldTop, Math.max(0, sc.scrollHeight - sc.clientHeight));
   }
 }
+/* Temporary chat peek overlay — drawn in the avatar's own 96x96
+   coordinate space, exactly over its eye zone (every avatar
+   family sits its eyes at cx 36 / 60, cy 47): two closed lash
+   arcs, and under the right arc a peeking eye that opens to a
+   slit and glances side to side (the .is-temp CSS runs the
+   loop and holds the avatar's real eyes shut beneath it).
+   Pure decoration over the real avatar: pointer-events none,
+   hidden from assistive tech, and only rendered while
+   Temporary chat is on. */
+function tempPeekEyesHTML(){
+  return '<span class="temp-peek-eyes" aria-hidden="true"><svg viewBox="0 0 96 96" aria-hidden="true">'
+    +'<path class="tp-lash" d="M29.5 46.5 q6.5 5.5 13 0"/>'
+    +'<path class="tp-lash tp-lash-r" d="M53.5 46.5 q6.5 5.5 13 0"/>'
+    +'<g class="tp-eye"><ellipse cx="60" cy="47" rx="6.2" ry="7.2" fill="#ffffff"/><g class="tp-pupil"><circle cx="60" cy="47.4" r="2.9" fill="#33302e"/><circle cx="59" cy="45.6" r="1.1" fill="#ffffff"/></g><path d="M53.5 43.8 q6.5 -4.6 13 0" fill="none" stroke="#33302e" stroke-width="2.8" stroke-linecap="round"/></g>'
+    +'</svg></span>';
+}
 function homeHeroHTML(){
   var a=chatAgent();
   if(!a || !charIdForPreset(a.preset)) return '';
@@ -279,7 +299,7 @@ function homeHeroHTML(){
      hidden there so the agent never shows twice) — so it carries
      the same tap as the pinned head: tapping it opens this agent's
      page, via the delegated [data-agenthead] tap/click handlers. */
-  return '<div class="home-hero"><button class="home-hero-ava" data-agenthead="'+a.id+'" aria-label="Open '+esc(a.name)+'\u2019s page">'+avatarHTMLFor(a,'idle')+'</button></div>';
+  return '<div class="home-hero'+(state.temp?' is-temp':'')+'"><button class="home-hero-ava" data-agenthead="'+a.id+'" aria-label="Open '+esc(a.name)+'\u2019s page">'+avatarHTMLFor(a,'idle')+(state.temp? tempPeekEyesHTML() : '')+'</button></div>';
 }
 function hashStr(s){ var h=0; for(var i=0;i<s.length;i++){ h=(h*31 + s.charCodeAt(i))|0; } return h; }
 /* Per-message hash cache: renderMain re-signs the whole chat on
@@ -620,7 +640,7 @@ var API_PROVIDERS={
    added as a personal key. */
 var FREE_APIS=[
   {provider:'groq', site:'Groq', url:'https://console.groq.com/keys', env:'GROQ_API_KEY', note:'Free tier · very fast', how:'Sign up → API Keys → Create API Key. Free tier, no card.'},
-  {provider:'openrouter', site:'OpenRouter', url:'https://openrouter.ai/keys', env:'OPENROUTER_API_KEY', note:'Free models included', how:'Sign up → Keys → Create Key. The built-in route uses nvidia/nemotron-3.5-super-vl:free, a pinned free chat model verified live through the relay.'}
+  {provider:'openrouter', site:'OpenRouter', url:'https://openrouter.ai/keys', env:'OPENROUTER_API_KEY', note:'Free models included', how:'Sign up → Keys → Create Key. GptOpen automatically uses a working free model behind the scenes.'}
 ];
 function freeApiFor(pid){ for(var i=0;i<FREE_APIS.length;i++) if(FREE_APIS[i].provider===pid) return FREE_APIS[i]; return null; }
 function freeApiEnvText(f){ return f.env+(f.envAlt? ' (also accepted: '+f.envAlt+')' : ''); }
@@ -765,7 +785,7 @@ function syncLegacyApi(){
   else if(e.provider){ state.provider='custom'; state.providerBase=e.base||''; }
   else { state.provider=''; state.providerBase=''; }
 }
-function apiEntryLabel(e){ if(!e) return 'Not set'; if(!e.provider) return e.status==='unknown'? 'Unrecognised key' : 'Detecting…'; var p=API_PROVIDERS[e.provider]; if(e.provider==='mistral' && mistralAgentOn()) return 'Mistral Agent · ag_…'+state.mistralAgentId.slice(-4); if(e.provider==='mistral' && e.relay) return 'Mistral (relay — Agent auto if server set)'; return (p? p.name : 'API')+(e.model? ' · '+e.model : ''); }
+function apiEntryLabel(e){ if(!e) return 'Not set'; if(!e.provider) return e.status==='unknown'? 'Unrecognised key' : 'Detecting…'; var p=API_PROVIDERS[e.provider]; if(e.provider==='mistral' && mistralAgentOn()) return 'Mistral Agent · ag_…'+state.mistralAgentId.slice(-4); if(e.provider==='mistral' && e.relay) return 'Mistral (relay — Agent auto if server set)'; return (p? p.name : 'API'); }
 function apiKeyMask(e){ return '•••• •••• '+(((e&&e.last4)||'')||String((e&&e.key)||'').slice(-4)); }
 function apiDetectProviderLocal(key){
   /* LOCAL detection only: the key's own prefix / format names its
@@ -1099,62 +1119,13 @@ function currentModelFor(pid, entry){
   var p=API_PROVIDERS[pid]; return p? p.defModel : '';
 }
 function providerDisplayName(pid){ var p=API_PROVIDERS[pid]; return p? p.name : (pid||'API'); }
-function updateModelLabel(){
-  var el=document.getElementById('cmlText'); if(!el) return;
-  var route=currentRouteEntry();
-  if(!route || !route.provider || route.provider==='auto'){ el.textContent='Gptopen Model · Automatic'; return; }
-  var pid=route.provider;
-  var m=currentModelFor(pid, route);
-  el.textContent=providerDisplayName(pid)+' · '+(m||'Automatic')+(getExplicitModel(pid)? ' · your pick' : '');
-}
-/* ChatGPT-style model picker on the chat screen: tap the model
-   label in the composer → this sheet. Shows the current provider
-   (Groq / OpenRouter switchable on the shared route), every
-   candidate model with the one in use checked, and an Automatic
-   row that clears any explicit pick. Picking a model marks it
-   explicit — respected, never auto-overridden. */
-function openChatModelPicker(){
-  var route=currentRouteEntry();
-  if(!route || !route.provider){ openApiPicker(); return; }
-  var isRelay=!!route.relay;
-  var pid=(route.provider==='auto')? (state.relayPick && MODEL_CANDIDATES[state.relayPick]? state.relayPick : 'groq') : route.provider;
-  var cur=currentModelFor(pid, route);
-  var explicit=getExplicitModel(pid);
-  var cands=modelCandidatesFor({provider:pid, model:route.model, models:route.models||[], explicit:route.explicit});
-  var verified=MODEL_CANDIDATES[pid]||[];
-  var html='<h3>Model</h3><p class="sub">'+esc(providerDisplayName(pid))+' · in use: '+esc(cur||'Automatic')+'</p>';
-  if(isRelay){
-    html+='<div class="mpick-providers">'+['groq','openrouter'].map(function(pp){
-      return '<button class="mpick-prov'+(pp===pid?' sel':'')+'" data-mpickprov="'+pp+'">'+esc(providerDisplayName(pp))+'</button>';
-    }).join('')+'</div>';
-  }
-  html+='<button class="mpick-row" data-mpickauto="1"><span class="mp-meta"><span class="mp-name">Automatic</span><span class="mp-sub">Always picks a working model · currently '+esc(cur||'—')+'</span></span>'+(!explicit? '<span class="mp-check">✓</span>' : '')+'</button>';
-  html+=cands.map(function(m){
-    var vi=verified.indexOf(m);
-    var tag=vi===0? 'Default' : (vi>0? 'Fallback' : '');
-    var sub=(m===cur && explicit)? 'Your pick — never auto-changed' : (vi>=0? 'Verified working · 2026-10-29' : 'From this provider');
-    return '<button class="mpick-row" data-mpickmodel="'+escA(m)+'"><span class="mp-meta"><span class="mp-name">'+esc(m)+'</span><span class="mp-sub">'+esc(sub)+'</span></span>'+(tag? '<span class="mp-tag">'+tag+'</span>' : '')+(m===cur? '<span class="mp-check">✓</span>' : '')+'</button>';
-  }).join('');
-  html+='<p class="sub" style="margin-top:10px">If a model stops working, the next one is tried automatically and remembered — unless you picked it yourself, then its real error is shown instead.</p>';
-  openSheet(html);
-  document.querySelectorAll('[data-mpickprov]').forEach(function(b){ b.addEventListener('click',function(){
-    var pp=b.getAttribute('data-mpickprov'); closeSheet(); useRelayProvider(pp);
-  }); });
-  var autoBtn=document.querySelector('[data-mpickauto]');
-  if(autoBtn) autoBtn.addEventListener('click',function(){
-    clearExplicitModel(pid);
-    if(!isRelay && route.id){ var e=apiEntryById(route.id); if(e) e.explicit=false; }
-    closeSheet(); updateModelLabel(); toast('Automatic model selection on');
-  });
-  document.querySelectorAll('[data-mpickmodel]').forEach(function(b){ b.addEventListener('click',function(){
-    var m=b.getAttribute('data-mpickmodel');
-    setExplicitModel(pid, m);
-    if(isRelay){ state.relayPick=pid; state.relayOn=true; }
-    else { var e=apiEntryById(route.id); if(e){ e.model=m; e.explicit=true; if(state.activeApiId===e.id) syncLegacyApi(); } }
-    if(typeof saveLocalSoon==='function') saveLocalSoon();
-    closeSheet(); updateModelLabel(); toast('Model set — '+m);
-  }); });
-}
+/* The chat-screen model label and picker are REMOVED: there is
+   no model name anywhere in the chat UI. updateModelLabel stays
+   as an invisible no-op for its existing callers — the silent
+   auto-choose (modelCandidatesFor / setWorkingModel and the send
+   loop's auto-advance) is untouched and keeps routing behind the
+   scenes under the single name GptOpen. */
+function updateModelLabel(){}
 /* One fetch, bounded: a hung provider must never stall the whole
    failover chain (a request with no timeout was a real cause of
    "nothing ever answers" — the first dead route hung forever and
@@ -1218,22 +1189,12 @@ function apiStatusText(){
    is not known yet, a Show models button loads it on demand; if
    the provider returns no list, the block says so honestly and
    the auto model stays in charge. */
-function apiModelsHTML(e){
-  if(!e || !e.provider) return '';
-  var models=(e.models||[]).slice();
-  if(models.length){
-    if(e.model && models.indexOf(e.model)<0) models.unshift(e.model);
-    return '<div class="api-models"><span class="api-models-lbl">Model · '+models.length+' available from '+esc(API_PROVIDERS[e.provider]? API_PROVIDERS[e.provider].name : 'this API')+'</span>'
-      +'<select class="api-modelsel" data-apimodelsel="'+e.id+'" aria-label="Model for this API">'
-      + models.map(function(m){ return '<option value="'+escA(m)+'"'+(m===e.model?' selected':'')+'>'+esc(m)+'</option>'; }).join('')
-      +'</select></div>';
-  }
-  if(e.modelsFailed){
-    return '<div class="api-models"><span class="api-models-lbl">This provider returned no model list — auto model: '+esc(e.model||'provider default')+'</span>'
-      +'<button class="api-showmodels" data-apimodels="'+e.id+'">Try again</button></div>';
-  }
-  return '<div class="api-models"><button class="api-showmodels" data-apimodels="'+e.id+'">Show models</button></div>';
-}
+/* No model names are shown or pickable anywhere: the model
+   behind a key is chosen automatically and silently (the single
+   identity the user ever sees is GptOpen), so a key row carries
+   no models block at all. The internal candidate list on the
+   entry still drives the failover routing. */
+function apiModelsHTML(e){ return ''; }
 function apiListHTML(){
   var l=apiEntries(), a=activeApiEntry();
   if(!l.length) return '';
@@ -1246,27 +1207,6 @@ function apiListHTML(){
 }
 function wireApiList(root, rerender){
   if(!root) return;
-  root.querySelectorAll('[data-apimodelsel]').forEach(function(sel){ sel.addEventListener('change',function(){
-    var e=apiEntryById(sel.getAttribute('data-apimodelsel')); if(!e) return;
-    e.model=sel.value;
-    /* A model chosen in a picker is an EXPLICIT pick: respected,
-       never overridden by auto-advance. */
-    e.explicit=true; setExplicitModel(e.provider, sel.value);
-    if(state.activeApiId===e.id) syncLegacyApi();
-    setApiHealth('changed');
-    toast('Model set — '+e.model);
-    if(rerender) rerender();
-  }); });
-  root.querySelectorAll('[data-apimodels]').forEach(function(b){ b.addEventListener('click',function(ev){
-    ev.stopPropagation();
-    var e=apiEntryById(b.getAttribute('data-apimodels')); if(!e) return;
-    b.disabled=true; b.textContent='Loading models…';
-    apiFetchModels(e).then(function(models){
-      if(models && models.length){ e.models=models; e.modelsFailed=false; if(!e.model || models.indexOf(e.model)<0) e.model=apiPickModel(models)||e.model; if(state.activeApiId===e.id) syncLegacyApi(); }
-      else e.modelsFailed=true;
-      if(rerender) rerender();
-    });
-  }); });
   root.querySelectorAll('[data-apidel]').forEach(function(b){ b.addEventListener('click',function(ev){ ev.stopPropagation(); removeApiEntry(b.getAttribute('data-apidel')); toast('API removed'); if(rerender) rerender(); }); });
   root.querySelectorAll('[data-apiuse]').forEach(function(b){ b.addEventListener('click',function(){ setActiveApi(b.getAttribute('data-apiuse')); toast('Active API switched'); if(rerender) rerender(); }); });
   root.querySelectorAll('[data-apitest]').forEach(function(b){ b.addEventListener('click',function(ev){
@@ -1276,8 +1216,8 @@ function wireApiList(root, rerender){
     setApiTestMsg('Testing '+apiEntryLabel(e)+'…');
     testApiEntry(e).then(function(r){
       setApiTestMsg(r.ok
-        ? '✓ '+apiEntryLabel(e)+' is working — '+(e.model||'default model')+' · '+apiHost(e)
-        : '✗ '+apiEntryLabel(e)+' is not working — '+r.msg);
+        ? '✓ '+apiEntryLabel(e)+' is working'
+        : '✗ '+apiEntryLabel(e)+' is not working — GptOpen didn’t answer through this key');
       if(rerender) rerender();
     });
   }); });
@@ -1411,7 +1351,7 @@ function updateApiBoxLabel(){
   if(apiTesting){ t.textContent='Testing…'; s.textContent='Trying the Gptopen Model and your added keys'; return; }
   if(relayGone && !apiEntries().length && state.relayOn){ t.textContent='Gptopen Model didn\u2019t answer'; s.textContent='Tap retry'; return; }
   if(state.apiHealth==='quota'){ t.textContent='Limit reached'; s.textContent='Lots of people are chatting — use your own key, or retry in a moment'; return; }
-  if(apiEntries().length){ t.textContent='No API working'; s.textContent=apiEntryLabel(activeApiEntry())+' — tap to select or add'; return; }
+  if(apiEntries().length){ t.textContent='No API working'; s.textContent='GptOpen didn’t answer — tap to select or add an API'; return; }
   t.textContent='No API set up'; s.textContent='Tap to add your own key, or use the Gptopen Model';
 }
 function pingRelay(entry, modelOverride){
@@ -1490,7 +1430,7 @@ function testAllApis(){
     if(e.relay){
       if(relayGone){ step(i+1); return; }
       testRelayEntry(e).then(function(r){
-        if(r.ok) finish(true, 'Gptopen Model is working · '+(r.model || currentModelFor(e.provider, e)));
+        if(r.ok) finish(true, 'Gptopen Model is working');
         else { if(r.kind==='quota') sawQuota=true; step(i+1); }
       });
       return;
@@ -1513,16 +1453,14 @@ function useRelayProvider(pid){
   if(!pid) return;
   state.relayPick=pid; state.relayOn=true; relayGone=false; relayStrikes=0;
   if(typeof saveLocalSoon==='function') saveLocalSoon();
-  var f=freeApiFor(pid);
-  var name=f? f.site : pid;
   var entry={id:'relay-'+pid, relay:true, provider:pid, base:'', model:(API_PROVIDERS[pid]||{}).defModel, models:(RELAY_FALLBACK_MODELS[pid]||[]), key:'', status:'relay', detail:'Gptopen Model'};
-  toast('Trying '+name+'…');
+  toast('Trying GptOpen…');
   /* Provider select runs auto-advance too: candidates are tried
      in order until one answers, and the working one is kept. */
   testRelayEntry(entry).then(function(r){
-    if(r.ok){ setApiHealth('ok'); toast(name+' is working · '+(r.model||'')); updateComposerMode(); updateModelLabel(); return; }
+    if(r.ok){ setApiHealth('ok'); toast('GptOpen is working'); updateComposerMode(); updateModelLabel(); return; }
     if(r.gone){ toast('The Gptopen Model didn\u2019t answer just now — tap retry'); }
-    else toast(name+' — '+(r.msg||'error'));
+    else toast('GptOpen didn’t answer just now — tap retry');
     updateComposerMode();
   });
 }
@@ -1546,7 +1484,7 @@ function apiPickRowsHTML(q){
   return out;
 }
 function openApiPicker(){
-  openSheet('<h3>Model</h3><p class="sub">Your own API key first — or the built-in Gptopen Model.</p>'
+  openSheet('<h3>GptOpen</h3><p class="sub">Your own API key first — or the built-in Gptopen Model.</p>'
     +'<div class="ownapi-card">'
     +'<div class="ownapi-head"><span class="ownapi-ic">'+I.key+'</span><span class="ownapi-meta"><span class="ownapi-title">Your own API</span><span class="ownapi-sub">Your models · your limits · encrypted on this device</span></span><span class="ownapi-badge">Top pick</span></div>'
     +'<div class="field"><input id="apiPickKey" type="password" placeholder="Paste any API key — provider detected automatically" autocomplete="off" aria-label="Your API key"></div>'
@@ -1563,7 +1501,7 @@ function openApiPicker(){
       toast('Testing '+apiEntryLabel(e)+'…');
       testApiEntry(e).then(function(r){
         if(r.ok){ setApiHealth('ok'); toast(apiEntryLabel(e)+' is working'); }
-        else { setApiHealth(r.kind==='quota'?'quota':'error'); toast('Not working — '+r.msg); }
+        else { setApiHealth(r.kind==='quota'?'quota':'error'); toast('GptOpen didn’t answer — try again'); }
         updateComposerMode();
       });
     }); });
@@ -1937,7 +1875,7 @@ function detailSheet(title, bullets){
   $('#sheetCloseBtn').addEventListener('click',closeSheet);
 }
 var DETAILS={
-  apis:{t:'API Keys & Automatic Failover', b:['Just paste a key — the provider, base URL and model are detected and selected automatically. Nothing else to fill in.','Every added key shows its models: the list under the key is the real model list from that key\u2019s own provider, with the auto-selected model picked. Tap it to choose a different model for that key, or tap Show models to load the list.','Add as many keys as you like, from any supported provider: OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, xAI, DeepSeek, NVIDIA, Mistral, Together, Hugging Face, Cohere, GitHub Models, or another OpenAI-compatible key. Free keys: the Free API keys page (in APIs & Providers) lists every site that gives a key away free, with its Vercel variable name.','Mistral Agent: paste an agent id (ag_…, created in Mistral console → Agents) into the Mistral Agent ID field — or paste it into the key box, it is recognised automatically — and Mistral chats use the Agents API by themselves, no switch. The agent brings its own saved instructions and tools (web search, code interpreter, document library). Clear the id to go back to normal Mistral chat.','Sending tries your active key first with its chosen model, then every other model on that key, then the next key and every model on it, and so on through all keys and all their models. An error is only shown when every model on every key has failed.','Keys and chats are saved locally on this device and restored automatically on every open. Keys are stored encrypted (AES-GCM, sealed under a device key that never leaves this device), are never shown after saving — only the provider, model and last 4 digits appear — and are never included in backups.','Default model: AxoChat can also chat through its built-in Gptopen Model \u2014 this site\u2019s own server relay (POST /api/relay), sending no key at all. The relay has exactly two providers, Groq and OpenRouter, and reads their keys from the Vercel project\u2019s environment variables (GROQ_API_KEY, OPENROUTER_API_KEY), server-side only, so those keys are never in the app or sent to the browser. Turn it on and read the full setup under APIs & Providers \u2192 Gptopen Model.','Without a key or the relay, replies come from the built-in local reply engine.']},
+  apis:{t:'API Keys & Automatic Failover', b:['Just paste a key — the provider, base URL and model are detected and selected automatically. Nothing else to fill in.','There are no model names to pick anywhere: the model behind each key is chosen automatically and silently, and GptOpen is the only model identity you ever see.','Add as many keys as you like, from any supported provider: OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, xAI, DeepSeek, NVIDIA, Mistral, Together, Hugging Face, Cohere, GitHub Models, or another OpenAI-compatible key. Free keys: the Free API keys page (in APIs & Providers) lists every site that gives a key away free, with its Vercel variable name.','Mistral Agent: paste an agent id (ag_…, created in Mistral console → Agents) into the Mistral Agent ID field — or paste it into the key box, it is recognised automatically — and Mistral chats use the Agents API by themselves, no switch. The agent brings its own saved instructions and tools (web search, code interpreter, document library). Clear the id to go back to normal Mistral chat.','Sending tries your active key first with its chosen model, then every other model on that key, then the next key and every model on it, and so on through all keys and all their models. An error is only shown when every model on every key has failed.','Keys and chats are saved locally on this device and restored automatically on every open. Keys are stored encrypted (AES-GCM, sealed under a device key that never leaves this device), are never shown after saving — only the provider and last 4 digits appear — and are never included in backups.','Default model: AxoChat can also chat through its built-in Gptopen Model \u2014 this site\u2019s own server relay (POST /api/relay), sending no key at all. The relay has exactly two providers, Groq and OpenRouter, and reads their keys from the Vercel project\u2019s environment variables (GROQ_API_KEY, OPENROUTER_API_KEY), server-side only, so those keys are never in the app or sent to the browser. Turn it on and read the full setup under APIs & Providers \u2192 Gptopen Model.','Without a key or the relay, replies come from the built-in local reply engine.']},
   freekeys:{t:'Free API Keys', b:['Every site listed gives you a key for free — a free tier, free models, or a free trial key. On each provider card, “Get a free API key” opens that provider\u2019s own site; “Use my API key” opens the key box in APIs & Providers, where the pasted key is detected automatically.','AxoChat’s default model, the Gptopen Model, is built in — chatting works out of the box. It runs on exactly two providers, Groq and OpenRouter. When lots of people are using it and the default limit is over, the chat says so and offers the same two actions: use your own API key, or get a free one from this list.','Variable names (for the app relay, in Vercel \u2192 Settings \u2192 Environment Variables, Production, then redeploy): Groq GROQ_API_KEY \u00b7 OpenRouter OPENROUTER_API_KEY. Those are the only two the relay reads.','Free means limited: rate limits, only some models free, or trial credits. It is never unlimited for everyone, and the default-model endpoint can be used by anyone who finds it — watch usage and spending on the provider side.','No key is ever baked into this app, plain or encrypted: anyone running the app could extract it. Keys live either sealed on your own device, or only on the server behind the relay.']},
   usage:{t:'Usage & Limits', b:['Pick the API you have at the top — the page then shows that API only.','This session counts are counted by the app itself, request by request: requests sent, replies received, failures, quota hits, and the token totals your provider returns with each reply. They reset when the page reloads, like the rest of this preview.','OpenRouter limit: tap Check live usage & limit and the app asks OpenRouter directly, with your saved key, how much this key has used, its limit and what remains. Nothing is estimated.','Google Gemini and custom endpoints do not offer a per-key limit check the app can call, so their limits live on the provider side — the page says so instead of inventing a number, and still shows your status and session counts.']},
   connectors:{t:'Connectors & Online Search', b:['Online Search is the only connector in this build.','When it is on, /search looks up live sources on Wikipedia and the open web.']},
@@ -1962,6 +1900,11 @@ function toggleTemp(){
      while it shows the Temporary icon, and the "Temporary chat" row
      in the dots menu. No New chat path calls this. */
   state.temp=!state.temp; updateTargetLine(); updateTempIcon();
+  /* Re-render the chat + head right away so the agent avatar
+     starts (or stops) its eyes-closed-and-peeking loop the
+     moment Temporary chat toggles — renderMain swaps the
+     empty-chat hero, renderAgentHead the pinned top head. */
+  renderMain(); if(typeof renderAgentHead==='function') renderAgentHead();
   toast(state.temp?'Temporary chat on — main chat stays continuous':'Temporary chat off');
 }
 function openChat(id){
@@ -3706,7 +3649,7 @@ function callProvider(chat, memHits, opts){
            working actions as the limit message. */
         chat.messages.push({id:mid(), role:'ai', apiCta:true, text:'The Gptopen Model didn\u2019t answer this time — the connection dropped before a reply came back. It is not your keys. Tap Retry to try again, or use your own API key.'});
       } else {
-        chat.messages.push({id:mid(), role:'ai', apiCta:true, text:'None of your APIs worked — the candidate models were tried automatically before showing this error.'+(lastFailDetail? ' Last error: '+lastFailDetail+'.' : '')+' Tap Retry to try again, or check the keys in Settings → APIs & Providers.'});
+        chat.messages.push({id:mid(), role:'ai', apiCta:true, text:'GptOpen didn’t answer this time — every route was tried automatically before showing this. Tap Retry to try again, or check your keys in Settings → APIs & Providers.'});
       }
       renderAll(); return;
     }
@@ -4136,11 +4079,30 @@ $('#dotsBtn').addEventListener('click',function(){ if(Date.now()-dotsBtnTapAt<12
    button where Send sits retests every API until one answers. */
 $('#apiBoxSearch').addEventListener('click',function(){ openApiPicker(); });
 $('#apiBoxMain').addEventListener('click',function(){ openApiPicker(); });
-$('#apiBoxRetry').addEventListener('click',function(){ testAllApis(); });
+$('#apiBoxRetry').addEventListener('click',function(){
+  /* Retry lives HERE — in the composer, exactly where Send sits
+     — and it stays anchored with the composer above the keyboard.
+     When the current chat's last word was a failed request (an
+     API / limit error message), Retry re-runs that exact request
+     (same flow as the old in-message Retry: drop the error,
+     reset relay detection, send again). Otherwise it re-tests
+     every API, as before. */
+  var c=(typeof currentChat==='function')? currentChat() : null;
+  var lm=c && c.messages.length? c.messages[c.messages.length-1] : null;
+  if(lm && lm.role==='ai' && (lm.apiCta || lm.limitCta)){
+    c.messages.pop();
+    relayGone=false; relayStrikes=0;
+    setApiHealth('changed');
+    renderAll();
+    if(providerRouteOn()) callProvider(c, null);
+    else toast('Add an API key or turn on the Gptopen Model first');
+    return;
+  }
+  testAllApis();
+});
 /* Composer model label: shows the provider + model actually in
    use; tapping the model name opens the chat-screen model
    picker (no trip to Settings). */
-$('#composerModelLabel').addEventListener('click',function(){ openChatModelPicker(); });
 updateModelLabel();
 $('#sbNew').addEventListener('click',newChat);
 $('#sbNewTop').addEventListener('click',function(){ sbCreateAgent(); });
@@ -4512,8 +4474,8 @@ function openPlusSheet(view){
   var html='';
   if(v==='model'){
     /* ---- Model / API — only this menu ---- */
-    html=backHead('Model')
-    +'<p class="sub" style="margin:0 0 10px">Just paste a key — provider, base URL and model are selected automatically. Add as many as you like; if a model fails, every other model on that key is tried, then every model on the next key, and only then is an error shown.</p>'
+    html=backHead('GptOpen')
+    +'<p class="sub" style="margin:0 0 10px">Just paste a key — everything else is selected automatically. Add as many as you like; GptOpen quietly tries every route on every key before an error is ever shown. There are no model names to pick — you only ever chat with GptOpen.</p>'
     + apiListHTML()
     +'<div class="field"><label>API key</label><input id="plusKey" type="password" placeholder="Paste any API key" autocomplete="off"></div>'
     +'<button class="btn-primary" id="plusApiAdd" style="margin-top:2px">Add API</button>'
@@ -4555,7 +4517,7 @@ function openPlusSheet(view){
     +'<button class="sheet-row" data-pact="quiz">'+I.quiz+'<span>Quizzes</span><span class="val">One quick question</span></button>'
     + plusSwitchRow('think', I.brain, 'Deep Thinking', 'deepThink')
     + plusSwitchRow('memorysw', I.bookmark, 'Memory', 'memory')
-    + navRow('model', I.cpu, 'Model', !state.apiKey?'Not set':state.apiHealth==='quota'?'Quota reached':state.apiHealth==='error'?'Not working':(state.model||keySummary()))
+    + navRow('model', I.cpu, 'GptOpen', !state.apiKey?'Not set':state.apiHealth==='quota'?'Quota reached':state.apiHealth==='error'?'Not working':keySummary())
     + navRow('connectors', I.link, 'Connectors', state.webSearch?'Web search on':'Web search off')
     + plusSwitchRow('canvas', I.code, 'Canvas', 'canvasMode')
     + navRow('skills', I.layers, 'Skills', enabledSkills()+'/'+SKILLS.length+' on');
@@ -4793,7 +4755,7 @@ function settingsList(){
   agentsShowAll=false; agentsFromLib=false;
   var groups=[
     {rows:[
-      {id:'apis', icon:I.key, label:'APIs & Providers', val:(state.relayOn && !state.apiKey)?'Gptopen Model on':!state.apiKey?'Not set':state.apiHealth==='quota'?'Quota reached':state.apiHealth==='error'?'Not working':(state.model||keySummary()), q:'apis'},
+      {id:'apis', icon:I.key, label:'APIs & Providers', val:(state.relayOn && !state.apiKey)?'Gptopen Model on':!state.apiKey?'Not set':state.apiHealth==='quota'?'Quota reached':state.apiHealth==='error'?'Not working':keySummary(), q:'apis'},
       {id:'usage', icon:I.activity, label:'Usage & limits', val:!state.apiKey?'No API':(state.usage.requests? state.usage.requests+(state.usage.requests===1?' request':' requests') : 'Not used yet'), q:'usage'},
       {id:'ai', icon:I.sliders, label:'AI Customization', val:state.style+' · '+state.tempVal},
       {id:'connectors', icon:I.link, label:'Connectors & Online Search', val: state.webSearch?'Web Search On':'Off', q:'connectors'},
@@ -5018,7 +4980,7 @@ function settingsUsage(){
     +'<div class="ap-label" style="margin-top:6px">'+esc(provName)+'</div>'
     +'<div class="set-group" style="padding:6px 15px">'
     +kv('Key', state.apiKey? 'Set':'Not set')
-    +kv('Model', state.model||'Provider default')
+    +kv('Model', 'GptOpen — chosen automatically')
     +kv('Endpoint', endpoint)
     +kv('Status', healthTxt)
     +'</div>'
@@ -6204,6 +6166,11 @@ setInterval(function(){
     if(document.hidden) return;
     if(!state || state.view!=='chat') return;
     if(typeof agentStatus!=='undefined' && agentStatus && agentStatus.kind) return;
+    /* Temporary chat owns the face while it is on: the idle-life
+       emotion swaps would fight the eyes-closed-and-peeking
+       loop (and rewriting the hero would tear the peek overlay
+       out of it), so the cycle pauses until temp turns off. */
+    if(state.temp) return;
     if(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     var a=chatAgent(); if(!a || a.avatar) return;
     var pool=['happy','curious','laughing','thinking','excited','surprised','dancing','happy','curious'];
@@ -6272,10 +6239,15 @@ function headHTMLForAgent(a){
   var sz={small:48, medium:68, large:92, xl:108}[state.avatarSize]||68;
   var isCurrent=a && chatAgent() && a.id===chatAgent().id;
   var busy=isCurrent && !!agentStatus.kind;
+  /* Temporary chat: the current chat's head gets .is-temp plus
+     the closed-eyes / peeking overlay over its avatar — the
+     .is-temp CSS holds the real eyes shut and runs the peek
+     loop for as long as temp stays on. */
+  var tempPeek=isCurrent && !!state.temp;
   /* Top avatar: circular avatar, and — while this agent is busy —
      the status pill overlapping its lower edge (name on top, verb
      below), exactly like the reference. Idle: avatar alone, clean. */
-  return '<div class="chat-agent-head'+(busy?' is-busy':'')+'"><div class="ca-stack"><button class="ca-ava" data-agenthead="'+(a?a.id:'')+'" style="width:'+sz+'px;height:'+sz+'px" aria-label="Open '+(a?esc(a.name):'agent')+'\u2019s page — swipe left or right to switch agent"><span class="agent-ava-slot">'+avatarHTMLFor(a, busy? agentStatus.kind : undefined)+'</span></button>'+(busy? agentStatusHTML(a, sz) : '')+'</div></div>';
+  return '<div class="chat-agent-head'+(busy?' is-busy':'')+(tempPeek?' is-temp':'')+'"><div class="ca-stack"><button class="ca-ava" data-agenthead="'+(a?a.id:'')+'" style="width:'+sz+'px;height:'+sz+'px" aria-label="Open '+(a?esc(a.name):'agent')+'\u2019s page — swipe left or right to switch agent"><span class="agent-ava-slot">'+avatarHTMLFor(a, busy? agentStatus.kind : undefined)+'</span>'+(tempPeek? tempPeekEyesHTML() : '')+'</button>'+(busy? agentStatusHTML(a, sz) : '')+'</div></div>';
 }
 /* ===== Custom avatar builder (Change Avatar editor) =====
    A custom avatar is a shape + a face expression + a colour, drawn
@@ -7470,6 +7442,44 @@ function settingsAgent(){
      as the main agent's. */
   var m=agentById(agentPageId)||mainAgent(); agentPageId=m.id; profileAgentId=m.id;
   var ca=chatAgent();
+  /* Preview carousel neighbours: the agents before / after this
+     one in the created-agents list (AGENTS order). Ends of the
+     list — and the single-agent case — simply have no peek on
+     that side; the carousel never creates an agent. */
+  var agIdx=AGENTS.indexOf(m);
+  var prevA=(AGENTS.length>1 && agIdx>0)? AGENTS[agIdx-1] : null;
+  var nextA=(AGENTS.length>1 && agIdx>=0 && agIdx<AGENTS.length-1)? AGENTS[agIdx+1] : null;
+  function peekHTML(a, side){
+    return '<button class="ag-peek '+side+'" data-agpeek="'+a.id+'" data-dir="'+(side==='prev'?-1:1)+'" aria-label="Open '+escA(a.name)+'\u2019s page"><span class="agent-ava-slot">'+avatarHTMLFor(a,'idle')+'</span></button>';
+  }
+  /* Move the Agent page to another created agent with the
+     overlap cross-slide: the outgoing header is kept as a ghost
+     over the new page and slides out while the incoming header
+     is already sliding in — neither waits for the other. The
+     destination page is the full Agent page for that agent, so
+     a sub-agent reached this way shows the same Make it MAIN
+     agent row (makeMainAgent) as everywhere else. */
+  function goAgentPage(target, dir){
+    if(!target || target.id===m.id) return;
+    var oldC=$('#agCarousel');
+    var oldMain=oldC? oldC.querySelector('.ag-carousel-main') : null;
+    var ghostHTML=oldMain? oldMain.innerHTML : null;
+    agentPageId=target.id;
+    renderSettings('agentpage');
+    if(!ghostHTML) return;
+    if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var nc=$('#agCarousel'); if(!nc) return;
+    var main=nc.querySelector('.ag-carousel-main'); if(!main) return;
+    var g=document.createElement('div');
+    g.className='ag-carousel-ghost'; g.setAttribute('aria-hidden','true'); g.innerHTML=ghostHTML;
+    nc.appendChild(g);
+    try{
+      main.animate([{transform:'translateX('+(dir*72)+'px)', opacity:.15},{transform:'translateX(0)', opacity:1}],{duration:380, easing:'cubic-bezier(.22,1,.36,1)'});
+      var ga=g.animate([{transform:'translateX(0)', opacity:1},{transform:'translateX('+(-dir*72)+'px)', opacity:0}],{duration:380, easing:'cubic-bezier(.22,1,.36,1)'});
+      ga.onfinish=function(){ if(g.parentNode) g.remove(); };
+    }catch(e){ if(g.parentNode) g.remove(); }
+    setTimeout(function(){ if(g.parentNode) g.remove(); }, 480);
+  }
   var isMain=m.id===mainAgentId;
   var subs=AGENTS.filter(function(a){ return a.id!==mainAgentId; });
   var tabs=[['today',I.list2,'Today'],['approvals',I.shield,'Approvals'],['reminders',I.clock,'Reminders'],['profile',I.fingerprint,'Profile']];
@@ -7516,11 +7526,11 @@ function settingsAgent(){
     var cme=$('#agCardMem'); if(cme) cme.addEventListener('click',function(){ agOpenFile('MEMORY.md'); });
   }
   setView.innerHTML=setHead('Agent','agent')+'<div class="set-scroll"><div class="set-inner agent-flow">'
-    +'<div style="--i:0"><div class="ag-avatar-wrap"><button class="ag-avatar" data-avtap="'+m.id+'" aria-label="Change avatar for '+escA(m.name)+'"><span class="agent-ava-slot">'+avatarHTMLFor(m,'idle')+'</span></button><button class="ag-pencil" id="agPencil" aria-label="Avatar and name options">'+I.edit+'</button></div>'
+    +'<div style="--i:0"><div class="ag-carousel" id="agCarousel"><div class="ag-carousel-main">'+(prevA? peekHTML(prevA,'prev') : '')+(nextA? peekHTML(nextA,'next') : '')+'<div class="ag-avatar-wrap"><button class="ag-avatar" data-avtap="'+m.id+'" aria-label="Change avatar for '+escA(m.name)+'"><span class="agent-ava-slot">'+avatarHTMLFor(m,'idle')+'</span></button><button class="ag-pencil" id="agPencil" aria-label="Avatar and name options">'+I.edit+'</button></div>'
     +'<div class="ag-name">'+esc(m.name)+'</div>'
     +'<p class="ag-status">'+esc(agStatusLine())+'</p>'
     +(isMain? '' : '<div style="text-align:center;margin:-8px 0 4px"><span class="badge">Sub-agent</span>'+(ca.id===m.id? '<span class="badge" style="margin-left:6px">Chatting now</span>' : '')+'</div>')
-    +'</div>'
+    +'</div></div></div>'
     +'<div class="ag-tabbar" style="--i:1" role="tablist">'+tabs.map(function(t){ return '<button class="ag-tab'+(agentTab===t[0]?' sel':'')+'" data-agtab="'+t[0]+'" role="tab" aria-label="'+t[2]+'">'+t[1]+'</button>'; }).join('')+'</div>'
     +'<div class="set-group" style="--i:2">'
     +(isMain? '' : '<button class="set-row" id="agMakeMain"><span class="ric">'+I.spark+'</span><span style="flex:1">Make it MAIN agent<span class="sub2">'+esc(m.name)+' becomes the main agent</span></span>'+I.chevR+'</button>')
@@ -7560,6 +7570,29 @@ function settingsAgent(){
   var mmk=$('#agMakeMain'); if(mmk) mmk.addEventListener('click',function(){ if(makeMainAgent(m)){ toast(m.name+' is now the main agent'); agentPageId=m.id; renderSettings('agentpage'); } });
   var cm=$('#agChatMain'); if(cm) cm.addEventListener('click',function(){ setChatAgent(m.id); closeSettings(); toast('Chatting with '+m.name); });
   wireTabBody();
+  /* Carousel wiring — only when another created agent exists:
+     tap a peek to open that agent, or swipe the header left /
+     right to move along the created-agents list. A swipe's
+     trailing click is swallowed so it never lands on the
+     centred avatar / pencil underneath the finger. */
+  var carc=$('#agCarousel');
+  if(carc && AGENTS.length>1 && (prevA || nextA)){
+    carc.querySelectorAll('[data-agpeek]').forEach(function(b){ b.addEventListener('click',function(){ var t=agentById(b.getAttribute('data-agpeek')); if(t) goAgentPage(t, parseInt(b.getAttribute('data-dir'),10)||1); }); });
+    var swX=null;
+    carc.addEventListener('pointerdown',function(e){ swX=e.clientX; });
+    carc.addEventListener('pointerup',function(e){
+      if(swX===null) return;
+      var dx=e.clientX-swX; swX=null;
+      if(Math.abs(dx)<48) return;
+      window.__agSwipeAt=Date.now();
+      if(dx<0 && nextA) goAgentPage(nextA,1);
+      else if(dx>0 && prevA) goAgentPage(prevA,-1);
+    });
+    carc.addEventListener('pointercancel',function(){ swX=null; });
+    carc.addEventListener('click',function(e){
+      if(window.__agSwipeAt && Date.now()-window.__agSwipeAt<350){ e.stopPropagation(); e.preventDefault(); window.__agSwipeAt=0; }
+    }, true);
+  }
 }
 /* The multi-agent hub, moved under the Agent page as the Sub-agents
    page: main agent card, animation speed with live preview, and the

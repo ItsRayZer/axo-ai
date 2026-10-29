@@ -1,3 +1,4 @@
+
 // api/relay.js — Vercel serverless function. This file runs ONLY
 // on the server; it is not part of the web page and the browser
 // never sees it or the keys. It powers the ONE built-in model the

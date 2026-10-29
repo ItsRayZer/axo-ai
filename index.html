@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en" data-theme="black">
 <head>
+<link rel="stylesheet" href="assets/styles-1.css">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
 <meta name="color-scheme" content="light dark" />
@@ -9,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,100..900&family=Inter+Tight:wght@100..900&display=swap" rel="stylesheet" />
 <title>Gptopen</title>
-<link rel="stylesheet" href="assets/styles-1.css">
+
 </head>
 <body>
 <div id="app" class="sb-closed">
@@ -548,599 +549,2447 @@ function activeTargetChat(){
   return currentChat();
 }
 </script>
-<script src="assets/app.js"></script>
-<!-- ============ Full instructions for the three user-added skills ============
-     Stored verbatim as given by the user, in inert text blocks; the
-     loader script after them reads them into SKILL_DEFS. The one
-     adaptation, per the user's own brief for this local app:
-     match-my-writing-style learns only from local chat samples and
-     pasted samples here — the loader appends that rule, and the
-     skill must never claim a Gmail or Drive scan in this app. -->
-<script type="text/plain" id="relaytext">
-// api/relay.js — Vercel serverless function. This file runs ONLY
-// on the server; it is not part of the web page and the browser
-// never sees it or the keys. It powers the ONE built-in model the
-// app shows — the Gptopen Model.
-//
-// The keys live in Vercel environment variables, server-side.
-// The Gptopen Model has exactly TWO default providers — Groq
-// and OpenRouter. Every other default provider was removed by
-// the owner's decision. Set both in Vercel -> Project ->
-// Settings -> Environment Variables (Production), then redeploy:
-//   GROQ_API_KEY          — Groq          (api.groq.com/openai/v1)
-//   OPENROUTER_API_KEY    — OpenRouter    (openrouter.ai/api/v1)
-//
-// MODELS — live-verified through this relay on 2026-10-29 with
-// the app's real request shape (the previous defaults had been
-// retired by the providers, which is why the Gptopen Model
-// "didn't answer" even with working keys):
-// - Groq: openai/gpt-oss-120b and openai/gpt-oss-20b answer on
-//   the server key. llama-3.1-8b-instant, llama-3.3-70b-versatile,
-//   qwen/qwen3-32b, kimi-k2 and llama-4-scout all returned
-//   model_not_found; gemma2-9b-it is decommissioned.
-// - OpenRouter: every named :free model tried had been retired
-//   or paywalled (qwen3-next:free, deepseek-r1:free,
-//   deepseek-chat:free, qwen3-coder:free, kimi-k2:free,
-//   glm-4.5-air:free, gemma-3:free, llama-3.2/3.3:free — all
-//   404). What answers: 'openrouter/free', OpenRouter's own
-//   free-model router, and nvidia/nemotron-3.5-super-vl:free.
-//   RE-VERIFIED later on 2026-10-29: the router is a roulette —
-//   it landed on a content-safety classifier that answered
-//   "User Safety: safe" instead of chatting — so the DEFAULT is
-//   now the pinned, verified chat model
-//   nvidia/nemotron-3.5-super-vl:free, and 'openrouter/free' is
-//   only the fallback (the app rejects classifier-style
-//   non-answers and moves on).
-//
-// WHY IT COULD FAIL BEFORE, AND WHAT THIS VERSION DOES ABOUT EACH:
-// - Variable set for Preview only, or not set at all -> that
-//   provider answers 501 and the app moves on to the other one;
-//   set it for Production and redeploy (env vars never apply
-//   retroactively).
-// - A provider retired the model name the app asked for -> each
-//   provider carries server-side FALLBACK models: a model error
-//   (400/404 naming the model) retries the next model
-//   automatically, then the app also gets a final
-//   { provider: 'auto' } sweep (below) that ignores the
-//   requested model entirely.
-// - One key at its limit or rejected -> the NEXT key for that
-//   provider is tried (429 / 401 / 403 move to the next key).
-// - A provider hanging forever -> every upstream call has a 25s
-//   timeout, so a dead route fails fast and failover proceeds.
-// - POST /api/relay with { provider: 'auto', messages } -> the
-//   server itself walks Groq, then OpenRouter, with its default
-//   + fallback models, and returns the first real answer — the
-//   app's last-resort call.
-// - GET /api/relay answers { relay: true, ok: true } so the
-//   deployment can be checked in a browser.
-// Both providers speak the OpenAI chat shape, so replies pass
-// through untouched.
-
-const PROVIDERS = {
-  groq:        { base: 'https://api.groq.com/openai/v1', envs: ['GROQ_API_KEY'] },
-  openrouter:  { base: 'https://openrouter.ai/api/v1', envs: ['OPENROUTER_API_KEY'] }
+<script>
+/* =============== Rendering: messages =============== */
+/* ---- Sent attachments & link previews inside a message ---- */
+function escA(s){ return esc(s).replace(/"/g,'&quot;'); }
+function fmtSize(n){
+  if(n==null||isNaN(n)) return '';
+  if(n<1024) return n+' B';
+  if(n<1048576) return (n/1024).toFixed(1).replace(/\.0$/,'')+' KB';
+  if(n<1073741824) return (n/1048576).toFixed(1).replace(/\.0$/,'')+' MB';
+  return (n/1073741824).toFixed(2)+' GB';
+}
+function linkCardHTML(e){
+  var inner='';
+  if(e.image) inner+='<img class="lp-img" src="'+escA(e.image)+'" alt="" loading="lazy" onerror="this.remove()">';
+  inner+='<div class="lp-body">'
+    +(e.title? '<div class="lp-title">'+esc(e.title)+'</div>' : '')
+    +(e.desc? '<div class="lp-desc">'+esc(e.desc)+'</div>' : '')
+    +'<div class="lp-dom">'+(e.favicon? '<img src="'+escA(e.favicon)+'" alt="" onerror="this.remove()">' : '')+'<span>'+esc(e.domain||e.url)+'</span></div></div>';
+  return '<a class="lp-card" href="'+escA(e.url)+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>';
+}
+function msgAttHTML(m){
+  var h='';
+  if(m.links && m.links.length) h+=m.links.map(linkCardHTML).join('');
+  if(m.attachments && m.attachments.length){
+    var media='', files='';
+    m.attachments.forEach(function(a){
+      if(typeof a==='string'){ files+='<div class="msg-file">'+I.folder+'<span class="fmeta"><span class="fname">'+esc(a)+'</span></span></div>'; return; }
+      if(a.kind==='image' && a.url) media+='<img class="mimg" src="'+escA(a.url)+'" alt="'+escA(a.name||'Image')+'">';
+      else if(a.kind==='video' && a.url) media+='<video class="mvid" src="'+escA(a.url)+'" controls playsinline preload="metadata"></video>';
+      else files+='<div class="msg-file">'+(a.kind==='video'?I.video:(a.kind==='image'?I.image:I.file))+'<span class="fmeta"><span class="fname">'+esc(a.name||'File')+'</span>'+(a.size!=null?'<span class="fsz"> '+esc(fmtSize(a.size))+'</span>':'')+'</span></div>';
+    });
+    if(media) h+='<div class="msg-media">'+media+'</div>';
+    if(files) h+='<div class="msg-files">'+files+'</div>';
+  }
+  return h;
+}
+function canvasFeatureItems(m){
+  var body=(m && m.code && m.code.body) || '';
+  var controls=(body.match(/<(button|input|select|textarea)\b/gi)||[]).length;
+  var hasScript=/<script\b/i.test(body);
+  var items=['<li><strong>Single-file build:</strong> one HTML file, no setup — it opens anywhere.</li>'];
+  if(controls && hasScript) items.push('<li><strong>Working interaction:</strong> '+controls+' interactive control'+(controls===1?'':'s')+' wired to JavaScript in the file.</li>');
+  else if(hasScript) items.push('<li><strong>Working interaction:</strong> JavaScript behaviour is included in the file.</li>');
+  else items.push('<li><strong>Finished layout:</strong> the complete content and styling are included in the file.</li>');
+  if(/@media\b|name=["']viewport["']/i.test(body)) items.push('<li><strong>Responsive layout:</strong> viewport / media-query rules are included for phone and desktop widths.</li>');
+  else items.push('<li><strong>Responsive layout:</strong> the layout is contained in one flexible HTML file.</li>');
+  if(/--[\w-]+\s*:|prefers-color-scheme/i.test(body)) items.push('<li><strong>Theme system:</strong> reusable CSS theme values are built into the file.</li>');
+  else items.push('<li><strong>Clean UI:</strong> the generated styling is self-contained in the same file.</li>');
+  return items.join('');
+}
+/* =============== Code boxes — code lives INSIDE a preview box ===============
+   AI code is never written out in full down the chat. It renders
+   in one boxed element: the header carries the language, the line
+   count and (for HTML) Code / Preview tabs; the code pane scrolls
+   INSIDE the box in both directions and holds the FULL code —
+   nothing is truncated, the box just contains it; the preview
+   pane runs the page inside the same box. Full opens the code or
+   the preview full size (#codeFullView); Play opens the preview
+   full size straight away. */
+function codeIsRunnable(code){
+  if(!code || !code.body) return false;
+  var l=String(code.lang||'').toLowerCase();
+  return l==='html' || l==='htm' || /<!doctype\s+html|<html\b/i.test(code.body);
+}
+function codeLineCount(body){ return String(body||'').split('\n').length; }
+function codeMsgById(id){
+  for(var i=0;i<chats.length;i++){ var m=findMsg(chats[i], id); if(m) return m; }
+  return null;
+}
+/* Preview iframes get their srcdoc from the message itself (never
+   from an HTML attribute, so generated markup can't break out of
+   the attribute), and only once their pane is actually shown. */
+function hydrateCodeFrames(scope){
+  if(!scope || !scope.querySelectorAll) return;
+  scope.querySelectorAll('iframe[data-cbframe]').forEach(function(fr){
+    if(fr.getAttribute('data-done')) return;
+    var pane=fr.closest('[data-cbpane]');
+    if(pane && pane.hidden) return;
+    var m=codeMsgById(fr.getAttribute('data-cbframe'));
+    if(m && m.code){ fr.srcdoc=m.code.body; fr.setAttribute('data-done','1'); }
+  });
+}
+function codeBoxHTML(m){
+  var runnable=codeIsRunnable(m.code);
+  var lines=codeLineCount(m.code.body);
+  var previewFirst=runnable && !!state.autoPlay;
+  var h='<div class="codeblock" data-codeview="'+(previewFirst?'preview':'code')+'">'
+    +'<div class="codeblock-head"><span>'+esc(m.code.lang||'code')+'</span><span class="cb-meta">'+lines+' line'+(lines===1?'':'s')+'</span><span class="sp"></span>'
+    +(runnable? '<span class="cb-tabs" role="tablist" aria-label="Code or preview"><button class="cb-tab'+(previewFirst?'':' sel')+'" data-cbtab="code" data-id="'+m.id+'" role="tab">Code</button><button class="cb-tab'+(previewFirst?' sel':'')+'" data-cbtab="preview" data-id="'+m.id+'" role="tab">Preview</button></span>' : '')
+    +'<button data-act="expandcode" data-id="'+m.id+'">'+I.expand+'Full</button>'
+    +'<button data-act="copy" data-id="'+m.id+'">'+I.copy+'Copy</button></div>'
+    +'<pre class="cb-pre" data-cbpane="code" tabindex="0" aria-label="Code — scroll inside to read it all"'+(previewFirst?' hidden':'')+'>'+esc(m.code.body)+'</pre>'
+    +(runnable? '<div data-cbpane="preview"'+(previewFirst?'':' hidden')+'><iframe class="cb-frame" data-cbframe="'+m.id+'" title="Code preview — scroll inside" sandbox="allow-scripts"></iframe></div>' : '')
+    +'<div class="cb-foot"><span>'+(runnable? 'Scroll inside to see it all' : 'Scroll inside to read the full code')+'</span><span class="sp"></span>'
+    +(runnable? '<button data-act="play" data-id="'+m.id+'">'+I.play+'Preview full size</button>' : '<button data-act="expandcode" data-id="'+m.id+'">'+I.expand+'View full size</button>')
+    +'</div></div>';
+  return h;
+}
+/* =============== Safe markdown for AI replies ===============
+   Model prose arrives carrying markdown (**bold**, ## headings,
+   - lists) and used to be painted as raw escaped text, so the
+   markers showed literally in chat. This renderer is small and
+   SAFE: every line is HTML-escaped FIRST and only then are the
+   markdown tokens swapped for tags, so no raw HTML from a reply
+   can ever reach the DOM. Fenced code and inline code are lifted
+   out before inline formatting runs, so markers inside code stay
+   literal. The reply text is never altered or truncated — block
+   parsing only groups lines; every prose character survives. */
+function mdInline(s){
+  var codes=[];
+  s=s.replace(/`([^`\n]+)`/g,function(_,c){ codes.push(c); return '\u0001'+(codes.length-1)+'\u0001'; });
+  s=s.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+  s=s.replace(/__([^_]+)__/g,'<strong>$1</strong>');
+  s=s.replace(/~~([^~]+)~~/g,'<del>$1</del>');
+  s=s.replace(/\*([^*\n]+)\*/g,'<em>$1</em>');
+  s=s.replace(/(^|[^A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g,'$1<em>$2</em>');
+  s=s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+|mailto:[^)\s]+)\)/g,'<a class="md-link" href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  s=s.replace(/\u0001(\d+)\u0001/g,function(_,i){ return '<code class="md-code">'+codes[+i]+'</code>'; });
+  return s;
+}
+function renderMarkdown(text){
+  var src=String(text==null?'':text);
+  if(!src) return '';
+  var fences=[];
+  src=src.replace(/```[A-Za-z0-9_+#.-]*\n?([\s\S]*?)(?:```|$)/g,function(_,body){
+    fences.push('<pre class="md-pre"><code>'+esc(String(body).replace(/\n+$/,''))+'</code></pre>');
+    return '\n\n\u0002'+(fences.length-1)+'\u0002\n\n';
+  });
+  var lines=src.split('\n'), out=[], para=[], quote=[], list=null;
+  function flushPara(){ if(para.length){ out.push('<p class="md-p">'+para.map(function(l){ return mdInline(esc(l)); }).join('<br>')+'</p>'); para=[]; } }
+  function flushQuote(){ if(quote.length){ out.push('<blockquote class="md-quote">'+quote.map(function(l){ return mdInline(esc(l)); }).join('<br>')+'</blockquote>'); quote=[]; } }
+  function flushList(){ if(list){ out.push('<'+list.tag+' class="md-list">'+list.items.map(function(it){ return '<li>'+mdInline(esc(it))+'</li>'; }).join('')+'</'+list.tag+'>'); list=null; } }
+  function flushAll(){ flushPara(); flushQuote(); flushList(); }
+  lines.forEach(function(line){
+    var fm=line.match(/^\s*\u0002(\d+)\u0002\s*$/);
+    if(fm){ flushAll(); out.push(fences[+fm[1]]); return; }
+    if(!line.trim()){ flushAll(); return; }
+    var hm=line.match(/^(#{1,6})\s+(.*)$/);
+    if(hm){ flushAll(); var lvl=Math.min(3, hm[1].length); out.push('<div class="md-h md-h'+lvl+'">'+mdInline(esc(hm[2].replace(/\s+$/,'')))+'</div>'); return; }
+    if(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)){ flushAll(); out.push('<hr class="md-hr">'); return; }
+    var um=line.match(/^\s*[-*+]\s+(.*)$/);
+    if(um){ flushPara(); flushQuote(); if(!list || list.tag!=='ul'){ flushList(); list={tag:'ul', items:[]}; } list.items.push(um[1]); return; }
+    var om=line.match(/^\s*\d{1,3}[.)]\s+(.*)$/);
+    if(om){ flushPara(); flushQuote(); if(!list || list.tag!=='ol'){ flushList(); list={tag:'ol', items:[]}; } list.items.push(om[1]); return; }
+    var qm=line.match(/^\s*>\s?(.*)$/);
+    if(qm){ flushPara(); flushList(); quote.push(qm[1]); return; }
+    flushQuote(); flushList(); para.push(line.replace(/\s+$/,''));
+  });
+  flushAll();
+  return out.join('');
+}
+function msgHTML(m, chatId){
+  var cid=chatId||state.currentId;
+  var quote=m.replyToText? '<div class="reply-quote">'+esc(m.replyToText)+'</div>' : '';
+  var att=msgAttHTML(m);
+  if(m.role==='user'){ return '<div class="msg user" data-msg-id="'+m.id+'" data-chat-id="'+cid+'" tabindex="0" role="button" aria-label="Your message — open message menu">'+quote+att+(m.text?'<div class="bubble-user">'+esc(m.text)+'</div>':'')+(m.reaction?'<span class="msg-reaction" aria-label="AI reaction">'+esc(m.reaction)+'</span>':'')+(m.liked?'<span class="msg-like" aria-label="You liked this message">'+LIKE_HEART+'</span>':'')+'</div>'; }
+  var h='<div class="msg ai" data-msg-id="'+m.id+'" data-chat-id="'+cid+'" tabindex="0" role="button" aria-label="Assistant message — open message menu">'+quote+att+'<div class="body">'+renderMarkdown(m.text)+'</div>';
+  if(m.limitCta || m.apiCta){
+    /* Failure / shared-limit message actions — every one works:
+       Retry re-runs the last request (relay detection resets, so
+       a transient failure never sticks); Choose a different free
+       API opens the picker, where a shared relay provider or an
+       added key can be picked; Use my own API key opens the API
+       key box; Get a free API key opens the Free API keys page. */
+    h+='<div class="limit-cta">'
+      /* No Retry button in the message: Retry lives in the
+         composer, in the Send slot (the API box's circular
+         Test/Retry button) — a wide Retry bar inside the message
+         floated detached above the type box when the keyboard
+         opened. The composer Retry re-runs the failed request. */
+      +'<button type="button" class="btn-ghost" data-act="choosediff" data-id="'+m.id+'">Choose API</button>'
+      +'<button type="button" class="btn-ghost" data-act="usemykey" data-id="'+m.id+'">Use my own API key</button>'
+      +'<button type="button" class="btn-ghost" data-act="getfreekey" data-id="'+m.id+'">Get a free API key</button></div>';
+  }
+  if(m.canvas){
+    var cvDone=m.canvas.status==='done';
+    h+='<div class="canvas-building">Building the application...</div>';
+    h+='<div class="canvas-card'+(cvDone?'':' writing')+'">'
+      +'<div class="canvas-top"><span class="canvas-ico">'+I.code+'</span>'
+      +'<span class="canvas-meta"><span class="canvas-title">'+esc(m.canvas.title)+'</span>'
+      +'<span class="canvas-status">'+(cvDone? esc(fmtCanvasTs(m.canvas.ts)) : 'Writing code...')+'</span></span></div>'
+      +(cvDone? '<div class="canvas-open-row"><button type="button" class="canvas-open" data-act="canvasopen" data-id="'+m.id+'">Open</button></div>' : '')
+      +'</div>';
+    if(cvDone){
+      h+='<div class="canvas-summary">I have generated the single-file <strong>'+esc(m.canvas.title)+'</strong> app. It runs as one HTML file — tap Open on the card, or Play on the code below, to run it here.</div>'
+        +'<div class="canvas-features"><h4>Key Features Included:</h4><ul>'
+        + canvasFeatureItems(m)
+        +'</ul></div>';
+    }
+  }
+  if(m.avatarProposal){
+    var pr=m.avatarProposal;
+    var prObj={shape:pr.shape, face:pr.face, color:pr.color, acc:pr.acc};
+    h+='<div class="avpro-card"><div class="avpro-prev">'+customAvatarSVGFor(prObj,'idle')+'</div>'
+      +'<div class="avpro-name">'+esc(pr.shape)+' · '+esc(pr.face)+'</div>'
+      +'<div class="avpro-emotes">'+['idle','typing','dancing','sleeping','angry','sad'].map(function(em){ return '<span title="'+em+'">'+customAvatarSVGFor(prObj,em)+'</span>'; }).join('')+'</div>'
+      +'<div class="avpro-emotes-lbl">Emotes created automatically for this avatar</div>'
+      +(pr.resolved==='confirmed'
+        ? '<div class="avpro-done">Saved as the new avatar</div>'
+        : pr.resolved==='cancelled'
+        ? '<div class="avpro-done">Not used — describe another one any time</div>'
+        : '<div class="avpro-btns"><button type="button" class="btn-primary" data-act="avconfirm" data-id="'+m.id+'">Use this avatar</button><button type="button" class="btn-ghost" data-act="avcancel" data-id="'+m.id+'">Not yet</button></div>')
+      +'</div>';
+  }
+  if(m.code){
+    h+=codeBoxHTML(m);
+  }
+  if(m.reaction) h+='<span class="msg-reaction" aria-label="Your reaction">'+esc(m.reaction)+'</span>';
+  h+='<div class="msg-actions"><button data-act="copyai" data-id="'+m.id+'" aria-label="Copy reply">'+I.copy+'</button></div>'+(m.liked?'<span class="msg-like" aria-label="You liked this message">'+LIKE_HEART+'</span>':'')+'</div>';
+  return h;
+}
+function findMsg(chat,id){ if(!chat) return null; for(var i=0;i<chat.messages.length;i++) if(chat.messages[i].id===id) return chat.messages[i]; return null; }
+/* =============== New-message liquid reveal ===============
+   A message animates ONLY on the render where it first appears:
+   renderMain diffs the chat's ids against seenMsgIds, and anything
+   unseen on a non-switch render is fresh. History, chat switches,
+   likes / reactions and every other re-render replay nothing. */
+var seenMsgIds={}, msgAnimPrimed=false;
+function revealWordsIn(el){
+  /* Word-by-word: split each text node into word spans (spaces and
+     line breaks stay as plain text nodes between them, so wrapping
+     is untouched). Long replies group words per span so the node
+     count stays bounded, and the stagger shrinks to fit the same
+     ~420ms delay budget — the reveal is always FAST, never a slow
+     typewriter the reader has to wait on.
+     MISSING-SPACES BUG, fixed at the cause: the old version, when
+     grouping (groupSize>1 on long replies), silently DROPPED every
+     whitespace token and appended the group spans back-to-back;
+     .w-in spans are inline-block, so neighbouring groups rendered
+     glued together ("Here's what"+"I know" → "whatl knowabout",
+     "174 cm,"+"54 kg," → "174cm,54kg"). The relay text was always
+     intact — it was mangled here, between receiving and rendering.
+     Now whitespace is preserved EXACTLY: a space inside a group
+     stays verbatim in the span's text, and a space at a group
+     boundary becomes a real text node between the spans — the
+     concatenated result is character-for-character the input.
+     Rendered markdown bodies (which have element children) are
+     walked text-node by text-node, skipping code, so formatted
+     replies reveal the same way without breaking their markup. */
+  if(!el) return;
+  var walker=document.createTreeWalker(el, 4, {acceptNode:function(n){
+    if(!n.nodeValue || !n.nodeValue.trim()) return 2;
+    var p=n.parentNode;
+    if(p && (p.tagName==='CODE' || p.tagName==='PRE')) return 2;
+    return 1;
+  }});
+  var nodes=[];
+  while(walker.nextNode()) nodes.push(walker.currentNode);
+  if(!nodes.length) return;
+  var wordCount=0;
+  nodes.forEach(function(n){ n.nodeValue.split(/\s+/).forEach(function(w){ if(w) wordCount++; }); });
+  if(wordCount<2) return;
+  var groupSize=wordCount>220? Math.ceil(wordCount/220) : 1;
+  var spanCount=Math.ceil(wordCount/groupSize);
+  var stagger=Math.max(2, Math.min(14, Math.round(420/Math.max(1, spanCount-1))));
+  var idx=0;
+  nodes.forEach(function(node){
+    var tokens=node.nodeValue.split(/(\s+)/);
+    var frag=document.createDocumentFragment(), group='', groupWords=0;
+    function flush(){
+      if(!groupWords) return;
+      var s=document.createElement('span');
+      s.className='w-in'; s.textContent=group;
+      s.style.animationDelay=(idx*stagger)+'ms'; idx++;
+      frag.appendChild(s); group=''; groupWords=0;
+    }
+    tokens.forEach(function(tok){
+      if(!tok) return;
+      if(/^\s+$/.test(tok)){
+        if(tok.indexOf('\n')>=0 || groupWords>=groupSize){ flush(); frag.appendChild(document.createTextNode(tok)); }
+        else if(groupWords>0){ group+=tok; }
+        else { frag.appendChild(document.createTextNode(tok)); }
+        return;
+      }
+      if(groupWords>=groupSize) flush();
+      group+=tok; groupWords++;
+    });
+    flush();
+    if(node.parentNode) node.parentNode.replaceChild(frag, node);
+  });
+}
+function animateFreshMessages(scope, ids){
+  if(!ids.length) return;
+  if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  scope.querySelectorAll('.msg').forEach(function(el){
+    if(ids.indexOf(el.getAttribute('data-msg-id'))<0) return;
+    el.classList.add('msg-in');
+    var target=el.querySelector('.bubble-user') || el.querySelector('.body');
+    if(target) revealWordsIn(target);
+    setTimeout(function(){ el.classList.remove('msg-in'); }, 1100);
+  });
+}
+var lastMainChatId=null;
+function renderMain(){
+  var c=currentChat(), w=$('#msgWrap'), sc=$('#chatScroll');
+  /* Scroll preservation: a re-render must never yank the reader.
+     Switching chats lands at the latest message; re-rendering the
+     SAME chat keeps the exact scroll offset, and only follows new
+     messages when the reader was already near the bottom. This is
+     what makes scrolling UP and DOWN stay put in both directions. */
+  var switched = lastMainChatId!==c.id; lastMainChatId=c.id;
+  var oldTop=sc.scrollTop, oldH=sc.scrollHeight;
+  var nearBottom = oldH - oldTop - sc.clientHeight < 140;
+  /* The agent head — circular avatar with the agent name label below
+     it, as in the Appearance preview — shows in chat. No heading, no
+     subtitle, no suggestion cards; the head and the composer only. */
+  if(agentEmotion==='typing'){
+    var lm0=c.messages[c.messages.length-1];
+    if(lm0 && lm0.role==='ai' && !(lm0.canvas && lm0.canvas.state==='building')){
+      var hh=new Date().getHours();
+      agentEmotion=pendingEmotion||((hh>=23||hh<5)?'sleeping':'idle'); pendingEmotion=null;
+    }
+  }
+  /* Agent head — shown as soon as the API is ADDED (a complete setup
+     saved: key + provider, plus a base URL for a custom endpoint): a
+     large circular agent avatar at the top centre of the chat, in the
+     Axo UI, with the agent name label pill below it, exactly like the
+     reference. It is deliberately NOT gated on the last reply's
+     health: on mobile a single failed, CORS-blocked or quota reply
+     flips apiHealth to error/quota, and gating on that made the
+     avatar vanish even though the API was set — the "avatar not
+     showing in mobile" bug. The top API pill still alerts on its own
+     rules (not set / not working / quota / changed); the head only
+     stays out before any complete setup is saved, or when the
+     Appearance avatar size is Hidden. */
+  /* The agent head is NOT part of the scrolling messages any more:
+     it is pinned in #agentHeadBar above the chat (renderAgentHead),
+     so it stays at the top and never scrolls down with messages. */
+  renderAgentHead();
+  /* Fast path: if nothing about this chat's messages changed
+     (same ids, text, reactions, likes, canvas states), skip the
+     full innerHTML rebuild entirely — re-renders triggered by
+     unrelated state (API health, emotion, settings) stay free. */
+  var sig=msgSig(c);
+  if(sig!==lastMsgSig || switched){
+    lastMsgSig=sig;
+    /* Which messages are brand new on THIS render (see the liquid
+       reveal above): none on a chat switch or the first ever
+       render, and at most the last two when several land at once,
+       so a bulk change never cascades the whole list. The split
+       runs synchronously before paint, so fresh text is never
+       seen un-animated for a frame. */
+    var freshIds=[];
+    if(!switched && msgAnimPrimed){
+      c.messages.forEach(function(m){ if(!seenMsgIds[m.id]) freshIds.push(m.id); });
+    }
+    c.messages.forEach(function(m){ seenMsgIds[m.id]=1; });
+    msgAnimPrimed=true;
+    if(freshIds.length>2) freshIds=freshIds.slice(-2);
+    w.innerHTML=c.messages.length? c.messages.map(function(m){ return msgHTML(m, c.id); }).join('') : homeHeroHTML();
+    hydrateCodeFrames(w);
+    if(freshIds.length) animateFreshMessages(w, freshIds);
+    if(switched || nearBottom) sc.scrollTop=sc.scrollHeight;
+    else sc.scrollTop=Math.min(oldTop, Math.max(0, sc.scrollHeight - sc.clientHeight));
+  }
+}
+/* Temporary chat peek overlay — drawn in the avatar's own 96x96
+   coordinate space, exactly over its eye zone (every avatar
+   family sits its eyes at cx 36 / 60, cy 47): two closed lash
+   arcs, and under the right arc a peeking eye that opens to a
+   slit and glances side to side (the .is-temp CSS runs the
+   loop and holds the avatar's real eyes shut beneath it).
+   Pure decoration over the real avatar: pointer-events none,
+   hidden from assistive tech, and only rendered while
+   Temporary chat is on. */
+function tempPeekEyesHTML(){
+  return '<span class="temp-peek-eyes" aria-hidden="true"><svg viewBox="0 0 96 96" aria-hidden="true">'
+    +'<path class="tp-lash" d="M29.5 46.5 q6.5 5.5 13 0"/>'
+    +'<path class="tp-lash tp-lash-r" d="M53.5 46.5 q6.5 5.5 13 0"/>'
+    +'<g class="tp-eye"><ellipse cx="60" cy="47" rx="6.2" ry="7.2" fill="#ffffff"/><g class="tp-pupil"><circle cx="60" cy="47.4" r="2.9" fill="#33302e"/><circle cx="59" cy="45.6" r="1.1" fill="#ffffff"/></g><path d="M53.5 43.8 q6.5 -4.6 13 0" fill="none" stroke="#33302e" stroke-width="2.8" stroke-linecap="round"/></g>'
+    +'</svg></span>';
+}
+function homeHeroHTML(){
+  var a=chatAgent();
+  if(!a || !charIdForPreset(a.preset)) return '';
+  /* The hero IS the agent on an empty chat (the pinned head stays
+     hidden there so the agent never shows twice) — so it carries
+     the same tap as the pinned head: tapping it opens this agent's
+     page, via the delegated [data-agenthead] tap/click handlers. */
+  return '<div class="home-hero'+(state.temp?' is-temp':'')+'"><button class="home-hero-ava" data-agenthead="'+a.id+'" aria-label="Open '+esc(a.name)+'\u2019s page">'+avatarHTMLFor(a,'idle')+(state.temp? tempPeekEyesHTML() : '')+'</button></div>';
+}
+function hashStr(s){ var h=0; for(var i=0;i<s.length;i++){ h=(h*31 + s.charCodeAt(i))|0; } return h; }
+/* Per-message hash cache: renderMain re-signs the whole chat on
+   every render, and hashing every character of every message each
+   time was steady main-thread work on long chats — a real source
+   of phone lag. A message's text only changes by replacement, so
+   the hash is computed once per distinct text (streaming updates
+   change the text, miss the cache, and re-hash just that one). */
+var msgHashCache=(typeof WeakMap!=='undefined')? new WeakMap() : null;
+function msgTextHash(m){
+  var t=m.text||'';
+  if(msgHashCache){
+    var hit=msgHashCache.get(m);
+    if(hit && hit.t===t) return hit.h;
+    var h=hashStr(t);
+    try{ msgHashCache.set(m,{t:t,h:h}); }catch(e){}
+    return h;
+  }
+  return hashStr(t);
+}
+function msgSig(c){
+  var s=c.id+'#'+c.messages.length;
+  for(var i=0;i<c.messages.length;i++){
+    var m=c.messages[i];
+    s+='|'+m.id+':'+(m.text? m.text.length+':'+msgTextHash(m) : '0')+':'+(m.reaction||'')+(m.liked?'L':'')+(m.canvas? m.canvas.status : '')+(m.code? m.code.body.length : '')+(m.avatarProposal? (m.avatarProposal.resolved||'o') : '');
+  }
+  return s;
+}
+var lastMsgSig='';
+var headSwapInDir=0;
+var lastHeadHTML=null;
+function renderAgentHead(){
+  var bar=$('#agentHeadBar'); if(!bar) return;
+  /* Duplicate-avatar fix: an EMPTY chat already shows the agent
+     once, big, as the home hero in the message area (homeHeroHTML).
+     The pinned small head must NOT show at the same time — exactly
+     one avatar on screen. So the head stays hidden while the
+     current chat has no messages, and appears the moment the first
+     message lands (when the hero is replaced by the messages). */
+  var curC=(typeof currentChat==='function')? currentChat() : null;
+  var chatEmpty = !curC || !curC.messages || !curC.messages.length;
+  var show = state.view==='chat' && !state.splitId && state.avatarSize!=='hidden' && !apiIncomplete() && !chatEmpty;
+  /* Fast path: renderAll reaches here on almost every interaction,
+     and rebuilding the head's innerHTML each time tore down and
+     restarted the avatar SVG and its animations for nothing — a
+     visible hitch on phones. Identical head HTML is left in the
+     DOM untouched; only a real change (agent, size, emotion,
+     visibility) re-renders. A pending swipe-in clears the cache
+     so its animation still gets a fresh element to move. */
+  if(headSwapInDir) lastHeadHTML=null;
+  var nextHTML = show? chatAgentHeadHTML() : '';
+  if(nextHTML!==lastHeadHTML){ bar.innerHTML = nextHTML; lastHeadHTML=nextHTML; }
+  bar.style.display = show? 'flex' : 'none';
+  /* Agent switch animation — ONLY after a left / right swipe on the
+     top agent (switchTopAgent is the one place that sets
+     headSwapInDir, and only the swipe handler calls it): the new
+     agent's circle looms in from the side the swipe pointed to,
+     sliding across and growing to full size as it lands. Renders
+     for any other reason — first load, a menu switch, a re-render —
+     never set the flag, so the head simply appears, unmoving. A
+     flag left over while the head is hidden is dropped, never
+     replayed later. */
+  if(!show){ headSwapInDir=0; return; }
+  if(headSwapInDir){
+    var h=bar.querySelector('.chat-agent-head:not(.is-ghost)'), d=headSwapInDir; headSwapInDir=0;
+    if(h && !window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+      /* OVERLAPPING in: the incoming head starts coming in NOW,
+         while the outgoing ghost (inserted by switchTopAgent) is
+         still sliding out over the same space — they cross over
+         each other instead of one waiting for the other. */
+      h.classList.add('is-incoming');
+      h.style.transition='none';
+      h.style.transform='translateX('+(d*150)+'px) scale(.6)';
+      h.style.opacity='0.15';
+      requestAnimationFrame(function(){ requestAnimationFrame(function(){
+        h.style.transition='transform .38s cubic-bezier(.22,1,.36,1), opacity .32s ease';
+        h.style.transform=''; h.style.opacity='';
+        setTimeout(function(){ h.classList.remove('is-incoming'); }, 400);
+      }); });
+    }
+  }
+}
+/* Which chats the current chat agent sees: shared chats for every
+   agent by default; an agent with individual history turned on sees
+   only its own chats instead. */
+function chatVisibleForAgent(c){
+  var a=(typeof chatAgent==='function')? chatAgent() : null;
+  if(a && a.individualHistory) return c.agentId===a.id;
+  return !c.agentId;
+}
+function renderSplit(){
+  var on=!!state.splitId && !!chatById(state.splitId);
+  $('#splitBar').classList.toggle('show',on);
+  $('#splitWrap').classList.toggle('show',on);
+  if(state.view==='chat') $('#chatScroll').style.display=on?'none':'';
+  updateTargetLine();
+  if(!on) return;
+  /* Capture pane scroll BEFORE replacing content (same preservation
+     rule as the main list: keep the offset, follow new messages only
+     when that pane was already near its bottom). */
+  var ptEl=$('#paneTop .pane-scroll'), pbEl=$('#paneBottom .pane-scroll');
+  function cap(p){ return { top:p.scrollTop, near:p.scrollHeight - p.scrollTop - p.clientHeight < 140 }; }
+  var capT=cap(ptEl), capB=cap(pbEl);
+  var topId=state.splitSwapped?state.splitId:state.currentId;
+  var botId=state.splitSwapped?state.currentId:state.splitId;
+  var tc=chatById(topId), bc=chatById(botId);
+  $('#paneTopTitle').textContent=tc?tc.title:'';
+  $('#paneBottomTitle').textContent=bc?bc.title:'';
+  $('#paneTopMsgs').innerHTML=tc?tc.messages.map(function(m){ return msgHTML(m, tc.id); }).join(''):'';
+  $('#paneBottomMsgs').innerHTML=bc?bc.messages.map(function(m){ return msgHTML(m, bc.id); }).join(''):'';
+  hydrateCodeFrames($('#paneTopMsgs')); hydrateCodeFrames($('#paneBottomMsgs'));
+  $('#paneTop').classList.toggle('active',state.splitActive==='top');
+  $('#paneBottom').classList.toggle('active',state.splitActive==='bottom');
+  ptEl.scrollTop = capT.near ? ptEl.scrollHeight : capT.top;
+  pbEl.scrollTop = capB.near ? pbEl.scrollHeight : capB.top;
+}
+function renderAll(){ if(typeof fireScheduled==='function') fireScheduled(); renderMain(); renderSplit(); renderSidebar(); updateTempIcon(); updPlaceholder(); if(typeof renderAgentHead==='function') renderAgentHead(); }
+/* Icon state, applied to the chat header pill button and the
+   sidebar header button beside "Gptopen" (#sbNewTop):
+   temporary-chat icon before the first message, New chat
+   (compose) icon once the current chat has messages.
+   Exception: the side menu BOTTOM compose button (#sbNewIc) always
+   shows the New chat (compose) symbol, never the temporary symbol.
+   The header pill button's JOB follows its icon: while it shows the
+   Temporary chat icon (empty chat) it is the Temporary chat toggle;
+   once it shows the New chat icon (chat has started) clicking it
+   starts a NEW CHAT — it must never turn Temporary chat on in that
+   state. Temporary chat only ever turns on from its own toggle:
+   this button while it shows the Temporary icon, or the "Temporary
+   chat" row in the dots menu. The two sidebar buttons always start
+   a new chat, whatever icon they are showing. */
+function updateTempIcon(){
+  var c=currentChat(); if(!c) return;
+  var started=c.messages.length>0;
+  var name=started?'compose':'temp';
+  var want=started?I.compose:I.temp;
+  ['#tempBtn'].forEach(function(sel){
+    var b=$(sel); if(!b) return;
+    if(b.getAttribute('data-ic')!==name){
+      b.innerHTML=want; b.setAttribute('data-ic', name);
+    }
+  });
+  /* The side menu BOTTOM compose button (#sbNewIc) always shows the
+     New chat (compose) symbol — never the temporary chat symbol —
+     icon only, and its job is unchanged (always starts a new chat). */
+  var nc=$('#sbNewIc');
+  if(nc && nc.getAttribute('data-ic')!=='compose'){
+    nc.innerHTML=I.compose; nc.setAttribute('data-ic','compose');
+  }
+  var tb=$('#tempBtn');
+  if(tb){
+    tb.setAttribute('data-mode', started?'new':'temp');
+    tb.setAttribute('aria-label', started?'New chat':'Temporary chat');
+    tb.classList.toggle('temp-on', !!state.temp && !started);
+  }
+}
+function updateTargetLine(){
+  var t=$('#targetLine');
+  if(state.splitId){ var c=activeTargetChat(); t.innerHTML='Sending to <b>'+esc(c?c.title:'')+'</b> — tap a pane to switch'; t.classList.add('show'); }
+  else if(state.route){ t.innerHTML='Next message: <b>'+esc(state.route)+' mode</b>'; t.classList.add('show'); }
+  else if(state.temp){ t.innerHTML='<b>Temporary chat on</b> — this main chat is not saved to history'; t.classList.add('show'); }
+  else t.classList.remove('show');
+}
+/* =============== Sidebar =============== */
+var lastSbSig='';
+function sbSig(q){
+  var s=q+'#'+state.currentId+'#'+(state.splitId||'')+'#'+(state.showArchived?1:0)+'#'+chatAgentId+'#'+((typeof agentStatus!=='undefined'&&agentStatus)?(agentStatus.kind||''):'');
+  for(var i=0;i<chats.length;i++) s+='|'+chats[i].id+':'+chats[i].title+':'+(chats[i].agentId||'');
+  for(var j=0;j<AGENTS.length;j++){ var a2=AGENTS[j]; s+='@'+a2.id+':'+(a2.preset||'')+':'+(a2.avatar?'p':'')+':'+(a2.shape||'')+':'+(a2.face||'')+':'+(a2.color||'')+':'+(a2.acc||'')+':'+(a2.cw||'')+':'+(a2.frame||'')+':'+(a2.cface||'')+':'+(a2.cacc||'')+':'+(a2.ctint||''); }
+  return s;
+}
+function renderSidebar(){
+  syncSidebarAgent();
+  var q=($('#sbSearch').value||'').toLowerCase();
+  /* Fast path: unchanged chats/selection/search → no list rebuild. */
+  var sig=sbSig(q);
+  if(sig===lastSbSig) return;
+  lastSbSig=sig;
+  var list=$('#sbList'), html='';
+  /* Preserve the chats-list scroll offset across rebuilds — rebuilding
+     the rows used to reset it to the top, which read as "chats list
+     won't stay scrolled / jumps back" in both directions. */
+  var sbScrollEl=list.closest('.sb-scroll');
+  var keepTop=sbScrollEl?sbScrollEl.scrollTop:0;
+  var lbl=$('#sbChatsLabel'); if(lbl) lbl.textContent=state.showArchived?'Archived chats':'Side chats';
+  var ab=$('#sbArchive'); if(ab) ab.classList.toggle('on', !!state.showArchived);
+  if(state.showArchived){
+    list.innerHTML='<div class="sb-empty">No archived chats</div>';
+    if(sbScrollEl) sbScrollEl.scrollTop=keepTop;
+    return;
+  }
+  chats.forEach(function(c, idx){
+    /* The Main chat is universal and separate — it lives only on its
+       Main chat tab and never appears as a side chat row. */
+    if(c.main) return;
+    if(!chatVisibleForAgent(c)) return;
+    if(q && c.title.toLowerCase().indexOf(q)<0) return;
+    var sel=c.id===state.currentId, sp=state.splitId===c.id;
+    /* Original blue dot: first row only, and only when it is not selected. */
+    var dot=(idx===0 && !sel && !sp);
+    var agc=agentById(c.agentId)||chatAgent();
+    var liveA=!!(sel && agc && chatAgent() && agc.id===chatAgent().id);
+    html+='<div class="chat-row'+(sel?' sel':'')+(sp?' splitp':'')+(liveA?' live-agent':'')+'" data-id="'+c.id+'">'
+      +'<div class="chat-row-under"><span class="u-open">Open</span><span class="u-del">Delete</span></div>'
+      +'<div class="chat-row-main" role="button" tabindex="0" aria-label="'+esc(c.title)+'"><span class="sb-chat-ava" aria-hidden="true">'+avatarHTMLFor(agc,(liveA && typeof agentStatus!=='undefined' && agentStatus && agentStatus.kind)? agentStatus.kind : 'idle')+'</span><span class="chat-row-title">'+esc(c.title)+'</span>'
+      +(sp?'<span class="split-badge">Split</span>':'')
+      +(dot?'<span class="row-dot"></span>':'')
+      +'<button class="row-menu-btn" data-menu="'+c.id+'" aria-label="Chat options">'+I.dotsH+'</button></div></div>';
+  });
+  list.innerHTML=html || '<div class="sb-empty">No matching chats</div>';
+  if(sbScrollEl) sbScrollEl.scrollTop=keepTop;
+  /* New list content while closed: warm the layout in idle time so
+     the next open is already painted (see sbWarm). */
+  if(!sbOpen() && typeof sbWarm==='function') sbWarm();
+}
+var app=$('#app'), sidebar=$('#sidebar'), stage=$('#stage'), scrim=$('#scrim');
+function sbWidth(){ return Math.min(312, window.innerWidth-66); }
+function sbOpen(){ return app.classList.contains('sb-open'); }
+/* =============== API state — shown in the composer, never the top ===============
+   There is no header pill any more. API state lives in the composer
+   itself: while a model is working (or a setup is added and not yet
+   disproven) the normal type box shows; the moment no API is
+   working — nothing set up, a send failed on every API, or the
+   limit was reached — the type box is replaced by the API box
+   (search / select / add + circular Test/Retry where Send sits),
+   and it flows back to the type box the moment a model answers.
+   setApiHealth / updateApiPill drive the swap; the same health also
+   feeds the agent head and Settings → APIs & Providers. */
+function apiIncomplete(){ return !apiEntries().length && !state.relayOn; }
+function apiWorking(){ return apiEntries().length>0 && state.apiHealth==='ok'; }
+/* Success / failure TIMESTAMPS: the "not working" state may only
+   show when the last real attempt actually failed AFTER the last
+   success. A model that answered — in chat, on Test, anywhere —
+   is working, and no stale error from an earlier attempt (or from
+   a test ping that used a different, stricter request) may hide
+   the type box or claim otherwise afterwards. */
+var apiOkAt=0, apiFailAt=0;
+function updateApiPill(){
+  /* Kept name (callers everywhere): now drives the composer swap. */
+  updateComposerMode();
+}
+function setApiHealth(h, detail){
+  if(h==='ok') apiOkAt=Date.now();
+  else if(h==='error' || h==='quota') apiFailAt=Date.now();
+  state.apiHealth=h; state.apiDetail=detail||''; updateApiPill(); /* Keep the chat in sync the moment the setup changes (key saved / removed / reply health): re-render so the agent head appears or clears right away instead of waiting for the next unrelated render. */ if(typeof renderMain==='function' && state.view==='chat'){ try{ renderMain(); }catch(e){} } }
+function apiFailureKind(status, payload){
+  var t=''; try{ t=(typeof payload==='string'?payload:JSON.stringify(payload||'')).toLowerCase(); }catch(e){}
+  if(status===429 || t.indexOf('quota')>=0 || t.indexOf('rate limit')>=0 || t.indexOf('rate_limit')>=0 || t.indexOf('insufficient')>=0 || t.indexOf('resource_exhausted')>=0 || t.indexOf('billing')>=0) return 'quota';
+  return 'error';
+}
+/* Reply-text extraction, tolerant of every shape a WORKING model
+   actually returns — a reply in any of these shapes is a success,
+   never a failure:
+   - choices[0].message.content as a string OR as an array of
+     parts (OpenAI-style content parts),
+   - choices[0].text (completions-style),
+   - choices[0].message.reasoning_content when content is empty
+     (reasoning models that spent their budget thinking — the
+     model DID answer; treating it as "not working" was a false
+     error),
+   - output_text (Responses API shape),
+   - Gemini candidates (parts may be missing — guarded),
+   - Anthropic content blocks. */
+function extractReplyTextAny(j){
+  if(!j) return null;
+  try{
+    if(j.choices && j.choices[0]){
+      var ch=j.choices[0];
+      if(ch.message){
+        var c=ch.message.content;
+        if(typeof c==='string' && c) return c;
+        if(Array.isArray(c)){ var joined=c.map(function(b){ return b && (b.type==='text'||typeof b.text==='string')? (b.text||'') : ''; }).join(''); if(joined) return joined; }
+        if(ch.message.reasoning_content) return ch.message.reasoning_content;
+      }
+      if(typeof ch.text==='string' && ch.text) return ch.text;
+    }
+    if(typeof j.output_text==='string' && j.output_text) return j.output_text;
+    if(j.candidates && j.candidates[0] && j.candidates[0].content){
+      var parts=j.candidates[0].content.parts||[];
+      var g=parts.map(function(pt){ return (pt && pt.text)||''; }).join('');
+      if(g) return g;
+    }
+    if(Array.isArray(j.content)){ var a=j.content.map(function(b){ return b && b.type==='text'? (b.text||'') : ''; }).join(''); if(a) return a; }
+  }catch(e){}
+  return null;
+}
+/* After a Save in the + sheet or Settings: no key → show the pill;
+   a first working save → hide it; changing key/provider/base/model
+   on an already-working setup → show it as "check API" until the
+   next reply proves the new setup works. */
+function apiSaved(prev, pastedKey){
+  if(!state.apiKey || apiIncomplete()){ setApiHealth('unset'); return; }
+  var changed = prev && prev.k && (prev.p!==state.provider || prev.b!==state.providerBase || prev.m!==state.model || (!!pastedKey && pastedKey!==prev.k));
+  setApiHealth(changed?'changed':'ok');
+  if(typeof renderMain==='function' && state.view==='chat') renderMain();
+}
+/* =============== APIs — paste a key, everything else automatic ===============
+   The user only ever pastes a key. The provider, base URL and model
+   are detected from the key itself and confirmed against the
+   provider's own model list where it offers one. Any number of keys
+   can be added; sending tries the active key first with its model,
+   then every other model on that key, then the next key and every
+   model on it, and only reports an error when every model on every
+   key has failed. state.apiKey / provider / providerBase / model stay
+   synced to the active entry for the rest of the app (top pill,
+   agent head, usage page). */
+var API_PROVIDERS={
+  gemini:{name:'Google Gemini', type:'gemini', base:'https://generativelanguage.googleapis.com/v1beta', defModel:'gemini-2.5-flash'},
+  openrouter:{name:'OpenRouter', type:'openai', base:'https://openrouter.ai/api/v1', defModel:'nvidia/nemotron-3.5-super-vl:free'},
+  openai:{name:'OpenAI', type:'openai', base:'https://api.openai.com/v1', defModel:'gpt-4o-mini'},
+  anthropic:{name:'Anthropic', type:'anthropic', base:'https://api.anthropic.com/v1', defModel:'claude-sonnet-4-5'},
+  groq:{name:'Groq', type:'openai', base:'https://api.groq.com/openai/v1', defModel:'openai/gpt-oss-120b'},
+  xai:{name:'xAI', type:'openai', base:'https://api.x.ai/v1', defModel:'grok-4'},
+  deepseek:{name:'DeepSeek', type:'openai', base:'https://api.deepseek.com/v1', defModel:'deepseek-chat'},
+  nvidia:{name:'NVIDIA', type:'openai', base:'https://integrate.api.nvidia.com/v1', defModel:'meta/llama-3.1-70b-instruct'},
+  mistral:{name:'Mistral', type:'openai', base:'https://api.mistral.ai/v1', defModel:'mistral-large-latest', agents:true},
+  together:{name:'Together', type:'openai', base:'https://api.together.xyz/v1', defModel:'meta-llama/Llama-3.3-70B-Instruct-Turbo'},
+  huggingface:{name:'Hugging Face', type:'openai', base:'https://router.huggingface.co/v1', defModel:'meta-llama/Llama-3.3-70B-Instruct'},
+  cohere:{name:'Cohere', type:'openai', base:'https://api.cohere.com/compatibility/v1', defModel:'command-r-plus-08-2024'},
+  github:{name:'GitHub Models', type:'openai', base:'https://models.github.ai/inference', defModel:'openai/gpt-4.1-mini'},
+  kimi:{name:'Kimi (Moonshot AI)', type:'openai', base:'https://api.moonshot.ai/v1', defModel:'moonshot-v1-8k'}
 };
-const DEFAULT_MODEL = {
-  groq: 'openai/gpt-oss-120b', openrouter: 'nvidia/nemotron-3.5-super-vl:free'
+/* =============== Free API key sites ===============
+   Every provider above that gives a key away free (free tier,
+   free models, or a free trial key), with the site where the
+   user gets their OWN key and the exact Vercel variable name
+   for sharing it through the app relay. No key is baked into
+   the app — each user pastes their own key, or the site owner
+   puts keys in the server variables and turns the relay on. */
+/* The DEFAULT (shared, built-in) providers are exactly two —
+   Groq and OpenRouter — by the owner's decision: every other
+   default route was removed. Both were live-verified through
+   the deployed relay on 2026-10-29 (Groq's gpt-oss models
+   answer; OpenRouter's pinned nemotron-3.5-super-vl:free
+   answers — its free ROUTER does not reliably, see
+   RELAY_FALLBACK_MODELS). The user's OWN pasted keys are
+   unaffected: any provider in API_PROVIDERS can still be
+   added as a personal key. */
+var FREE_APIS=[
+  {provider:'groq', site:'Groq', url:'https://console.groq.com/keys', env:'GROQ_API_KEY', note:'Free tier · very fast', how:'Sign up → API Keys → Create API Key. Free tier, no card.'},
+  {provider:'openrouter', site:'OpenRouter', url:'https://openrouter.ai/keys', env:'OPENROUTER_API_KEY', note:'Free models included', how:'Sign up → Keys → Create Key. GptOpen automatically uses a working free model behind the scenes.'}
+];
+function freeApiFor(pid){ for(var i=0;i<FREE_APIS.length;i++) if(FREE_APIS[i].provider===pid) return FREE_APIS[i]; return null; }
+function freeApiEnvText(f){ return f.env+(f.envAlt? ' (also accepted: '+f.envAlt+')' : ''); }
+/* =============== Key vault — keys sealed, never readable ===============
+   How a pasted key is handled, end to end:
+   - The paste fields are password inputs; both Add handlers clear
+     through a re-render, and the key is never written into any
+     page HTML — lists, pills and the Usage page show only the
+     provider, the model and the last 4 digits (apiKeyMask).
+   - In memory, the plaintext lives only in vaultPlain and on the
+     live entry objects, where sending reads it.
+   - At rest it is AES-GCM ciphertext (entry.sealed): a fresh
+     random IV per key, sealed under a 256-bit device key that is
+     generated once, marked non-extractable, and kept in
+     IndexedDB — it cannot be read back out as bytes. Reading the
+     app's stored data, its downloaded backup, or this file shows
+     no key anywhere: the backup export is masked too, and memory
+     saving strips any vault key on sight.
+   - On open, vaultBoot() unseals each saved key back into memory
+     and re-seals any older entry that was stored before the
+     vault existed, then forces a save so storage is rewritten
+     sealed. If this browser has no WebCrypto/IndexedDB at all,
+     the vault reports itself broken and the app falls back to
+     keeping keys in memory for the session rather than writing
+     them anywhere readable. */
+function vaultB64(bytes){ var s=''; for(var i=0;i<bytes.length;i++) s+=String.fromCharCode(bytes[i]); return btoa(s); }
+function vaultUnB64(b64){ var s=atob(String(b64||'')); var out=new Uint8Array(s.length); for(var i=0;i<s.length;i++) out[i]=s.charCodeAt(i); return out; }
+function vaultStrToBytes(str){ if(window.TextEncoder) return new TextEncoder().encode(str); var u=unescape(encodeURIComponent(str)); var out=new Uint8Array(u.length); for(var i=0;i<u.length;i++) out[i]=u.charCodeAt(i); return out; }
+function vaultBytesToStr(bytes){ if(window.TextDecoder) return new TextDecoder().decode(bytes); var s=''; for(var i=0;i<bytes.length;i++) s+=String.fromCharCode(bytes[i]); return decodeURIComponent(escape(s)); }
+var vaultMKPromise=null;
+function vaultMK(){
+  if(vaultMKPromise) return vaultMKPromise;
+  vaultMKPromise=new Promise(function(resolve){
+    try{
+      if(!window.crypto || !crypto.subtle || !window.indexedDB){ vaultBroken=true; resolve(null); return; }
+      var req=indexedDB.open('axo-vault',1);
+      req.onupgradeneeded=function(){ try{ req.result.createObjectStore('mk'); }catch(e){} };
+      req.onerror=function(){ vaultBroken=true; resolve(null); };
+      req.onsuccess=function(){
+        var db=req.result;
+        try{ window.__axoVaultDb=db; }catch(e){}
+        try{
+          var get=db.transaction('mk','readonly').objectStore('mk').get('mk');
+          get.onsuccess=function(){
+            if(get.result){ resolve(get.result); return; }
+            crypto.subtle.generateKey({name:'AES-GCM', length:256}, false, ['encrypt','decrypt']).then(function(mk){
+              try{
+                var tx2=db.transaction('mk','readwrite');
+                tx2.objectStore('mk').put(mk,'mk');
+                tx2.oncomplete=function(){ resolve(mk); };
+                tx2.onerror=function(){ resolve(mk); };
+              }catch(e){ resolve(mk); }
+            }).catch(function(){ vaultBroken=true; resolve(null); });
+          };
+          get.onerror=function(){ vaultBroken=true; resolve(null); };
+        }catch(e){ vaultBroken=true; resolve(null); }
+      };
+    }catch(e){ vaultBroken=true; resolve(null); }
+  });
+  return vaultMKPromise;
+}
+function vaultSeal(entry){
+  if(!entry || !entry.key) return Promise.resolve(entry);
+  vaultPlain[entry.id]=entry.key;
+  entry.last4=String(entry.key).slice(-4);
+  return vaultMK().then(function(mk){
+    if(!mk){ entry.sessionOnly=true; return entry; }
+    var iv=crypto.getRandomValues(new Uint8Array(12));
+    return crypto.subtle.encrypt({name:'AES-GCM', iv:iv}, mk, vaultStrToBytes(entry.key)).then(function(ct){
+      entry.sealed={iv:vaultB64(iv), ct:vaultB64(new Uint8Array(ct))};
+      entry.sessionOnly=false;
+      return entry;
+    }).catch(function(){ entry.sessionOnly=true; return entry; });
+  });
+}
+function vaultOpen(entry){
+  if(!entry || !entry.sealed) return Promise.resolve(null);
+  return vaultMK().then(function(mk){
+    if(!mk) return null;
+    try{
+      return crypto.subtle.decrypt({name:'AES-GCM', iv:vaultUnB64(entry.sealed.iv)}, mk, vaultUnB64(entry.sealed.ct)).then(function(buf){
+        var k=vaultBytesToStr(new Uint8Array(buf));
+        vaultPlain[entry.id]=k; entry.key=k; entry.last4=k.slice(-4);
+        return k;
+      }).catch(function(){ if(entry) entry.detail='Saved key could not be unlocked on this device — remove it and add the key again'; return null; });
+    }catch(e){ return null; }
+  });
+}
+function vaultForget(id){ try{ delete vaultPlain[id]; }catch(e){ vaultPlain[id]=undefined; } }
+function vaultBoot(){
+  var list=state.apiKeys||[], jobs=[];
+  list.forEach(function(e){
+    if(!e || !e.id) return;
+    if(!e.last4 && e.key) e.last4=String(e.key).slice(-4);
+    if(e.sealed && !e.key) jobs.push(vaultOpen(e));
+    else if(e.key && !e.sealed) jobs.push(vaultSeal(e));
+    else if(e.key) vaultPlain[e.id]=e.key;
+  });
+  /* Safety net: if the vault somehow never settles, saves must
+     not stay blocked — fall back to the pre-vault behaviour for
+     this device rather than losing the state slice. */
+  setTimeout(function(){
+    if(!vaultReady){ vaultBroken=true; vaultReady=true; try{ localDirty=true; saveLocal(); }catch(e){} }
+  }, 4000);
+  if(!jobs.length){ vaultReady=true; return Promise.resolve(); }
+  return Promise.all(jobs).then(function(){
+    vaultReady=true;
+    try{ syncLegacyApi(); }catch(e){}
+    try{ state.apiHealth=(apiEntries().length || state.relayOn)? 'changed' : 'unset'; }catch(e){}
+    try{ localDirty=true; saveLocal(); }catch(e){}
+    try{ if(state.view==='chat') renderAll(); }catch(e){}
+  });
+}
+/* What persistence and backups are allowed to see of an entry:
+   metadata + last 4 + sealed ciphertext. The plaintext `key`
+   field is included ONLY when the vault is broken on a browser
+   with no WebCrypto/IndexedDB (the pre-vault fallback), never in
+   normal operation. */
+function apiKeysForStore(){
+  return (state.apiKeys||[]).map(function(e){
+    var o={id:e.id, provider:e.provider||'', base:e.base||'', model:e.model||'', models:e.models||[], status:e.status||'', detail:e.detail||'', explicit:!!e.explicit, last4:e.last4||String(e.key||'').slice(-4)};
+    if(e.sealed) o.sealed=e.sealed;
+    else if(vaultBroken && e.key) o.key=e.key;
+    return o;
+  });
+}
+function apiEntries(){
+  return (state.apiKeys||[]).filter(function(e){
+    if(!e) return false;
+    if(!e.key && e.id && vaultPlain[e.id]) e.key=vaultPlain[e.id];
+    return !!(e.key || e.sealed);
+  });
+}
+function apiEntryById(id){ var l=apiEntries(); for(var i=0;i<l.length;i++) if(l[i].id===id) return l[i]; return null; }
+function activeApiEntry(){ return apiEntryById(state.activeApiId) || apiEntries()[0] || null; }
+function syncLegacyApi(){
+  var e=activeApiEntry();
+  if(!e){ state.apiKey=''; state.provider=''; state.providerBase=''; state.model=''; return; }
+  state.apiKey=e.key; state.model=e.model||'';
+  if(e.provider==='gemini'){ state.provider='gemini'; state.providerBase=''; }
+  else if(e.provider==='openrouter'){ state.provider='openrouter'; state.providerBase=''; }
+  else if(e.provider){ state.provider='custom'; state.providerBase=e.base||''; }
+  else { state.provider=''; state.providerBase=''; }
+}
+function apiEntryLabel(e){ if(!e) return 'Not set'; if(!e.provider) return e.status==='unknown'? 'Unrecognised key' : 'Detecting…'; var p=API_PROVIDERS[e.provider]; if(e.provider==='mistral' && mistralAgentOn()) return 'Mistral Agent · ag_…'+state.mistralAgentId.slice(-4); if(e.provider==='mistral' && e.relay) return 'Mistral (relay — Agent auto if server set)'; return (p? p.name : 'API'); }
+function apiKeyMask(e){ return '•••• •••• '+(((e&&e.last4)||'')||String((e&&e.key)||'').slice(-4)); }
+function apiDetectProviderLocal(key){
+  /* LOCAL detection only: the key's own prefix / format names its
+     provider, with no network call. A key is only ever sent to
+     that one provider's own API (its model list, then chat) —
+     never probed against another provider's endpoint. A format
+     no rule recognises detects as '' and the key is not sent
+     anywhere at all. */
+  var k=String(key||'');
+  if(/^AIza/.test(k)) return 'gemini';
+  if(/^sk-or-/.test(k)) return 'openrouter';
+  if(/^sk-ant-/.test(k)) return 'anthropic';
+  if(/^gsk_/.test(k)) return 'groq';
+  if(/^xai-/.test(k)) return 'xai';
+  if(/^nvapi-/.test(k)) return 'nvidia';
+  if(/^hf_/.test(k)) return 'huggingface';
+  if(/^(ghp_|gho_|github_pat_)/.test(k)) return 'github';
+  if(/^sk-[0-9a-f]{32}$/i.test(k)) return 'deepseek';
+  if(/^sk-/.test(k)) return 'openai';
+  if(/^[0-9a-f]{64}$/i.test(k)) return 'together';
+  if(/^[A-Za-z0-9_-]{40}$/.test(k)) return 'cohere';
+  if(/^[A-Za-z0-9_-]{32}$/.test(k)) return 'mistral';
+  return '';
+}
+function apiPickModel(ids){
+  if(!ids || !ids.length) return '';
+  var usable=ids.filter(function(id){ var s=String(id).toLowerCase(); return !/(embed|whisper|tts|transcri|dall|image|moderation|rerank|guard|ocr|audio|realtime)/.test(s); });
+  var list=usable.length? usable : ids;
+  var prefs=['claude-sonnet','claude-3-5-sonnet','claude-3.5-sonnet','gpt-4o','gpt-4.1','gemini-2.5-flash','gemini-2.5-pro','gemini-2.0-flash','llama-3.3','llama3.3','deepseek-chat','grok','mistral-large','sonnet','opus','pro','flash','turbo','instruct','chat'];
+  for(var p=0;p<prefs.length;p++){ for(var i=0;i<list.length;i++){ if(String(list[i]).toLowerCase().indexOf(prefs[p])>=0) return list[i]; } }
+  return list[0];
+}
+/* Every model a key should be tried with, in order: the key's
+   chosen model first, then the provider default, then every
+   other model from that provider's own list, best first. This
+   is the list sending and Test walk through — one model failing
+   never gives up on the key, and one key failing never gives up
+   on the message: all of this key's models, then all of the next
+   key's models, and so on, in every way, before any error. */
+function apiModelCandidates(e){
+  if(!e) return [];
+  var p=API_PROVIDERS[e.provider]; if(!p) return e.model? [e.model] : [];
+  /* Default providers: exactly the ordered, live-verified
+     candidate list (working model persisted first, explicit pick
+     respected) — see modelCandidatesFor. */
+  if(typeof MODEL_CANDIDATES!=='undefined' && MODEL_CANDIDATES[e.provider]) return modelCandidatesFor(e);
+  var seen={}, out=[];
+  function add(m){ m=String(m||'').trim(); if(m && !seen[m]){ seen[m]=1; out.push(m); } }
+  add(e.model); add(p.defModel);
+  var cached=(e.models||[]).slice();
+  var prefs=['claude-sonnet','claude-3-5-sonnet','claude-3.5-sonnet','gpt-4o','gpt-4.1','gemini-2.5-flash','gemini-2.5-pro','gemini-2.0-flash','llama-3.3','llama3.3','deepseek-chat','grok','mistral-large','sonnet','opus','pro','flash','turbo','instruct','chat'];
+  function rank(id){ var s=String(id).toLowerCase(); for(var i=0;i<prefs.length;i++){ if(s.indexOf(prefs[i])>=0) return i; } return prefs.length; }
+  cached.sort(function(a,b){ return rank(a)-rank(b); });
+  var usable=cached.filter(function(id){ var s=String(id).toLowerCase(); return !/(embed|whisper|tts|transcri|dall|image|moderation|rerank|guard|ocr|audio|realtime)/.test(s); });
+  (usable.length? usable : cached).forEach(add);
+  return out;
+}
+function apiFetchModels(e){
+  var p=API_PROVIDERS[e.provider]; if(!p) return Promise.resolve(null);
+  if(p.type==='gemini'){
+    return fetch(p.base+'/models',{headers:{'x-goog-api-key':e.key}})
+      .then(function(r){ return r.ok? r.json() : null; })
+      .then(function(j){ if(!j || !j.models) return null; return j.models.filter(function(m){ return (m.supportedGenerationMethods||[]).indexOf('generateContent')>=0; }).map(function(m){ return String(m.name||'').replace(/^models\//,''); }).filter(Boolean); })
+      .catch(function(){ return null; });
+  }
+  if(p.type==='anthropic'){
+    return fetch(p.base+'/models',{headers:{'x-api-key':e.key,'anthropic-version':'2023-06-01'}})
+      .then(function(r){ return r.ok? r.json() : null; })
+      .then(function(j){ return (j && j.data)? j.data.map(function(m){ return m.id; }).filter(Boolean) : null; })
+      .catch(function(){ return null; });
+  }
+  return fetch(p.base+'/models',{headers:{'Authorization':'Bearer '+e.key}})
+    .then(function(r){ return r.ok? r.json() : null; })
+    .then(function(j){ return (j && j.data)? j.data.map(function(m){ return m.id; }).filter(Boolean) : null; })
+    .catch(function(){ return null; });
+}
+function apiDetectEntry(key){
+  /* The provider comes from the key's format alone (local, above).
+     Only that provider's own model list is then asked — with the
+     key, to its issuer's endpoint only — to pick the best chat
+     model automatically. If the list does not answer (some
+     endpoints block it), the provider's default model is used and
+     sending checks it; failover across the user's other added
+     keys covers the rest. */
+  var pid=apiDetectProviderLocal(key);
+  if(!pid) return Promise.resolve({provider:'', model:'', models:[], verified:false, unknown:true});
+  return apiFetchModels({provider:pid, key:key}).then(function(models){
+    if(models && models.length) return {provider:pid, model:apiPickModel(models)||API_PROVIDERS[pid].defModel, models:models, verified:true};
+    return {provider:pid, model:API_PROVIDERS[pid].defModel, models:[], verified:false};
+  });
+}
+/* =============== Mistral Agent — auto on when an ID is present ===============
+   A Mistral agent id (ag_…) is NOT a key: it names a saved agent
+   in the user's Mistral console (its own instructions + tools).
+   The moment an ag_… id is present — pasted in the Agent ID
+   field, pasted into the key box by mistake, or supplied by the
+   server relay's MISTRAL_AGENT_ID variable — Mistral chats
+   automatically go through the Agents endpoint
+   (/v1/agents/completions) instead of plain chat completions.
+   No switch to find, nothing else to set: id present = agent
+   on, id cleared = normal Mistral chat again. */
+function isMistralAgentId(v){ return /^ag_[A-Za-z0-9_-]{6,}$/.test(String(v||'').trim()); }
+function mistralAgentOn(){ return isMistralAgentId(state.mistralAgentId); }
+function setMistralAgentId(v){
+  var id=String(v||'').trim();
+  state.mistralAgentId=isMistralAgentId(id)? id : '';
+  if(typeof saveLocalSoon==='function') saveLocalSoon();
+  return mistralAgentOn();
+}
+function mistralAgentLabel(){ return mistralAgentOn()? 'Mistral Agent · ag_…'+state.mistralAgentId.slice(-4) : 'Mistral Agent — off'; }
+function addApiKey(rawKey){
+  var key=String(rawKey||'').trim();
+  if(!key) return Promise.resolve(null);
+  /* Auto-add: an ag_… value pasted here is a Mistral Agent ID,
+     not a key — save it as the agent id (Agent API turns on
+     automatically) and never store or send it as a key. */
+  if(isMistralAgentId(key)){ setMistralAgentId(key); return Promise.resolve({agent:true, provider:'mistral'}); }
+  var existing=null;
+  apiEntries().forEach(function(e){ if(e.key===key) existing=e; });
+  if(existing){ state.activeApiId=existing.id; syncLegacyApi(); setApiHealth('changed'); return Promise.resolve(existing); }
+  var entry={id:'api'+Date.now().toString(36)+Math.floor(Math.random()*99999), key:key, provider:'', base:'', model:'', models:[], status:'checking', detail:'', last4:key.slice(-4)};
+  if(!state.apiKeys) state.apiKeys=[];
+  state.apiKeys.push(entry); state.activeApiId=entry.id; syncLegacyApi();
+  /* Into the vault straight away: the plaintext stays in memory
+     for this session, and what gets saved is the sealed form. */
+  vaultPlain[entry.id]=key;
+  var sealed=vaultSeal(entry);
+  return apiDetectEntry(key).then(function(det){
+    entry.provider=det.provider;
+    entry.base=det.provider? API_PROVIDERS[det.provider].base : '';
+    entry.model=det.provider? (det.model||API_PROVIDERS[det.provider].defModel) : '';
+    entry.models=det.models||[];
+    entry.status=det.unknown? 'unknown' : (det.verified? 'ok' : 'unverified');
+    entry.detail=det.unknown? 'Provider not recognised from the key format — not sent anywhere' : (det.verified? 'Detected automatically' : 'Added — checked on the next message');
+    if(state.activeApiId===entry.id) syncLegacyApi();
+    setApiHealth('changed');
+    return sealed.then(function(){ if(typeof saveLocalSoon==='function') saveLocalSoon(); return entry; });
+  });
+}
+function removeApiEntry(id){
+  vaultForget(id);
+  state.apiKeys=(state.apiKeys||[]).filter(function(e){ return e.id!==id; });
+  if(state.activeApiId===id) state.activeApiId=(apiEntries()[0]||{}).id||'';
+  syncLegacyApi();
+  setApiHealth(apiEntries().length? 'changed' : 'unset');
+}
+function setActiveApi(id){
+  var e=apiEntryById(id); if(!e) return;
+  state.activeApiId=id; syncLegacyApi(); setApiHealth('changed'); updateModelLabel();
+  /* Provider select also runs the always-on working-model check:
+     the entry's models are tried in order (auto-advance on a dead
+     model, capped) and the working one is persisted. */
+  if(e.provider && !apiTesting){ testApiEntry(e).then(function(r){ updateModelLabel(); if(r && r.ok) setApiHealth('ok'); }); }
+}
+/* Attempt order for a send: the active key first, then every other
+   added key in the order it was added. */
+/* =============== App relay — server-side keys, none in the app ===============
+   When the relay is on, sending first tries this site's own
+   server relay: POST /api/relay with {provider, model, messages}
+   and NO key at all. The relay is a Vercel function (its full
+   source is in Settings → APIs & Providers → App relay) that
+   reads the keys from the server's environment variables —
+   GROQ_API_KEY and OPENROUTER_API_KEY, the only two default
+   providers — adds the right one server-side, and forwards the call. The
+   keys never reach the browser: not in this file, not in any
+   response the app can see. Where no relay is deployed (like a
+   plain static preview) the call simply fails and sending falls
+   through to the user's own added keys, exactly as before. */
+/* Relay reachability, learned live — and UNLEARNED just as fast:
+   the relay is only "gone" for the CURRENT round of attempts,
+   and every new send and every Test resets the verdict and
+   probes again, so one transient failure (a dropped mobile
+   connection, a cold start) can never poison the whole session.
+   A relay is proven gone only when a call returns NO JSON body
+   AND no X-Axo-Relay header — a static host answering its 404
+   page, or a plain network refusal. A real relay function always
+   answers JSON and sends that header, INCLUDING when it passes a
+   provider's error straight through: a provider 404 (a dead
+   model name) or 501 (that provider's variable is not set on the
+   server) means the relay IS there and working — only that one
+   provider/model failed, and the next one is tried. Mistaking a
+   relayed provider status for "no relay deployed" was the bug
+   that showed "Shared APIs not reachable" on the live deployed
+   site while its APIs were fine. */
+var relayGone=false, relayStrikes=0;
+function relayAnswered(res){ return !!(res && (res.j!=null || res.relayHdr)); }
+/* Fallback models for the default-model routes — only the two
+   default providers remain (Groq and OpenRouter), and every
+   model here was LIVE-VERIFIED through the deployed relay on
+   2026-10-29, with the app's real request shape:
+   - Groq: openai/gpt-oss-120b (default, above) and
+     openai/gpt-oss-20b both answered. Everything else tried on
+     the server key (llama-3.1-8b-instant, llama-3.3-70b-versatile,
+     qwen/qwen3-32b, kimi-k2, llama-4-scout) returned
+     model_not_found, and gemma2-9b-it is decommissioned — they
+     are NOT in this list.
+   - OpenRouter: every named :free model tried had been retired
+     or paywalled (qwen3-next:free, deepseek-r1:free,
+     deepseek-chat:free, qwen3-coder:free, kimi-k2:free,
+     glm-4.5-air:free, gemma-3:free, llama-3.2/3.3:free … all
+     404). The two routes that answered: 'openrouter/free' —
+     OpenRouter's own free-model router — and
+     nvidia/nemotron-3.5-super-vl:free. RE-VERIFIED 2026-10-29:
+     the router is a roulette — it landed on a content-safety
+     CLASSIFIER (nvidia/nemotron-3.5-content-safety:free), which
+     answered "User Safety: safe" instead of chatting, and on a
+     tiny reasoning model that burned the whole token budget
+     thinking and returned almost no content. So the DEFAULT is
+     now the pinned, verified chat model
+     nvidia/nemotron-3.5-super-vl:free (answers properly with the
+     app's real request shape), the router is only the last
+     fallback, and the send loop rejects classifier-style
+     non-answers ("User Safety:" / "Response Safety:") and moves
+     on to the next model instead of showing them. */
+var RELAY_FALLBACK_MODELS={
+  groq:['openai/gpt-oss-20b'],
+  openrouter:['openrouter/free']
 };
-const FALLBACKS = {
-  groq: ['openai/gpt-oss-20b'],
-  openrouter: ['openrouter/free']
+/* =============== Always-on automatic working-model selection ===============
+   Ordered candidate lists for the two default providers — exactly
+   the live-verified models (default first, fallback second):
+   Groq openai/gpt-oss-120b → openai/gpt-oss-20b; OpenRouter
+   nvidia/nemotron-3.5-super-vl:free → openrouter/free.
+   On provider select, on Test and on every send: if the current
+   model fails with model_not_found / 404 / decommissioned /
+   unavailable, the next candidate is tried automatically, and the
+   model that answers is persisted per provider in localStorage
+   (axo.workingModel.<provider>, mirrored in state.workingModels)
+   so it keeps working with zero manual picking. Auto-advance is
+   capped at MODEL_AUTO_CAP attempts per provider per send/test,
+   so it can never loop forever.
+   An EXPLICIT user pick (chat picker, Settings model select) is
+   stored per provider (axo.explicitModel.<provider>) and is never
+   overridden by auto-advance: if it fails, the real provider
+   error is surfaced plainly instead. "Automatic" in the picker
+   clears the explicit pick and re-enables auto-advance. */
+var MODEL_CANDIDATES={
+  groq:['openai/gpt-oss-120b','openai/gpt-oss-20b'],
+  openrouter:['nvidia/nemotron-3.5-super-vl:free','openrouter/free']
 };
-const AUTO_ORDER = ['groq', 'openrouter'];
-
-function keysFor(p) {
-  const out = [];
-  (p.envs || []).forEach((name) => {
-    const v = process.env[name];
-    if (v && out.indexOf(v) < 0) out.push(v);
+var MODEL_AUTO_CAP=4;
+function modelStoreGet(k){ try{ return window.localStorage.getItem(k); }catch(e){ return null; } }
+function modelStoreSet(k,v){ try{ if(v==null) window.localStorage.removeItem(k); else window.localStorage.setItem(k,String(v)); }catch(e){} }
+function getWorkingModel(pid){ if(!pid) return ''; var v=modelStoreGet('axo.workingModel.'+pid); if(v) return v; return (state.workingModels && state.workingModels[pid]) || ''; }
+function setWorkingModel(pid, model){
+  if(!pid || !model) return;
+  modelStoreSet('axo.workingModel.'+pid, model);
+  if(!state.workingModels) state.workingModels={};
+  state.workingModels[pid]=model;
+  if(typeof saveLocalSoon==='function') saveLocalSoon();
+  updateModelLabel();
+}
+function getExplicitModel(pid){ if(!pid) return ''; var v=modelStoreGet('axo.explicitModel.'+pid); if(v) return v; return (state.explicitModels && state.explicitModels[pid]) || ''; }
+function setExplicitModel(pid, model){
+  if(!pid || !model) return;
+  modelStoreSet('axo.explicitModel.'+pid, model);
+  if(!state.explicitModels) state.explicitModels={};
+  state.explicitModels[pid]=model;
+  if(typeof saveLocalSoon==='function') saveLocalSoon();
+  updateModelLabel();
+}
+function clearExplicitModel(pid){
+  if(!pid) return;
+  modelStoreSet('axo.explicitModel.'+pid, null);
+  if(state.explicitModels) delete state.explicitModels[pid];
+  if(typeof saveLocalSoon==='function') saveLocalSoon();
+  updateModelLabel();
+}
+function entryIsExplicit(entry){
+  if(!entry) return false;
+  if(entry.explicit) return true;
+  var ex=getExplicitModel(entry.provider);
+  return !!(ex && entry.model && ex===entry.model);
+}
+/* Is this failure a MODEL failure (the model name is dead), as
+   opposed to quota / auth / network? Only model failures trigger
+   auto-advance. */
+function isModelFailure(status, payload){
+  var t=''; try{ t=(typeof payload==='string'? payload : JSON.stringify(payload||'')).toLowerCase(); }catch(e){}
+  if(t.indexOf('model_not_found')>=0 || t.indexOf('model not found')>=0 || t.indexOf('decommissioned')>=0 || t.indexOf('does not exist')>=0 || t.indexOf('no endpoints found')>=0 || t.indexOf('unavailable')>=0 && t.indexOf('model')>=0) return true;
+  if(status===404 && (t.indexOf('model')>=0 || t.indexOf('not found')>=0)) return true;
+  if((status===400 || status===422) && t.indexOf('model')>=0 && (t.indexOf('not')>=0 || t.indexOf('invalid')>=0 || t.indexOf('deprecat')>=0)) return true;
+  return false;
+}
+/* The provider's own error message, plainly — never re-labelled. */
+function providerErrorMessage(status, payload){
+  var em='';
+  try{
+    var j=(typeof payload==='string')? JSON.parse(payload) : payload;
+    var ej=j && j.error;
+    em=(ej && (ej.message || (typeof ej==='string'? ej : ''))) || (j && j.message) || '';
+    if(typeof em!=='string') em=JSON.stringify(em);
+  }catch(e){ if(typeof payload==='string') em=payload; }
+  em=String(em||'').trim().slice(0,220);
+  return 'HTTP '+status+(em? ' — '+em : '');
+}
+/* Ordered candidates for an entry/provider: explicit pick first
+   (alone in effect — callers never advance past it), then the
+   persisted working model, then the entry/default model, then
+   the verified fallback list. For the two default providers the
+   list is exactly the verified candidates — nothing else is
+   auto-tried on them. */
+function modelCandidatesFor(entry){
+  if(!entry || !entry.provider) return [];
+  var pid=entry.provider, p=API_PROVIDERS[pid], out=[], seen={};
+  function add(m){ m=String(m||'').trim(); if(m && !seen[m]){ seen[m]=1; out.push(m); } }
+  var ex=getExplicitModel(pid);
+  if(ex) add(ex);
+  if(entry.explicit && entry.model) add(entry.model);
+  add(getWorkingModel(pid));
+  if(MODEL_CANDIDATES[pid]){
+    add(p? p.defModel : ''); MODEL_CANDIDATES[pid].forEach(add);
+    if(!ex && !entry.explicit) add(entry.model);
+    return out;
+  }
+  add(entry.model); add(p? p.defModel : '');
+  (entry.models||[]).forEach(add);
+  return out;
+}
+/* The provider + model the next message will actually use first:
+   the first route in attempt order, with explicit / working /
+   default resolution applied. */
+function currentRouteEntry(){
+  try{ var o=apiAttemptOrder(); return o && o.length? o[0] : null; }catch(e){ return null; }
+}
+function currentModelFor(pid, entry){
+  var ex=getExplicitModel(pid); if(ex) return ex;
+  if(entry && entry.explicit && entry.model) return entry.model;
+  var w=getWorkingModel(pid); if(w) return w;
+  if(entry && entry.model) return entry.model;
+  var p=API_PROVIDERS[pid]; return p? p.defModel : '';
+}
+function providerDisplayName(pid){ var p=API_PROVIDERS[pid]; return p? p.name : (pid||'API'); }
+/* The chat-screen model label and picker are REMOVED: there is
+   no model name anywhere in the chat UI. updateModelLabel stays
+   as an invisible no-op for its existing callers — the silent
+   auto-choose (modelCandidatesFor / setWorkingModel and the send
+   loop's auto-advance) is untouched and keeps routing behind the
+   scenes under the single name GptOpen. */
+function updateModelLabel(){}
+/* One fetch, bounded: a hung provider must never stall the whole
+   failover chain (a request with no timeout was a real cause of
+   "nothing ever answers" — the first dead route hung forever and
+   no other model was ever reached). Every provider / relay call
+   now gives up after the timeout and the next model is tried. */
+function fetchWithTimeout(url, opts, ms){
+  ms=ms||30000;
+  if(typeof AbortController==='undefined') return fetch(url, opts);
+  var ctl=new AbortController();
+  var t=setTimeout(function(){ try{ ctl.abort(); }catch(e){} }, ms);
+  var o={}; for(var k in (opts||{})) o[k]=opts[k];
+  o.signal=ctl.signal;
+  return fetch(url, o).then(function(r){ clearTimeout(t); return r; }, function(e){ clearTimeout(t); throw e; });
+}
+function relayEntries(){
+  if(!state.relayOn) return [];
+  /* The two default providers have a relay route each: the
+     server adds whichever server variable is set for it (see
+     the relay code in Settings → App relay). A provider whose
+     variable is not set answers 501 and sending simply moves
+     on to the other one. */
+  return FREE_APIS.map(function(f){
+    return {id:'relay-'+f.provider, relay:true, provider:f.provider, base:'', model:API_PROVIDERS[f.provider].defModel, models:(RELAY_FALLBACK_MODELS[f.provider]||[]), key:'', status:'relay', detail:'Gptopen Model'};
+  });
+}
+function providerRouteOn(){ return !!state.apiKey || !!state.relayOn; }
+function apiAttemptOrder(){
+  /* Relay first when it is on (it is the app-provided route),
+     then the user's own keys: active key first, then every other
+     added key. Only keys whose provider was recognised are ever
+     attempted — an unrecognised key is never sent anywhere. */
+  var l=apiEntries().filter(function(e){ return !!e.provider; });
+  var a=activeApiEntry(), out=relayEntries();
+  /* A shared provider the user explicitly chose (in the API
+     picker: "Choose a different free API") goes first. */
+  if(state.relayPick) out.sort(function(x,y){ return (y.provider===state.relayPick?1:0)-(x.provider===state.relayPick?1:0); });
+  if(a && a.provider) out.push(a);
+  l.forEach(function(e){ if(!a || e.id!==a.id) out.push(e); });
+  /* LAST RESORT, so the Gptopen Model works no matter what: one
+     final relay sweep (provider 'auto') where the SERVER tries
+     both default providers (Groq, then OpenRouter) with its own
+     server-side default + fallback models, in a single call.
+     This covers the cases the per-provider rounds cannot: a
+     provider whose client-side model name was retired, or a
+     variable added after the app last probed. Only reached when
+     everything above it failed. */
+  if(state.relayOn) out.push({id:'relay-auto', relay:true, provider:'auto', base:'', model:'', models:[], key:'', status:'relay', detail:'Gptopen Model'});
+  return out;
+}
+function apiStatusText(){
+  var l=apiEntries(); if(!l.length) return state.relayOn? 'Gptopen Model on' : 'Not set';
+  if(state.apiHealth==='quota') return 'One API hit its limit — the next is tried automatically';
+  if(state.apiHealth==='error') return 'Not working — the next API is tried automatically';
+  if(state.apiHealth==='changed') return l.length+(l.length===1?' API':' APIs')+' added — send a message to check';
+  return apiEntryLabel(activeApiEntry());
+}
+/* The models block under a key row: the actual models that key
+   can use, asked from its own provider's model list. When the
+   list is known it renders as a picker (auto-selected model
+   first, tap to change — the pick is what sending uses). When it
+   is not known yet, a Show models button loads it on demand; if
+   the provider returns no list, the block says so honestly and
+   the auto model stays in charge. */
+/* No model names are shown or pickable anywhere: the model
+   behind a key is chosen automatically and silently (the single
+   identity the user ever sees is GptOpen), so a key row carries
+   no models block at all. The internal candidate list on the
+   entry still drives the failover routing. */
+function apiModelsHTML(e){ return ''; }
+function apiListHTML(){
+  var l=apiEntries(), a=activeApiEntry();
+  if(!l.length) return '';
+  return '<div class="api-list">'+l.map(function(e){
+    var st=e.status==='ok'?'Ready':e.status==='quota'?'Quota reached':e.status==='error'?'Not working':e.status==='checking'?'Detecting…':e.status==='unknown'?'Provider not recognised — not sent anywhere':e.status==='unverified'?'Added — checks on next message':'Added';
+    return '<div class="api-item"><div class="api-row'+(a&&e.id===a.id?' active':'')+'"><span class="api-dot '+esc(e.status||'')+'"></span><span class="api-meta"><span class="api-name">'+esc(apiEntryLabel(e))+'</span><span class="api-sub">'+esc(apiKeyMask(e))+' · '+esc(st)+'</span></span>'+(e.provider? '<button class="api-use" data-apitest="'+e.id+'">Test</button>' : '')+(a&&e.id===a.id? '<span class="api-active-tag">Active</span>' : '<button class="api-use" data-apiuse="'+e.id+'">Use</button>')+'<button class="api-x" data-apidel="'+e.id+'" aria-label="Remove this API">×</button></div>'
+    + apiModelsHTML(e)
+    +'</div>';
+  }).join('')+'</div>';
+}
+function wireApiList(root, rerender){
+  if(!root) return;
+  root.querySelectorAll('[data-apidel]').forEach(function(b){ b.addEventListener('click',function(ev){ ev.stopPropagation(); removeApiEntry(b.getAttribute('data-apidel')); toast('API removed'); if(rerender) rerender(); }); });
+  root.querySelectorAll('[data-apiuse]').forEach(function(b){ b.addEventListener('click',function(){ setActiveApi(b.getAttribute('data-apiuse')); toast('Active API switched'); if(rerender) rerender(); }); });
+  root.querySelectorAll('[data-apitest]').forEach(function(b){ b.addEventListener('click',function(ev){
+    ev.stopPropagation();
+    var e=apiEntryById(b.getAttribute('data-apitest')); if(!e) return;
+    b.disabled=true; b.textContent='Testing…';
+    setApiTestMsg('Testing '+apiEntryLabel(e)+'…');
+    testApiEntry(e).then(function(r){
+      setApiTestMsg(r.ok
+        ? '✓ '+apiEntryLabel(e)+' is working'
+        : '✗ '+apiEntryLabel(e)+' is not working — GptOpen didn’t answer through this key');
+      if(rerender) rerender();
+    });
+  }); });
+}
+/* =============== Test API ===============
+   The Test button on each added key: first the provider's own
+   model list is asked (issuer endpoint only), then a one-line
+   ping is tried with EVERY model on that key, in order, until
+   one answers — a single model failing never fails the test.
+   A pass marks the key Working, keeps the model that answered
+   as the key's model, makes it the active API, and the result
+   text shows under the list; only when every model on the key
+   has failed does a fail show, with the last provider error.
+   Works the same for every provider. */
+var apiTestMsgText='';
+function setApiTestMsg(t){
+  apiTestMsgText=t;
+  var el=document.getElementById('apiTestMsg')||document.getElementById('plusTestMsg');
+  if(el) el.textContent=t;
+}
+function apiHost(e){
+  var p=e&&API_PROVIDERS[e.provider];
+  try{ return new URL((e&&e.base)||(p?p.base:'')).host; }catch(err){ return (e&&e.base)||''; }
+}
+function pingApi(entry, modelOverride){
+  var p=API_PROVIDERS[entry.provider]; if(!p) return Promise.resolve({ok:false, msg:'Provider not recognised'});
+  var useModel=modelOverride||entry.model||p.defModel;
+  var url, headers, body;
+  if(p.type==='gemini'){
+    url=p.base+'/models/'+encodeURIComponent(useModel)+':generateContent';
+    headers={'Content-Type':'application/json','x-goog-api-key':entry.key};
+    body={contents:[{role:'user',parts:[{text:'Reply with OK'}]}], generationConfig:{temperature:0, maxOutputTokens:8}};
+  } else if(p.type==='anthropic'){
+    url=p.base+'/messages';
+    headers={'Content-Type':'application/json','x-api-key':entry.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'};
+    body={model:useModel, max_tokens:8, messages:[{role:'user', content:'Reply with OK'}]};
+  } else if(entry.provider==='mistral' && mistralAgentOn()){
+    /* Mistral Agent ping: the Agents endpoint, with the saved
+       agent id — the agent answers, not a bare model. */
+    url=p.base+'/agents/completions';
+    headers={'Content-Type':'application/json','Authorization':'Bearer '+entry.key};
+    body={agent_id:state.mistralAgentId, messages:[{role:'user', content:'Reply with OK'}]};
+  } else {
+    url=(entry.base||p.base).replace(/\/$/,'')+'/chat/completions';
+    headers={'Content-Type':'application/json','Authorization':'Bearer '+entry.key};
+    body={model:useModel, messages:[{role:'user', content:'Reply with OK'}], temperature:0, max_tokens:8};
+  }
+  return fetchWithTimeout(url,{method:'POST', headers:headers, body:JSON.stringify(body)}, 30000)
+    .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j, status:r.status}; }).catch(function(){ return {ok:r.ok, j:null, status:r.status}; }); })
+    .then(function(res){
+      if(res.ok) return {ok:true};
+      var em='';
+      try{ var ej=res.j&&res.j.error; em=(ej&&(ej.message||ej))||(res.j&&res.j.message)||''; if(typeof em!=='string') em=JSON.stringify(em); }catch(e){}
+      var kind=apiFailureKind(res.status, res.j);
+      return {ok:false, kind:kind, status:res.status, j:res.j, modelError:isModelFailure(res.status, res.j),
+        msg:(kind==='quota'? 'Quota / rate limit reached (HTTP '+res.status+')' : providerErrorMessage(res.status, res.j))};
+    })
+    .catch(function(){ return {ok:false, kind:'error', msg:'Network or CORS — the provider could not be reached from this page'}; });
+}
+function testApiEntry(entry){
+  if(!entry || !entry.provider) return Promise.resolve({ok:false, msg:'Provider not recognised — this key is not sent anywhere.'});
+  entry.status='checking';
+  function done(ok, msg, kind){
+    entry.status= ok? 'ok' : (kind||'error');
+    entry.detail= ok? 'Working — tested' : msg;
+    if(ok){
+      state.activeApiId=entry.id; syncLegacyApi(); setApiHealth('ok');
+    }
+    return {ok:ok, msg:msg, kind:kind||(ok?'':'error')};
+  }
+  return apiFetchModels(entry).then(function(models){
+    if(models && models.length) entry.models=models;
+    /* Explicit pick: try ONLY that model — never auto-advance
+       past a user's own choice; its real error is reported. */
+    var explicitM=getExplicitModel(entry.provider);
+    var isExplicit=entry.explicit || !!explicitM;
+    var candidates;
+    if(isExplicit) candidates=[explicitM || entry.model].filter(Boolean);
+    else {
+      candidates=apiModelCandidates(entry);
+      if(!candidates.length) candidates=[entry.model||(API_PROVIDERS[entry.provider]||{}).defModel].filter(Boolean);
+      candidates=candidates.slice(0, MODEL_AUTO_CAP);
+    }
+    var last={ok:false, msg:'No model could be tried', kind:'error'};
+    function tryPing(i){
+      if(i>=candidates.length) return Promise.resolve(done(false, last.msg, last.kind));
+      return pingApi(entry, candidates[i]).then(function(r){
+        if(r.ok){
+          entry.model=candidates[i];
+          /* Auto-selected working model: persist per provider so
+             it keeps working with zero manual picking. An
+             explicit pick is left exactly as the user set it. */
+          if(!isExplicit) setWorkingModel(entry.provider, candidates[i]);
+          return done(true,'Working');
+        }
+        last=r;
+        /* Only a MODEL failure auto-advances on Test; other
+           failures (quota, auth, network) report as they are. */
+        if(!isModelFailure(r.status||0, r.msg||'') && r.kind!=='quota' && candidates.length>1 && i+1<candidates.length && !/model/i.test(r.msg||'')) return tryPing(i+1);
+        return tryPing(i+1);
+      });
+    }
+    return tryPing(0);
+  });
+}
+/* =============== Composer API box — select / add / retest ===============
+   When no API is working the type box is replaced by the API box
+   (markup: #apiBox inside #composerZone). Its search button (and
+   its status line) opens the API picker sheet: the shared relay,
+   every added API (Use / Test), every free-key site (Get key), and
+   the paste-a-key box — all searchable. Its circular button, where
+   Send normally sits, retests everything in attempt order and
+   stops at the first API that answers; that answer flips the
+   health to ok and the normal type box flows back by itself. */
+var apiTesting=false;
+function composerApiMode(){
+  if(apiIncomplete()) return true;
+  /* A success newer than the last failure wins: models that are
+     actually working never show the not-working box. */
+  if(apiOkAt && apiOkAt>=apiFailAt) return false;
+  return state.apiHealth==='error' || state.apiHealth==='quota';
+}
+function updateComposerMode(){
+  var z=$('#composerZone'); if(!z) return;
+  z.classList.toggle('api-mode', composerApiMode());
+  if(composerApiMode()) updateApiBoxLabel();
+  updateModelLabel();
+}
+function updateApiBoxLabel(){
+  var t=$('#apiBoxTitle'), s=$('#apiBoxSub'); if(!t||!s) return;
+  if(apiTesting){ t.textContent='Testing…'; s.textContent='Trying the Gptopen Model and your added keys'; return; }
+  if(relayGone && !apiEntries().length && state.relayOn){ t.textContent='Gptopen Model didn\u2019t answer'; s.textContent='Tap retry'; return; }
+  if(state.apiHealth==='quota'){ t.textContent='Limit reached'; s.textContent='Lots of people are chatting — use your own key, or retry in a moment'; return; }
+  if(apiEntries().length){ t.textContent='No API working'; s.textContent='GptOpen didn’t answer — tap to select or add an API'; return; }
+  t.textContent='No API set up'; s.textContent='Tap to add your own key, or use the Gptopen Model';
+}
+function pingRelay(entry, modelOverride){
+  var p=API_PROVIDERS[entry.provider];
+  var body={provider:entry.provider, model:(modelOverride || getExplicitModel(entry.provider) || getWorkingModel(entry.provider) || (p? p.defModel : entry.model)), messages:[{role:'user', content:'Reply with OK'}], temperature:0, max_tokens:8};
+  if(entry.provider==='mistral' && mistralAgentOn()) body.agent_id=state.mistralAgentId;
+  return fetchWithTimeout('/api/relay',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}, 30000)
+    .then(function(r){ var hdr=r.headers.get('x-axo-relay'); return r.json().then(function(j){ return {ok:r.ok, j:j, status:r.status, relayHdr:hdr}; }).catch(function(){ return {ok:r.ok, j:null, status:r.status, relayHdr:hdr}; }); })
+    .then(function(res){
+      /* Gone ONLY when nothing relay-like answered at all: no
+         JSON body and no relay header (a static host's 404 page,
+         or a refused connection). Any JSON — even a provider
+         error the relay passed through — proves the relay is
+         live; only this provider failed. */
+      if(!relayAnswered(res)){ relayGone=true; return {ok:false, gone:true, msg:'Relay didn\u2019t answer'}; }
+      relayGone=false; relayStrikes=0;
+      /* Any 2xx from the relay means the provider answered —
+         the content of a one-word ping is irrelevant (reasoning
+         models may return it empty), so res.ok alone is success. */
+      if(res.ok) return {ok:true};
+      var kind=apiFailureKind(res.status, res.j);
+      /* The provider's real error, plainly — a relayed provider
+         404 is a provider/model error, never "no relay". */
+      return {ok:false, kind:kind, status:res.status, j:res.j, modelError:isModelFailure(res.status, res.j), msg: res.status===501? 'Not set on the server (HTTP 501)' : providerErrorMessage(res.status, res.j)};
+    })
+    .catch(function(){ relayStrikes++; if(relayStrikes>=2) relayGone=true; return {ok:false, gone:relayStrikes>=2, msg:'Relay didn\u2019t answer'}; });
+}
+/* Test one relay provider with always-on auto-advance: walk its
+   ordered candidates (cap MODEL_AUTO_CAP), persist the model
+   that answers per provider, and respect an explicit pick (only
+   that model is tried; its real error is returned). */
+function testRelayEntry(entry){
+  if(!entry || !entry.provider || entry.provider==='auto') return pingRelay(entry);
+  var explicitM=getExplicitModel(entry.provider);
+  var candidates= explicitM? [explicitM] : modelCandidatesFor(entry).slice(0, MODEL_AUTO_CAP);
+  if(!candidates.length) candidates=[(API_PROVIDERS[entry.provider]||{}).defModel].filter(Boolean);
+  var last={ok:false, msg:'No model could be tried', kind:'error'};
+  function step(i){
+    if(i>=candidates.length) return Promise.resolve(last);
+    return pingRelay(entry, candidates[i]).then(function(r){
+      if(r.ok){
+        if(!explicitM) setWorkingModel(entry.provider, candidates[i]);
+        entry.model=candidates[i];
+        return {ok:true, model:candidates[i]};
+      }
+      last=r;
+      if(r.gone) return last;
+      return step(i+1);
+    });
+  }
+  return step(0);
+}
+function testAllApis(){
+  if(apiTesting) return;
+  /* Every test re-probes the relay from scratch: a "gone"
+     verdict from an earlier round never carries over. */
+  relayGone=false; relayStrikes=0;
+  var entries=apiAttemptOrder();
+  if(!entries.length){ toast('Add an API key first'); openApiPicker(); return; }
+  apiTesting=true;
+  var rb=$('#apiBoxRetry'); if(rb) rb.classList.add('testing');
+  updateApiBoxLabel();
+  var sawQuota=false;
+  function finish(ok, msg){
+    apiTesting=false; if(rb) rb.classList.remove('testing');
+    if(ok){ setApiHealth('ok'); toast(msg||'API working'); }
+    else { setApiHealth(sawQuota? 'quota':'error', 'Test failed'); toast(msg||'No API answered — select or add one'); }
+    updateComposerMode();
+  }
+  function step(i){
+    if(i>=entries.length){
+      finish(false, (relayGone && !apiEntries().length)? 'The Gptopen Model didn\u2019t answer — tap retry' : (sawQuota? 'Every API is at its limit right now' : 'No API answered — select or add one'));
+      return;
+    }
+    var e=entries[i];
+    if(e.relay){
+      if(relayGone){ step(i+1); return; }
+      testRelayEntry(e).then(function(r){
+        if(r.ok) finish(true, 'Gptopen Model is working');
+        else { if(r.kind==='quota') sawQuota=true; step(i+1); }
+      });
+      return;
+    }
+    testApiEntry(e).then(function(r){
+      if(r.ok) finish(true, apiEntryLabel(e)+' is working');
+      else { if(r.kind==='quota') sawQuota=true; step(i+1); }
+    });
+  }
+  step(0);
+}
+/* Choose a different free API (from the picker or an error
+   message): the picked shared provider is tried FIRST from now
+   on (state.relayPick drives apiAttemptOrder), the relay verdict
+   is reset, and the provider is pinged on the spot — a working
+   answer flips health to ok and the normal type box returns. If
+   the current chat is waiting on a failed request, it is retried
+   straight away with the new choice first. */
+function useRelayProvider(pid){
+  if(!pid) return;
+  state.relayPick=pid; state.relayOn=true; relayGone=false; relayStrikes=0;
+  if(typeof saveLocalSoon==='function') saveLocalSoon();
+  var entry={id:'relay-'+pid, relay:true, provider:pid, base:'', model:(API_PROVIDERS[pid]||{}).defModel, models:(RELAY_FALLBACK_MODELS[pid]||[]), key:'', status:'relay', detail:'Gptopen Model'};
+  toast('Trying GptOpen…');
+  /* Provider select runs auto-advance too: candidates are tried
+     in order until one answers, and the working one is kept. */
+  testRelayEntry(entry).then(function(r){
+    if(r.ok){ setApiHealth('ok'); toast('GptOpen is working'); updateComposerMode(); updateModelLabel(); return; }
+    if(r.gone){ toast('The Gptopen Model didn\u2019t answer just now — tap retry'); }
+    else toast('GptOpen didn’t answer just now — tap retry');
+    updateComposerMode();
+  });
+}
+function apiPickRowsHTML(q){
+  /* ONE built-in model, shown under ONE name — Gptopen Model.
+     Behind it the app quietly tries every route the server has
+     (every Vercel variable set, each with fallback models, then
+     a final server-side sweep), but none of that is listed here:
+     no provider names, no per-model rows, no details. Below it,
+     only the user's OWN added keys, then the paste-a-key box in
+     the sheet itself — that is the whole picker. */
+  var out='';
+  var rSub= relayGone? 'Didn\u2019t answer last time — tap Test' : (state.relayOn? 'Built in · ready to chat' : 'Off — tap to turn on');
+  out+='<div class="api-item"><div class="api-row"><span class="api-dot '+(relayGone?'error':(state.relayOn?'ok':''))+'"></span><span class="api-meta"><span class="api-name">Gptopen Model</span><span class="api-sub">'+esc(rSub)+'</span></span><button class="api-use" data-pickrelay="1">'+(state.relayOn?'Test':'Turn on')+'</button></div></div>';
+  var a=activeApiEntry();
+  apiEntries().forEach(function(e){
+    var name=apiEntryLabel(e);
+    var st=e.status==='ok'?'Ready':e.status==='quota'?'Quota reached':e.status==='error'?'Not working':e.status==='checking'?'Detecting…':e.status==='unknown'?'Provider not recognised':e.status==='unverified'?'Added — checks on test':'Added';
+    out+='<div class="api-item"><div class="api-row'+(a&&e.id===a.id?' active':'')+'"><span class="api-dot '+esc(e.status||'')+'"></span><span class="api-meta"><span class="api-name">'+esc(name)+'</span><span class="api-sub">'+esc(apiKeyMask(e))+' · '+esc(st)+'</span></span><button class="api-use" data-picktest="'+e.id+'">Test</button>'+(a&&e.id===a.id? '<span class="api-active-tag">Active</span>' : '<button class="api-use" data-pickuse="'+e.id+'">Use</button>')+'</div></div>';
   });
   return out;
 }
-async function fetchT(url, opts) {
-  const ctl = new AbortController();
-  const t = setTimeout(() => { try { ctl.abort(); } catch (e) {} }, 25000);
-  try { return await fetch(url, Object.assign({}, opts, { signal: ctl.signal })); }
-  finally { clearTimeout(t); }
-}
-
-async function attempt(p, key, model, body) {
-  const messages = body.messages || [];
-  // Both providers speak the OpenAI chat shape — one code path.
-  // Groq hardening: Groq's endpoint is picky about repeated
-  // system messages, so all system context is merged into ONE
-  // system message at the head before the call (the app sends
-  // several: persona, memory, reaction rules).
-  let sendMessages = messages;
-  if (p === PROVIDERS.groq) {
-    const sys = [], rest = [];
-    messages.forEach((m) => { if (m && m.role === 'system') sys.push(String(m.content || '')); else rest.push(m); });
-    if (sys.length > 1) sendMessages = [{ role: 'system', content: sys.join('\n\n---\n\n') }].concat(rest);
+function openApiPicker(){
+  openSheet('<h3>GptOpen</h3><p class="sub">Your own API key first — or the built-in Gptopen Model.</p>'
+    +'<div class="ownapi-card">'
+    +'<div class="ownapi-head"><span class="ownapi-ic">'+I.key+'</span><span class="ownapi-meta"><span class="ownapi-title">Your own API</span><span class="ownapi-sub">Your models · your limits · encrypted on this device</span></span><span class="ownapi-badge">Top pick</span></div>'
+    +'<div class="field"><input id="apiPickKey" type="password" placeholder="Paste any API key — provider detected automatically" autocomplete="off" aria-label="Your API key"></div>'
+    +'<button class="btn-primary" id="apiPickAdd">Add my API key</button>'
+    +'<button class="btn-ghost" id="apiPickFree">Get a free key</button>'
+    +'</div>'
+    +'<div class="api-or"><span></span>Built-in &amp; your keys<span></span></div>'
+    +'<div id="apiPickList">'+apiPickRowsHTML('')+'</div>');
+  var list=$('#apiPickList');
+  function wireRows(){
+    list.querySelectorAll('[data-pickuse]').forEach(function(b){ b.addEventListener('click',function(){ setActiveApi(b.getAttribute('data-pickuse')); closeSheet(); testAllApis(); }); });
+    list.querySelectorAll('[data-picktest]').forEach(function(b){ b.addEventListener('click',function(){
+      var e=apiEntryById(b.getAttribute('data-picktest')); closeSheet(); if(!e) return;
+      toast('Testing '+apiEntryLabel(e)+'…');
+      testApiEntry(e).then(function(r){
+        if(r.ok){ setApiHealth('ok'); toast(apiEntryLabel(e)+' is working'); }
+        else { setApiHealth(r.kind==='quota'?'quota':'error'); toast('GptOpen didn’t answer — try again'); }
+        updateComposerMode();
+      });
+    }); });
+    list.querySelectorAll('[data-pickrelay]').forEach(function(b){ b.addEventListener('click',function(){
+      if(!state.relayOn){ state.relayOn=true; state.relayAutoV3=true; saveLocalSoon(); }
+      closeSheet(); testAllApis();
+    }); });
   }
-  const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key };
-  if (p === PROVIDERS.openrouter) { headers['HTTP-Referer'] = 'https://gptopen.vercel.app'; headers['X-Title'] = 'Gptopen'; }
-  const up = await fetchT(p.base + '/chat/completions', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ model, messages: sendMessages, temperature: body.temperature, max_tokens: body.max_tokens })
+  wireRows();
+  $('#apiPickAdd').addEventListener('click',function(){
+    var k=$('#apiPickKey').value.trim();
+    if(!k){ toast('Paste a key first'); return; }
+    var btn=this; btn.disabled=true; btn.textContent='Detecting…';
+    addApiKey(k).then(function(e){
+      closeSheet();
+      if(e && e.agent){ toast('Mistral Agent ID saved — Agent API on'); return; }
+      toast('Added — testing…'); testAllApis();
+    });
   });
-  return { status: up.status, text: await up.text() };
+  $('#apiPickFree').addEventListener('click',function(){ closeSheet(); openSettings('freekeys'); });
 }
-
-function resultText(r) {
-  if (!r) return '';
-  if (r.text) return r.text;
-  try { return JSON.stringify(r.json || ''); } catch (e) { return ''; }
+/* Sidebar motion — buttery, one continuous flow, fully optimized:
+   - Fully closed, the sidebar is display:none (its controls are out
+     of the tree, as before). The old hitch was paying its first
+     layout + paint DURING the opening slide — that is now avoided
+     two ways: an idle warm-up pass (sbWarm) pre-lays-out and
+     pre-paints the menu off-screen whenever it is closed and idle,
+     and the run itself starts two frames out (double rAF) so the
+     one display:flex layout lands in a pre-animation frame, never
+     mid-slide.
+   - Both layers then move together as pure compositor transforms
+     (translate3d only — a straight slide; the 34px curve is the
+     peeking card's fixed shape, set inline in the start frame,
+     never animated), sidebar and stage in the same frame, same
+     easing, no gaps.
+   - A drag release passes the distance it still has to travel, so
+     the settle run is only as long as the remaining flow — never a
+     fresh full-length run that crawls the last few pixels.
+   - Timers are kept and cleared so a fast re-tap never fights a
+     stale timeout, and an interrupted run retargets from wherever
+     the layers currently are. */
+var sbWarmT=null;
+function sbWarm(){
+  if(window.innerWidth>=820 || sbOpen()) return;
+  if(sbWarmT) return;
+  sbWarmT=setTimeout(function(){
+    sbWarmT=null;
+    if(sbOpen() || window.innerWidth>=820) return;
+    /* One hidden pass: lay the menu out and paint it once (it sits
+       translated off-screen, under the stage, visibility hidden),
+       then back to display:none. Style/layout caches and the
+       raster stay warm, so the next real open is a pure move. */
+    sidebar.style.visibility='hidden'; sidebar.style.display='flex';
+    void sidebar.offsetWidth;
+    requestAnimationFrame(function(){ requestAnimationFrame(function(){
+      if(!sbOpen()){ sidebar.style.display='none'; sidebar.style.visibility=''; }
+    }); });
+  }, 900);
 }
-function isModelError(status, text) {
-  return (status === 400 || status === 404 || status === 422) && /model|not[ _-]?found|deprecated|does not exist/i.test(text || '');
+var SB_MS=360, sbAnimT=null, sbHideT=null;
+/* The open card's paint (peek background, left hairline, soft
+   shadow) as INLINE styles, applied by setSidebar in the exact
+   frame the transform starts moving and cleared only when a
+   close has fully landed. As a .sb-open class rule it landed a
+   frame before the transform — the fullscreen chat flashed into
+   card styling, then slid: the open/close glitch. */
+function sbStageCard(on){
+  if(on){ stage.style.background='var(--peek)'; stage.style.borderLeft='1px solid var(--border2)'; stage.style.boxShadow='-16px 0 48px rgba(0,0,0,.75)'; }
+  else{ stage.style.background=''; stage.style.borderLeft=''; stage.style.boxShadow=''; }
 }
-function hasAnswer(r) {
-  if (!r || r.status < 200 || r.status >= 300) return false;
-  let j = r.json;
-  if (!j && r.text) { try { j = JSON.parse(r.text); } catch (e) {} }
-  if (!j) return false;
-  const ch = j.choices && j.choices[0];
-  return !!((ch && ch.message && (ch.message.content || ch.message.reasoning_content)) || (ch && ch.text) || j.output_text);
-}
-
-/* One provider, every way it can answer: each configured key,
-   and for each key the requested model, the provider default,
-   then its fallback models. A model error moves to the next
-   model; a limit / rejected key (429 / 401 / 403) moves to the
-   next key; any other error is returned as-is. */
-async function runProvider(name, body) {
-  const p = PROVIDERS[name];
-  if (!p) return null;
-  const keys = keysFor(p);
-  if (!keys.length) return { status: 501, json: { relay: true, error: { message: 'None of ' + p.envs.join(' / ') + ' is set on the server' } } };
-  const models = [], seen = {};
-  [body.model, DEFAULT_MODEL[name]].concat(FALLBACKS[name] || []).forEach((m) => { if (m && !seen[m]) { seen[m] = 1; models.push(m); } });
-  let last = null;
-  for (let ki = 0; ki < keys.length; ki++) {
-    for (let mi = 0; mi < models.length; mi++) {
-      last = await attempt(p, keys[ki], models[mi], body);
-      if (last.status >= 200 && last.status < 300) return last;
-      if (isModelError(last.status, resultText(last))) continue;
-      if (last.status === 429 || last.status === 401 || last.status === 403) break;
-      return last;
-    }
-  }
-  return last;
-}
-
-/* The auto sweep: walk the two default providers whose variable
-   is set (Groq, then OpenRouter) and return the first real
-   answer. */
-async function runAuto(body) {
-  let last = null;
-  for (let i = 0; i < AUTO_ORDER.length; i++) {
-    const name = AUTO_ORDER[i];
-    if (!keysFor(PROVIDERS[name]).length) continue;
-    const r = await runProvider(name, Object.assign({}, body, { model: '' }));
-    if (hasAnswer(r)) return r;
-    if (r) last = r;
-  }
-  return last || { status: 501, json: { relay: true, error: { message: 'No provider keys are set on the server' } } };
-}
-
-export default async function handler(req, res) {
-  // Every response from this function carries this header, so the
-  // app can positively tell a LIVE relay apart from a site where
-  // api/relay was never deployed (whose 404 page has neither the
-  // header nor a JSON body).
-  res.setHeader('X-Axo-Relay', '1');
-  if (req.method === 'GET') {
-    // Health check: open /api/relay in a browser to prove the
-    // function is deployed. (No key information is ever shown.)
-    res.status(200).json({ relay: true, ok: true });
+function setSidebar(open, animate, dur){
+  if(sbAnimT){ clearTimeout(sbAnimT); sbAnimT=null; }
+  if(sbHideT){ clearTimeout(sbHideT); sbHideT=null; }
+  app.classList.remove('dragging');
+  var ms=(typeof dur==='number' && dur>0)? Math.round(dur) : SB_MS;
+  if(window.innerWidth>=820){
+    app.classList.toggle('anim', !!animate);
+    sidebar.style.transform=''; stage.style.transform=''; stage.style.borderRadius=''; scrim.style.opacity=''; sidebar.style.display=''; sidebar.style.visibility='';
+    app.classList.toggle('sb-closed', !open); app.classList.toggle('sb-open', open);
+    if(animate){ app.style.setProperty('--sb-ms', ms+'ms'); sbAnimT=setTimeout(function(){ app.classList.remove('anim'); app.style.removeProperty('--sb-ms'); }, ms+30); }
     return;
   }
-  if (req.method !== 'POST') {
-    res.status(405).json({ relay: true, error: { message: 'POST only' } });
+  app.classList.toggle('sb-open', open); app.classList.toggle('sb-closed', !open);
+  if(open){
+    sidebar.style.display='flex'; sidebar.style.visibility='';
+    /* MENU COLOUR FIX: the sidebar head avatar is first rendered at
+       boot while the sidebar is hidden (mobile), and some phone
+       WebViews never repaint that SVG's gradient fills when the menu
+       opens — the avatar shape then shows as a dark / wrong-coloured
+       blob in the menu. Re-render the head avatar fresh on every
+       open, while the sidebar is visible, so its shape always paints
+       in its real colours. (Cached: a no-op unless the agent changed.) */
+    try{ if(typeof syncSidebarAgent==='function') syncSidebarAgent(); }catch(e){}
+  }
+  var sbT=open?'translate3d(0,0,0)':'translate3d(-102%,0,0)';
+  /* Curved peek (original shape, kept exactly) with a STRAIGHT
+     slide: the stage pushes right by exactly the sidebar width —
+     no scale at all — already wearing its fixed 34px curve; the
+     scrim is a transparent tap shield over the peeking card only. */
+  var stT=open?'translate3d('+sbWidth()+'px,0,0)':'translate3d(0,0,0)';
+  var stR=open?'34px 0 0 34px':'0px';
+  scrim.style.opacity='0';
+  if(!animate){
+    app.classList.remove('anim'); app.style.removeProperty('--sb-ms');
+    sidebar.style.transform=sbT; stage.style.transform=stT; stage.style.borderRadius=stR;
+    sbStageCard(open);
+    app.classList.toggle('sb-live', open);
+    scrim.style.left=open?sbWidth()+'px':'0px';
+    if(!open) sidebar.style.display='none';
     return;
   }
-  try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-    let last = null;
-    if (body.provider === 'auto') {
-      last = await runAuto(body);
-    } else {
-      if (!PROVIDERS[body.provider]) {
-        res.status(400).json({ relay: true, error: { message: 'Unknown provider' } });
-        return;
-      }
-      last = await runProvider(body.provider, body);
-    }
-    res.status(last.status);
-    res.setHeader('Content-Type', 'application/json');
-    if (last.json !== undefined) {
-      const j = last.json || {};
-      // Mark relayed provider errors as relay answers: a provider
-      // 404/429/501 passing through must never be mistaken by the
-      // app for "no relay deployed on this site".
-      if (last.status >= 400 && !j.relay) j.relay = true;
-      res.json(j);
-    } else {
-      // ALWAYS answer JSON: pass provider JSON through untouched,
-      // and wrap anything else (e.g. a provider HTML error page)
-      // as JSON, so the app can always tell this function answered.
-      let parsed = null;
-      try { parsed = JSON.parse(last.text); } catch (e) {}
-      if (parsed) res.json(parsed);
-      else res.json({ relay: true, error: { message: String(last.text || 'Provider error').slice(0, 300) } });
-    }
-  } catch (e) {
-    res.setHeader('X-Axo-Relay', '1');
-    res.status(502).json({ relay: true, error: { message: 'Relay failed: ' + ((e && e.message) || 'network error') } });
+  app.style.setProperty('--sb-ms', ms+'ms');
+  app.classList.add('anim');
+  /* Commit the start frame, then apply the target on the NEXT
+     frame. One tap must open the menu with that tap, so the
+     target never waits on a second frame: a busy main thread (or
+     a WebView that throttles rAF right after a tap) could drop
+     or starve that second frame and the tap looked ignored. A
+     60ms safety timer applies the same target if the frame has
+     not landed yet, so the tap always lands. */
+  void stage.offsetWidth;
+  var sbApplied=false;
+  function sbApplyTarget(){
+    if(sbApplied) return; sbApplied=true;
+    sidebar.style.transform=sbT; stage.style.transform=stT;
+    /* The curve lands WITH the first moving frame on open — same
+       frame as the transform, never a frame earlier (the cut-at-
+       the-curve flash). On close the radius is NOT zeroed here:
+       the card slides straight back still wearing its curve, and
+       sbHideT clears it only once the stage is fullscreen again,
+       so the corner never collapses or looks cut mid-close. */
+    if(open){ stage.style.borderRadius=stR; sbStageCard(true); }
+    scrim.style.left=open?sbWidth()+'px':'0px';
   }
+  requestAnimationFrame(sbApplyTarget);
+  setTimeout(sbApplyTarget, 0);
+  setTimeout(sbApplyTarget, 60);
+  if(!open){
+    /* Stage slides back over the sidebar first; only once it has
+       fully covered it is the sidebar hidden, so the close never
+       looks like a disappearance. */
+    sbHideT=setTimeout(function(){ if(!sbOpen()){ sbStageCard(false); stage.style.borderRadius=''; sidebar.style.display='none'; sbWarm(); } }, ms+30);
+  }
+  sbAnimT=setTimeout(function(){
+    app.classList.remove('anim'); app.style.removeProperty('--sb-ms');
+    /* Keep the stage's layer promotion while the menu is open
+       (sb-live): releasing it at identity only, never at the
+       open pose, whose re-raster was the post-open
+       shimmer across the chat screen. */
+    app.classList.toggle('sb-live', !!sbOpen());
+  }, ms+30);
 }
-</script>
-<script type="text/plain" id="skilltext-get-more-perspectives">
-# Get More Perspectives
-
-You are an advisory panel simulator. When the user presents a decision, strategy, or dilemma, you convene a panel of advisors who each evaluate it from their distinct expertise. The user gets the benefit of multiple expert viewpoints without having to consult multiple people.
-
-## When to Use
-
-- The user is facing a big decision and wants multiple expert perspectives
-- Someone is stuck between options and needs different angles
-- The user says "what would experts think" or "convene my advisors"
-- Someone wants a panel review or advisory input on a strategy
-- Someone wants to stress-test an idea from different viewpoints
-- The user wants to add, remove, or customize their panel of advisors
-- Someone needs to weigh competing priorities (execution vs. risk vs. opportunity)
-
-## The Default Panel
-
-If the user hasn't customized their panel, use these 5 default advisors:
-
-**🔧 The Operator** Thinks about execution. Can this actually be built/done? What's the implementation risk? Where will it break? "This sounds great in theory — here's what happens when it hits reality."
-
-**⚠️ The Skeptic** Thinks about risk and downside. What's the worst case? What are you not seeing? What's the cost of being wrong? "Everyone's excited about this. Let me tell you why it might fail."
-
-**🚀 The Visionary** Thinks about upside and opportunity. What's the best case? What does this unlock? Where could this go in 2-3 years? "You're thinking too small. Here's what this could become."
-
-**👤 The Customer Advocate** Thinks about the end user. Do they want this? Will they pay for it? Does this solve a real problem or an imagined one? "Have you actually talked to a customer about this?"
-
-**💰 The Finance Mind** Thinks about money. What does this cost? What's the ROI? How does this affect cash flow, margin, or runway? "Show me the numbers."
-
-## How It Works
-
-When the user presents a decision:
-
-1. **Frame the decision.** Restate it in one sentence so everyone is evaluating the same thing.
-
-2. **Synthesize and display the Executive Summary / Panel Recommendation at the top.** Immediately present the consolidated recommendation, vote count, and consensus so the user gets the bottom-line first.
-
-3. **Present each advisor's individual take.** Provide the specific feedback and viewpoints below the executive summary. Keep each perspective to 2-4 sentences. No filler, no hedging — each advisor has a clear opinion.
-
-```
-🏛️ PANEL REVIEW: [Decision in one sentence]
-
-📋 EXEC SUMMARY & PANEL RECOMMENDATION:
-Vote: [X for, Y against, Z conditional]
-Consensus: [One-sentence summary of the panel's decision/advice]
-Key condition: [The one thing that must be true for this to work]
-
----
-
-🔧 OPERATOR: [Their take — focused on execution feasibility]
-
-⚠️ SKEPTIC: [Their take — focused on risk and downside]
-
-🚀 VISIONARY: [Their take — focused on opportunity and upside]
-
-👤 CUSTOMER: [Their take — focused on user/customer impact]
-
-💰 FINANCE: [Their take — focused on numbers and ROI]
-```
-
-## Custom Panels
-
-Users can customize their panel by adding, removing, or replacing advisors. Examples:
-
-- "Add a Legal advisor to my panel" → adds a perspective focused on regulatory risk, compliance, and liability
-- "Replace the Visionary with a Pragmatist" → shifts from opportunity-seeking to practical, incremental thinking
-- "I want a Technical Architect on my panel" → adds a perspective focused on systems design, scalability, and technical debt
-- "Make my panel more aggressive" → shifts all advisors toward higher risk tolerance
-
-Custom advisors persist across sessions. The user can say "show me my panel" to see who's on it.
-
-## Panel Dynamics
-
-- **Advisors disagree.** That's the point. If all 5 advisors agree, either the decision is obvious or you're not stress-testing hard enough. When they agree unanimously, flag it: "Rare unanimous agreement — either this is clearly right, or the panel has a blind spot."
-- **Advisors respond to each other.** If the Skeptic raises a point that the Visionary's take ignores, note it: "The Skeptic's concern about market timing directly challenges the Visionary's growth assumption."
-- **Weight by relevance.** For a technical decision, the Operator and Technical Architect's views carry more weight. For a market decision, the Customer Advocate and Finance Mind matter more. Explicitly note which perspectives are most relevant: "On this decision, the Operator's view carries the most weight."
-
-## Rules
-
-- **Every advisor must commit to a position.** No "it depends" or "there are pros and cons." Each advisor says yes, no, or yes-with-conditions.
-- **Keep it tight.** 2-4 sentences per advisor. The value is in the diversity of perspectives, not the length of any one take.
-- **Name the split.** The most useful output is often which advisors disagree and why. Make the fault line obvious.
-- **Don't inflate.** If a decision is small enough that a full panel review is overkill, say so: "This doesn't need a panel meeting. Just do it."
-
-## Example
-
-**"Should we build our own analytics or buy a tool?"** → Convenes the panel:
-
-```
-🏛️ PANEL REVIEW: Should we build our own analytics or buy a third-party analytics tool?
-
-📋 EXEC SUMMARY & PANEL RECOMMENDATION:
-Vote: 3 to buy, 2 to build
-Consensus: The panel advises buying a third-party analytics tool to minimize execution drag and maintain product focus, unless raw cost over long-term scaling is the absolute primary driver.
-Key condition: We must verify that third-party tool's data privacy compliance matches our core user security standards.
-
----
-
-🔧 OPERATOR: Build cost is at least 3x what you think, and we'll be pulling engineers off core features. Let's buy.
-⚠️ SKEPTIC: If we build it, we maintain it forever. Technical debt will kill our speed.
-🚀 VISIONARY: Owning our data pipeline is a long-term strategic moat. We should build our own.
-👤 CUSTOMER: Users don't care how you track metrics — they care about the actual features we're neglecting while building this. Buy.
-💰 FINANCE: Third-party subscription costs are high, but building ourselves consumes developer salaries which is a higher burn rate right now. Let's buy.
-```
-
-**"I'm thinking about raising a Series A"** → Full panel review on timing, readiness, dilution, and whether the metrics support it. Finance and Skeptic likely push back on timing; Visionary advocates for speed. The split and key conditions are made explicit.
-
-**"Add a Marketing advisor to my panel"** → Adds a new panel member focused on brand, positioning, and go-to-market. Shows the updated panel roster.
-
-## Gotchas
-
-- Panel perspectives are simulated — each advisor represents a reasoning pattern, not a real person with lived experience in your specific industry
-- Default panel is generalist; for deep domain-specific decisions, users should customize their panel with relevant specialists
-- Cannot replace the judgment of actual advisors, investors, or domain experts — best used as a thinking tool, not a decision-maker
-- Panel dynamics are simplified — real advisory panels have interpersonal politics, information asymmetry, and incentive misalignment that can't be simulated
-</script>
-<script type="text/plain" id="skilltext-match-my-writing-style">
-# Match My Writing Style
-
-Write, reply to, and rewrite emails, messages, posts, memos, and documents in the user's authentic voice by learning their real phrasing and channel registers from Workspace writing samples.
-
-## Core Principles & Applicability
-
-- **Deliver the requested draft on Turn 1 — never gate writing behind an onboarding survey:** When the user asks to write, reply to, or rewrite something, always fulfill the writing request immediately in the first turn. If no Voice Card exists yet, scan connected Workspace sources, infer the user's voice silently, deliver the completed draft first, and include a compact **Voice Card Snapshot** below the draft, because withholding a requested draft to ask a multi-question style survey blocks the user's task and causes high drop-off on mobile.
-- **Infer from real writing rather than interrogating:** Extract greetings, sign-offs, sentence rhythm, contraction habits, punctuation quirks, and implicitly avoided buzzwords directly from the user's sent Gmail messages and authored Google Docs. Never require the user to fill out a questionnaire before drafting.
-- **Unconnected or declined apps — never loop:** Check connected **Google Drive** (for an existing Voice Card or user-authored Google Docs) and **Gmail** (recent sent messages) on Turn 1. If Gmail or Google Drive is unconnected, returns no authored samples, or is declined once, do NOT re-call the tool or re-ask the user to connect apps on subsequent turns — deliver the requested draft immediately in a natural, direct human voice (free of stiff AI clichés) and add a one-line invite to share 2–3 sample messages or style tweaks if they want future drafts tuned closer to their phrasing.
-- **Cold-start / starter prompts build the Voice Card immediately:** When the user invokes the skill with a bare starter prompt — "Match my writing style", "Build my voice card", or @match_my_writing_style with no specific writing task — immediately scan connected Gmail sent messages and user-authored Google Docs, present the inferred **Voice Card** in chat, and ask what they would like to draft first.
-- **Keep drafts clean, copy-ready, and draft-only by default:** Output ready-to-send text without inline warning tags or meta-commentary inside the draft body, because inline flags force the user to manually strip brackets before copying. Present drafts in chat by default; create a Gmail draft or save a Voice Card Google Doc only when requested or confirmed by the user (and never claim a Google Doc was saved unless a Drive/Docs creation tool call succeeded). Never send emails or messages directly.
-- **Scope to user-authored communications:** Apply the user's personal voice whenever drafting or rewriting text meant to be sent, published, or shared as the user (unless they explicitly ask for a different persona, such as formal legal boilerplate). Leave objective factual Q&A, code, and data tables in standard clear prose so this skill coexists cleanly with other active skills.
-
-## Workflow
-
-1. **Check for an existing Voice Card or scan Workspace writing samples:**
-   - If a Voice Card was already established in the conversation or saved in **Google Drive** (search for "Voice Card" or "Writing Style"), apply it directly without re-scanning.
-   - Otherwise, scan connected **Gmail** sent messages (from:me newer_than:90d, aiming for 15–25 sent messages across varied recipients and thread lengths, reading threads newest-first) and **Google Drive / Google Docs** authored by the user (owner:me) to capture how they actually write.
-   - **Fallback (if Gmail and Drive are unconnected, empty, or declined):** Skip scanning without prompting to connect apps. Infer any style cues available from the user's prompt or pasted text, and use a crisp, natural human register (contractions, direct openings, zero AI filler).
-2. **Extract the user's Voice Card attributes:**
-   - **Greetings & openings:** How they start emails and messages (e.g., "Hey [Name],", "Hi [Name] —", or jumping straight to the point; note whether they ever use "I hope this finds you well").
-   - **Sign-offs & closings:** Signature sign-offs ("Best,", "Thanks,", "- [Initial]", or no sign-off) and how they frame asks or next steps.
-   - **Sentence rhythm & paragraph structure:** Short punchy bursts vs. layered sentences, single-sentence paragraphs, bulleted lists, or bold lead-ins.
-   - **Vocabulary, contractions & formality:** Contraction frequency ("don't" vs. "do not"), plain vs. technical diction, and transition phrases ("Quick update:", "Here's the thing —", "So basically").
-   - **Punctuation, casing & formatting quirks:** Em dashes, parentheticals, exclamation marks, Oxford commas, lowercase chat phrasing, or emoji.
-   - **Channel & audience registers:** How their voice shifts across external / executive emails, team emails, quick chat messages, and longer documents.
-   - **Implicitly avoided language:** Corporate clichés or AI tropes absent from their writing (e.g., "delve", "tapestry", "synergy", "thrilled to announce"), plus any explicit **"Never use"** words the user has specified.
-3. **Select the target register and draft immediately:**
-   - Default to matching the register for the target channel and audience (e.g., client email, team update, LinkedIn post, doc section). If the channel is slightly ambiguous (e.g., "Write a note to Alex that I'm 5 minutes late"), default to a concise, adaptable message rather than blocking on a clarifying question; ask only if the audience or core intent is genuinely unclear.
-   - Write the draft using the user's exact greeting pattern, sentence rhythm, transitions, punctuation habits, and sign-off, strictly excluding any banned or out-of-character words.
-4. **Surface or update the Voice Card non-blockingly:**
-   - **On the first writing task in a session (when newly inferred):** Below the completed draft, include a compact **Voice Card Snapshot** (3–5 bullets summarizing the inferred style and sources read) and a one-line note that they can refine it or add banned words anytime.
-   - **On subsequent writing tasks:** Deliver the matched draft cleanly without repeating the Voice Card Snapshot unless the user asks to see it or you approximated a new format they haven't written in before (note any register approximation in one line below the draft).
-   - **When the user asks to view, edit, or update their Voice Card** (or edits a draft in a way that reveals a clear preference, such as swapping "Hi" for "Hey"): Update the Voice Card rules in context (and in their saved Voice Card Google Doc if one exists and editing is supported/confirmed) and confirm what changed in one sentence.
-
-## Output Format
-
-### Mode A: Writing or Rewriting Request (Default)
-
-- **Draft (top of response):** Present the clean, copy-ready draft first so the user can copy or use it immediately.
-- **Voice Card Snapshot (include on first scan or when requested; omit on routine repeat drafts):**
-  - **Voice matched ([Sources read, e.g., Gmail sent mail, Google Docs]):** 1–2 compact lines or 3–4 bullets covering **Register used**, **Openings & sign-offs**, **Rhythm & mechanics**, and **Avoided/banned phrasing**.
-- **Optional next step (one line max):** Offer to adjust the tone/length, add words to their "never use" list, or create a Gmail draft ("Say 'create Gmail draft' if you'd like this staged in Gmail").
-
-### Mode B: Standalone Voice Card Setup / Review
-
-When the user asks to build, show, or update their Voice Card without a specific writing task:
-
-- **Header:** **Your Voice Card · Sources used: [Gmail, Google Docs / Pasted samples]**
-- **Core Voice Profile:**
-  - **Sentence & Paragraph Rhythm:** [1 line]
-  - **Vocabulary & Contractions:** [1 line]
-  - **Signature Openings & Closings:** [1 line with real examples]
-  - **Punctuation & Formatting Quirks:** [1 line]
-- **Channel Registers:**
-  - **Email (External / Leadership):** [1–2 lines]
-  - **Email / Messages (Team & Peers):** [1–2 lines]
-  - **Long-Form / Docs:** [1–2 lines]
-- **Guardrails:**
-  - **Signature Phrases to Keep:** [comma-separated list]
-  - **Words to Avoid:** [inferred AI/corporate clichés + user-specified ban list]
-- **Closing line:** Ask what they'd like to draft first, or invite any quick corrections.
-
-## Tool Usage Guide
-
-- **Google Drive / Google Docs** — First turn if connected (never loop if declined): Search for an existing "Voice Card" doc first; if none exists, read 3–5 recent Google Docs authored by the user (owner:me) for long-form structure, headings, and tone.
-- **Gmail (search & threads)** — First turn if connected and no Voice Card is loaded (never loop if declined): Recent sent messages (from:me newer_than:90d); read threads (get_thread) newest-first across diverse recipients to extract greetings, sign-offs, sentence length, contractions, and tone shifts.
-- **Gmail (create draft)** — Only when explicitly requested by the user or after "yes" confirmation: Stage the completed email as a Gmail draft. Never send an email directly.
-
-## Scope Boundaries & Gotchas
-
-- For remixing an article, transcript, or notes into 5 distinct creative content angles (Contrarian, Personal Story, Data, Playbook, What They Missed), route to generate-fresh-ideas.
-- For building a pre-meeting brief or 30-second glance card from workspace notes and calendar invites, route to prep-for-meetings.
-- For evaluating a decision across multiple simulated expert viewpoints, route to get-more-perspectives.
-- **Sent messages only — never mimic incoming mail:** When scanning Gmail threads or shared Google Docs, verify the message sender or document author is the user (from:me / owner:me) so another person's phrasing is never mistaken for the user's voice.
-- **Quote content without copying confidential facts into unrelated drafts:** Extract *stylistic patterns* (greetings, rhythm, transitions, sign-offs) from scanned emails and docs — never leak private details from unrelated threads into a new draft.
-- **Unseen formats:** If the user asks for a format not present in their Workspace samples (e.g., a public LinkedIn post when only internal emails exist), adapt their core sentence rhythm and vocabulary to the new format and note the approximation in one line below the draft rather than inserting inline warnings inside the draft text.
-
-## Example
-
-**User:** Help me draft an email to a realtor asking to see an open house at 742 Maple St on Sunday at noon.
-
-**Subject:** Sunday open house at 742 Maple St — 12pm?
-
-Hey [Realtor Name],
-
-Quick question — is the open house at 742 Maple St this Sunday still on, and would noon work for us to stop by and take a look?
-
-If Sunday at 12pm requires a private slot or pre-registration, just let me know what you need from my end.
-
-Thanks,
-[Your Name]
-
----
-
-**Voice matched (Gmail sent mail):**
-
-- **Register:** External inquiry — friendly, direct, no small-talk preamble.
-- **Openings & closings:** Opens with "Hey [Name]," and "Quick question —"; signs off with "Thanks,".
-- **Rhythm & mechanics:** Short 1–2 sentence paragraphs, natural contractions, and em dashes to connect clauses.
-
-Want me to stage this as a Gmail draft, or tweak anything in your Voice Card (like preferred sign-offs or words to avoid)?
-</script>
-<script type="text/plain" id="skilltext-focus-my-energy">
-# Focus My Energy
-
-Do the right task at the right time - match your work to your energy, not your calendar. This skill classifies tasks by cognitive demand and recommends what to work on NOW based on how you are actually feeling, not just what is due next.
-
-## When to Use
-
-Use this skill when:
-
-- The user asks "what should I work on?" or "what to do next?"
-- They say they are tired, fried, brain dead, or low energy.
-- They mention feeling sharp, productive, or high energy.
-- They share a task list and want help sequencing it.
-- They seem overwhelmed and need someone to cut through the noise.
-- They want to prioritize by mental bandwidth rather than deadline.
-- They just finished a draining activity and need direction.
-
-## Energy Profile (Optional Setup)
-
-If the user wants personalized energy matching from the start, invite them to share their energy profile. This is a one-time setup - once shared, reference it in every subsequent energy assessment.
-
-Ask: "Want to set up your energy profile? Tell me your natural rhythms and I'll use them as a baseline instead of guessing."
-
-If they say yes, prompt them to fill in as much or as little as they want:
-
-```
-🔋 MY ENERGY PROFILE
-PEAK HOURS:        [When are you sharpest? e.g., "9-11am," "after 9pm"]
-DIP WINDOW:        [When do you reliably crash? e.g., "2-3:30pm," "right after lunch"]
-SECOND WIND:       [Do you get a late-day surge? When? Or "not really"]
-ENERGY DRAINS:     [What wrecks you? e.g., "back-to-back meetings," "long Zoom calls," "context-switching"]
-ENERGY BOOSTS:     [What recharges you? e.g., "a walk," "music," "a good lunch"]
-WEEKLY PATTERN:    [Any day-of-week patterns? e.g., "Mondays are slow starts," "Fridays I check out by 3"]
-CHRONOTYPE:        [Morning person, night owl, or somewhere in between]
-```
-
-Rules for the energy profile:
-
-- Don't require it. The skill works fine without it - the profile just makes the defaults smarter. If the user doesn't set one up, fall back to the generic heuristics in Step 1.
-- Don't ask for it every time. If the user has already shared their profile in this conversation, reference it silently. If they haven't, mention it once on first use - not repeatedly.
-- The user can update it anytime. If they say "actually I'm more of a night owl now," update the profile.
-- Profile is a baseline, not a cage. Real-time self-report always overrides the profile. If the profile says "sharp at 9am" but the user says "I'm fried," trust the user.
-
-## Steps
-
-### Step 1: Assess current energy
-
-Ask one question: "How are you feeling right now - sharp, steady, or fried?" If they don't want to answer, infer from context:
-
-Check in this order:
-
-1. Real-time self-report wins. If the user says how they are feeling, use that - it overrides everything.
-2. Energy profile fills the gaps. If the user has set up a profile and has not stated their current energy, use the profile to infer: check the current time against their peak hours, dip window, and weekly patterns.
-3. Generic heuristics as last resort. If there's no profile and no self-report, fall back to the defaults below.
-
-If neither self-report nor profile is available, ask one question: "How are you feeling right now - sharp, steady, or fried?" If they don't want to answer, infer from context:
-
-- Time of day (morning = likely sharp, post-lunch = likely dip, late afternoon = varies)
-- What they just finished (back-to-back meetings = likely drained, long focus block = might be in flow or exhausted)
-- Day of week (Monday mornings = fresh start, Friday afternoons = winding down)
-
-When using the energy profile, show your reasoning briefly so the user can correct you:
-
-"It's 2:15pm and your profile says you dip from 2-3:30pm, so I'm treating you as 'steady-to-fried' right now. Tell me if that's off."
-
-### Step 2: Classify tasks by cognitive demand
-
-Sort their tasks into three tiers:
-
-- 🔴 Deep Work - Requires creative thinking, strategic decisions, writing from scratch, architecture, problem-solving. Needs peak energy.
-- 🟡 Steady Work - Requires attention but not invention. Code reviews, editing, responding to substantive emails, planning. Needs decent energy.
-- 🟢 Low Drain - Administrative, routine, organizational. Filing, scheduling, simple replies, data entry, inbox cleanup. Can do when fried.
-
-### Step 3: Match and recommend
-
-Produce a clear recommendation in this format:
-
-```
-⚡ You said you're [sharp/steady/fried].
-DO NOW:
-- [Task] - [Why it matches your energy]
-SAVE FOR LATER:
-- [Task] - [Why this needs more energy than you have]
-QUICK WINS (if you want easy momentum):
-- [Task] - 5 min, low effort
-```
-
-Always give ONE clear recommendation for what to do right now - not a menu of options. A menu adds decision fatigue, which is exactly what this skill exists to prevent.
-
-If the user has a hard deadline today, that overrides energy matching. Say: "Normally I'd save this for when you're sharper, but it's due today. Here's how to make it easier: [break it down]."
-
-Never guilt-trip. If they're fried and want to do easy tasks, that's fine: "Good call - knock out the easy stuff and protect tomorrow morning for the hard thing."
-
-If they have no tasks, say so. Don't invent work.
-
-### Step 4: Refine energy patterns over time
-
-As the user uses this skill repeatedly, note patterns and surface them when relevant:
-
-- "You've mentioned being fried after back-to-back meetings 3 times now. Consider blocking 30 min after meeting-heavy mornings."
-- "You tend to do your best writing before 11am. I'll suggest deep writing tasks earlier when I see them."
-- "Fridays you consistently choose low-drain tasks. Leaning into that."
-
-If the user has an energy profile, use it as the baseline to refine - not replace. When observed patterns diverge from the profile, surface it:
-
-- "Your profile says you dip at 2pm, but the last few times we've talked at 2pm, you've been sharp. Want to update your profile?"
-- "You listed 'context-switching' as an energy drain, and today confirms it - you're fried after bouncing between 4 projects. Your profile is spot-on."
-
-Surface these observations when relevant, not every time. Don't be annoying about it.
-
-## Examples
-
-- **"I just finished 3 hours of meetings. What should I work on?"** -> The agent infers low energy, recommends low-drain tasks like inbox cleanup or scheduling, and saves the strategy doc for tomorrow morning.
-- **"I'm feeling really sharp right now"** -> The agent surfaces the hardest, most creative task on their list and says "This is the one. Do it now before the energy fades."
-- **"Here's my task list, what order should I do these in?"** -> The agent classifies each task by cognitive demand, asks about current energy, then sequences them: deep work first if sharp, or easy wins first to build momentum if not.
-- **"It's 2:30pm and I need to figure out what to tackle next"** -> The agent checks the user's energy profile, sees their dip window is 2-3:30pm, and recommends low-drain tasks without asking - but says "Your profile says this is your dip window. I'm steering you toward easy wins. Push back if you're actually feeling sharp."
-
-## Gotchas
-
-- Energy assessment relies on user self-report or time-based heuristics - it's an educated guess, not biometric data.
-- Pattern learning requires repeated use to become accurate.
-- Cannot account for external energy factors (sleep, caffeine, stress) unless the user mentions them.
-- Task complexity classification is based on task descriptions - vague task titles will get vague classifications.
-- Energy profiles can drift. A user's rhythms may shift with seasons, job changes, or life circumstances. If profile-based recommendations consistently miss, prompt the user to revisit their profile rather than silently overriding it.
-</script>
-<script>
-/* Loader: read the three skills' full instructions into SKILL_DEFS.
-   For match-my-writing-style, the local-app adaptation from the
-   user's brief is appended: in this app the voice is learned ONLY
-   from the user's own local chat samples and samples they paste —
-   never from incoming mail, and the skill must never claim a Gmail
-   or Drive scan here, because those apps are not connected in this
-   app. Everything else stays exactly as written. */
 (function(){
-  function load(id, name){
-    var n=document.getElementById(id); if(!n) return;
-    SKILL_DEFS[name]={desc:SKILL_DESCS[name]||'', instructions:n.textContent.replace(/^\n+|\s+$/g,'')};
+  var startX=0, startY=0, dragging=false, wasOpen=false, W=0, dragLock=null;
+  var dragRaf=0, dragDx=0, dragVel=0, dragLastX=0, dragLastT=0;
+  var sbDragClickAt=0;
+  document.addEventListener('pointerdown',function(e){
+    if(window.innerWidth>=820) return;
+    if(e.target.closest('#settingsView,.sheet,.menu-pop')) return;
+    if(e.target.closest('.chat-row')) return; /* rows run their own swipe (delete/open) */
+    wasOpen=sbOpen(); W=sbWidth();
+    if(!wasOpen){
+      if(e.target.closest('button,input,textarea,select,a')) return;
+      /* Swipe right anywhere on the chat background opens the menu —
+         not just from the left edge — smooth and easy. Gestures that
+         start on a message stay with the message (its own swipe to
+         reply), and buttons/inputs are already excluded above. */
+      if(e.target.closest('.msg')) return;
+      if(!e.target.closest('#stage')) return;
+    }
+    if(wasOpen){
+      /* CLOSE SWIPE FIX (right-to-left): the old code returned for
+         EVERY touch inside #sidebar and for every x < sidebar
+         width, so a close drag could only ever start on the narrow
+         peeking strip at the right edge — a right-to-left swipe on
+         the open menu itself (where a closing swipe naturally
+         starts) was discarded before it began, and the menu never
+         closed by swipe. The asymmetry is gone: a close drag may
+         now start from the menu itself as well as from the peeking
+         stage. Inside the menu only real text entry (the Search
+         field) is excluded; chat rows keep their own swipe
+         (excluded above), and vertical scrolling is still safe —
+         the direction lock in pointermove cancels the drag the
+         moment a gesture proves vertical, and a plain tap never
+         locks, so taps on menu buttons still click normally. A
+         click that trails a locked horizontal drag is swallowed
+         (see sbDragClickAt), so a swipe that starts on a menu
+         button closes the menu instead of also pressing it. */
+      if(e.target.closest('#sidebar')){
+        if(e.target.closest('input,textarea,select')) return;
+      } else {
+        if(e.clientX<W-8) return;
+        /* The peeking stage is covered by the scrim, which is the
+           usual target here; a direct stage button keeps its tap. */
+        if(e.target!==scrim && e.target.closest('button,input,textarea,select,a')) return;
+      }
+    }
+    startX=e.clientX; startY=e.clientY; dragging=true; dragLock=null;
+    dragDx=0; dragVel=0; dragLastX=e.clientX; dragLastT=Date.now();
+    /* FLICKER FIX: nothing visual is armed yet. The dragging state
+       (display:flex, layer promotion, transition kill) is applied
+       only when the gesture proves itself horizontal (dragArm in
+       pointermove). Arming it on EVERY pointerdown — and then
+       running a full settle animation on release — meant every
+       plain tap and every vertical scroll on the chat screen
+       toggled the stage's layers and glass, which read as the
+       chat screen flickering and glitching. */
+  },{passive:true});
+  function dragArm(){
+    sidebar.style.display='flex'; sidebar.style.visibility='';
+    app.classList.add('dragging');
+    sidebar.classList.add('noanim'); stage.classList.add('noanim');
   }
-  load('skilltext-get-more-perspectives','get-more-perspectives');
-  load('skilltext-match-my-writing-style','match-my-writing-style');
-  load('skilltext-focus-my-energy','focus-my-energy');
-  if(SKILL_DEFS['match-my-writing-style']){
-    SKILL_DEFS['match-my-writing-style'].instructions+='\n\n## Local App Adaptation (this app)\n\nIn this local app, use ONLY the user\u2019s own messages in this app (local chat samples) and samples the user pastes here as voice sources. Never claim a Gmail or Drive scan unless actually connected — in this app they are not connected, so say the sources are "Local chat samples" and/or "Pasted samples". Sent/user-authored samples only — never mimic incoming mail. Drafts stay clean, copy-ready and draft-only; never send emails or messages directly.';
+  function applyDragFrame(){
+    dragRaf=0; if(!dragging || dragLock!=='h') return;
+    var dx=dragDx;
+    var base=wasOpen?0:-W; var pos=Math.max(-W, Math.min(0, base+dx));
+    var prog=W? (pos+W)/W : 0; /* 0 = closed, 1 = fully open */
+    sidebar.style.transform='translate3d('+pos+'px,0,0)';
+    /* Straight drag, same as the animated run: pure translate, no
+       scale, and the curve does NOT grow with the drag — it is
+       the card's fixed 34px shape from the first moving frame
+       (0 only at the fully-closed rest position). */
+    stage.style.transform='translate3d('+(pos+W)+'px,0,0)';
+    stage.style.borderRadius=prog>0? '34px 0 0 34px' : '0px';
+    scrim.style.opacity='0';
+    scrim.style.left=(pos+W)+'px';
   }
+  document.addEventListener('pointermove',function(e){
+    if(!dragging) return;
+    var dx=e.clientX-startX, dy=e.clientY-startY;
+    /* Velocity (px/ms) from the last move — a quick flick opens or
+       closes even when the distance is short, like Apple's drawer. */
+    var now=Date.now(), dt=now-dragLastT;
+    if(dt>0){ dragVel=0.7*dragVel + 0.3*((e.clientX-dragLastX)/dt); dragLastX=e.clientX; dragLastT=now; }
+    /* Direction lock: nothing moves until the gesture proves itself
+       horizontal. A vertical-dominant move cancels the drag for good
+       and hands the gesture back to the scroller under the finger, so
+       scrolling up or down is never fought or frozen mid-swipe. */
+    if(!dragLock){
+      /* Vertical-dominant: cancel silently. Nothing was armed, so
+         there is nothing to undo and NO settle animation — the
+         scroller under the finger simply keeps the gesture. */
+      if(Math.abs(dy)>10 && Math.abs(dy)>=Math.abs(dx)*1.15){ dragging=false; return; }
+      if(Math.abs(dx)>10 && Math.abs(dx)>Math.abs(dy)*1.15){ dragLock='h'; dragArm(); }
+      else return;
+    }
+    /* Flow without missed frames: pointermove can fire faster than
+       the screen refreshes, so the style write is coalesced into ONE
+       requestAnimationFrame per frame using the latest position. */
+    dragDx=dx;
+    if(!dragRaf) dragRaf=requestAnimationFrame(applyDragFrame);
+  },{passive:true});
+  function up(e){
+    if(!dragging) return; dragging=false;
+    if(dragRaf){ cancelAnimationFrame(dragRaf); dragRaf=0; }
+    /* Released without ever locking horizontal — a plain tap or a
+       vertical scroll. Nothing was armed and no transform ever
+       moved, so there is nothing to settle: the old code ran a
+       full no-op setSidebar animation here after every tap on the
+       chat screen, toggling layer promotion for ~390ms each time. */
+    if(dragLock!=='h'){ dragLock=null; return; }
+    dragLock=null;
+    /* The release of a real drag is followed by one synthetic
+       click on whatever the finger started on (the scrim, or a
+       menu button the close swipe began on). That click must not
+       fire: on the scrim it would force-close even when the drag
+       settled on staying open, and on a menu button it would press
+       the button behind the swipe. Swallow exactly that one. */
+    sbDragClickAt=Date.now();
+    app.classList.remove('dragging');
+    sidebar.classList.remove('noanim'); stage.classList.remove('noanim');
+    /* A swipe-left-to-open gesture (below) may have just opened the
+       menu during this same touch — do not let this handler's release
+       math close it again. */
+    if(window.__axoSwipeLeftAt && Date.now()-window.__axoSwipeLeftAt<700) return;
+    var dx=e.clientX-startX;
+    var open;
+    if(dragVel>0.45) open=true;
+    else if(dragVel<-0.45) open=false;
+    else open=wasOpen ? dx>-W*0.2 : dx>W*0.2;
+    /* Continuous flow: the settle run covers ONLY the distance left
+       to travel, shortened further on a fast flick — the finger's
+       motion hands straight over to the animation with no restart
+       and no slow crawl across the last few pixels. */
+    var prog=W? (wasOpen? (W+dx)/W : dx/W) : 0; prog=Math.max(0, Math.min(1, prog));
+    var remain=open? (1-prog) : prog;
+    var dur=Math.max(130, Math.min(SB_MS, SB_MS*remain*1.1));
+    if(Math.abs(dragVel)>0.45) dur=Math.min(dur, 200);
+    setSidebar(open,true,dur);
+  }
+  document.addEventListener('pointerup',up,{passive:true});
+  document.addEventListener('click',function(e){
+    if(sbDragClickAt && Date.now()-sbDragClickAt<400){ sbDragClickAt=0; e.preventDefault(); e.stopPropagation(); }
+  },true);
+  document.addEventListener('pointercancel',function(){ if(dragging){ var wasLocked=dragLock==='h'; dragging=false; dragLock=null; if(dragRaf){ cancelAnimationFrame(dragRaf); dragRaf=0; } app.classList.remove('dragging'); sidebar.classList.remove('noanim'); stage.classList.remove('noanim'); if(wasLocked) setSidebar(wasOpen,true);} });
+  scrim.addEventListener('click',function(){ setSidebar(false,true); });
 })();
-</script>
-</body>
-</html>
+/* Pull-to-refresh / reload protection is CSS-only on purpose:
+   html, body and every scroller carry overscroll-behavior: contain /
+   none and the page itself never scrolls (body overflow hidden, #app
+   fixed), so an edge swipe cannot chain to the page or reload it.
+   The old JS guard preventDefault-ed touchmove at a scroller's edges;
+   on mobile browsers that cancels the REST of the gesture too, which
+   is exactly what froze scrolling up/down and made lists feel stuck.
+   No JS ever preventDefaults a vertical scroll gesture now. */
+/* =============== Menus & sheets =============== */
+var pop=$('#popMenu');
+/* The element that opened the pop menu. The outside-tap closer must
+   NOT close the menu when the tap lands on its own anchor button:
+   that pointerdown used to close it, and the anchor's click handler
+   then reopened it — which is why clicking the dots button while
+   its menu was open reopened the menu instead of toggling it shut. */
+var popAnchor=null;
+function closePop(){ pop.classList.remove('show'); pop.innerHTML=''; popAnchor=null; }
+function openPop(anchorRect, items, anchorEl){
+  popAnchor=anchorEl||null;
+  pop.innerHTML=items.map(function(it){
+    if(it.sep) return '<div class="msep"></div>';
+    return '<button data-pi="'+it.id+'" class="'+(it.danger?'danger':'')+'">'+(it.icon||'')+'<span>'+esc(it.label)+'</span>'+(it.dot?'<span class="mdot2"></span>':'')+'</button>';
+  }).join('');
+  pop.classList.add('show');
+  var w=236, left=Math.min(anchorRect.right-w, window.innerWidth-w-8); if(left<8) left=8;
+  var top=anchorRect.bottom+8, est=items.length*46+14;
+  if(top+est>window.innerHeight-10) top=Math.max(8, anchorRect.top-est-8);
+  pop.style.left=left+'px'; pop.style.top=top+'px'; pop.style.width=w+'px';
+  pop.querySelectorAll('button').forEach(function(b){
+    b.addEventListener('click',function(){ var id=b.getAttribute('data-pi'); closePop(); handlePop(id); });
+  });
+}
+document.addEventListener('pointerdown',function(e){
+  if(!pop.classList.contains('show')) return;
+  if(pop.contains(e.target)) return;
+  if(popAnchor && popAnchor.contains(e.target)) return; /* the anchor's own click toggles */
+  closePop();
+});
+var popCtx=null;
+function handlePop(id){
+  var ctx=popCtx||{}; popCtx=null;
+  if(id==='temp'){ toggleTemp(); }
+  else if(id==='settings'){ openSettings('list'); }
+  else if(id==='split'){ if(ctx.chatId && ctx.chatId!==state.currentId){ if(state.splitId===ctx.chatId) exitSplit(); else enterSplit(ctx.chatId); } else if(state.splitId) exitSplit(); else { var t=chats.filter(function(c){return c.id!==state.currentId;})[0]; if(t) enterSplit(t.id); } }
+  else if(id==='openchat'){ openChat(ctx.chatId); }
+  else if(id==='rename'){ renameChat(ctx.chatId); }
+  else if(id==='delete'){ askDelete(ctx.chatId); }
+  else if(id==='clear'){ var c=chatById(ctx.chatId||state.currentId); if(c){ c.messages=[]; renderAll(); toast('Chat cleared'); } }
+  else if(id==='share'){ toast('Nothing to share from a static preview'); }
+}
+var sheet=$('#sheet'), sheetScrim=$('#sheetScrim');
+var sheetCloseTimer=null;
+function openSheet(html){
+  if(sheetCloseTimer){ clearTimeout(sheetCloseTimer); sheetCloseTimer=null; }
+  sheet.innerHTML='<div class="grab"></div>'+html; sheet.classList.add('show'); sheetScrim.classList.add('show');
+}
+function closeSheet(){
+  sheet.classList.remove('show'); sheetScrim.classList.remove('show');
+  /* Destroy the sheet's content once it has slid away — including
+     any code-preview iframe and its srcdoc — so a closed preview
+     leaves nothing behind that a keyboard open/close (which lifts
+     fixed elements by --kbFixed) could ever show again. The sheet
+     is also visibility:hidden whenever it is not .show. */
+  if(sheetCloseTimer) clearTimeout(sheetCloseTimer);
+  sheetCloseTimer=setTimeout(function(){
+    sheetCloseTimer=null;
+    if(!sheet.classList.contains('show')) sheet.innerHTML='';
+  }, 420);
+}
+sheetScrim.addEventListener('click',closeSheet);
+function detailSheet(title, bullets){
+  openSheet('<h3>'+esc(title)+'</h3><p class="sub">Full detail</p><ul>'+bullets.map(function(b){return '<li>'+esc(b)+'</li>';}).join('')+'</ul><button class="btn-ghost" id="sheetCloseBtn">Close</button>');
+  $('#sheetCloseBtn').addEventListener('click',closeSheet);
+}
+var DETAILS={
+  apis:{t:'API Keys & Automatic Failover', b:['Just paste a key — the provider, base URL and model are detected and selected automatically. Nothing else to fill in.','There are no model names to pick anywhere: the model behind each key is chosen automatically and silently, and GptOpen is the only model identity you ever see.','Add as many keys as you like, from any supported provider: OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, xAI, DeepSeek, NVIDIA, Mistral, Together, Hugging Face, Cohere, GitHub Models, or another OpenAI-compatible key. Free keys: the Free API keys page (in APIs & Providers) lists every site that gives a key away free, with its Vercel variable name.','Mistral Agent: paste an agent id (ag_…, created in Mistral console → Agents) into the Mistral Agent ID field — or paste it into the key box, it is recognised automatically — and Mistral chats use the Agents API by themselves, no switch. The agent brings its own saved instructions and tools (web search, code interpreter, document library). Clear the id to go back to normal Mistral chat.','Sending tries your active key first with its chosen model, then every other model on that key, then the next key and every model on it, and so on through all keys and all their models. An error is only shown when every model on every key has failed.','Keys and chats are saved locally on this device and restored automatically on every open. Keys are stored encrypted (AES-GCM, sealed under a device key that never leaves this device), are never shown after saving — only the provider and last 4 digits appear — and are never included in backups.','Default model: AxoChat can also chat through its built-in Gptopen Model \u2014 this site\u2019s own server relay (POST /api/relay), sending no key at all. The relay has exactly two providers, Groq and OpenRouter, and reads their keys from the Vercel project\u2019s environment variables (GROQ_API_KEY, OPENROUTER_API_KEY), server-side only, so those keys are never in the app or sent to the browser. Turn it on and read the full setup under APIs & Providers \u2192 Gptopen Model.','Without a key or the relay, replies come from the built-in local reply engine.']},
+  freekeys:{t:'Free API Keys', b:['Every site listed gives you a key for free — a free tier, free models, or a free trial key. On each provider card, “Get a free API key” opens that provider\u2019s own site; “Use my API key” opens the key box in APIs & Providers, where the pasted key is detected automatically.','AxoChat’s default model, the Gptopen Model, is built in — chatting works out of the box. It runs on exactly two providers, Groq and OpenRouter. When lots of people are using it and the default limit is over, the chat says so and offers the same two actions: use your own API key, or get a free one from this list.','Variable names (for the app relay, in Vercel \u2192 Settings \u2192 Environment Variables, Production, then redeploy): Groq GROQ_API_KEY \u00b7 OpenRouter OPENROUTER_API_KEY. Those are the only two the relay reads.','Free means limited: rate limits, only some models free, or trial credits. It is never unlimited for everyone, and the default-model endpoint can be used by anyone who finds it — watch usage and spending on the provider side.','No key is ever baked into this app, plain or encrypted: anyone running the app could extract it. Keys live either sealed on your own device, or only on the server behind the relay.']},
+  usage:{t:'Usage & Limits', b:['Pick the API you have at the top — the page then shows that API only.','This session counts are counted by the app itself, request by request: requests sent, replies received, failures, quota hits, and the token totals your provider returns with each reply. They reset when the page reloads, like the rest of this preview.','OpenRouter limit: tap Check live usage & limit and the app asks OpenRouter directly, with your saved key, how much this key has used, its limit and what remains. Nothing is estimated.','Google Gemini and custom endpoints do not offer a per-key limit check the app can call, so their limits live on the provider side — the page says so instead of inventing a number, and still shows your status and session counts.']},
+  connectors:{t:'Connectors & Online Search', b:['Online Search is the only connector in this build.','When it is on, /search looks up live sources on Wikipedia and the open web.']},
+  memory:{t:'Local Memory System', b:['Everything you say in any chat is saved to memory automatically, locally in this app, always \u2014 in detail: the message with its date and time, the chat and the agent, plus a short summary of each reply, in a time-stamped log kept on this device. A rolling summary (how much, since when, main topics, stated preferences, latest entries) is rebuilt and saved locally too, and is read with the matching entries before every reply so answers stay personal.','Before every reply, the saved memory is searched by the incoming message\u2019s keywords, and the reply is built using the related memories found.','Memory never holds keys, secrets, emails or phone numbers — those are stripped out before a note is saved.','Turn it off any time and saving and searching both stop. The + sheet Memory switch and this switch always match.']},
+  appearance:{t:'Appearance & Liquid Glass', b:['The phone preview at the top shows the agent avatar, its name label and your bubbles exactly as they will look in chat.','Chat theme is a row of colour circles — White is the default — and it recolours your bubbles and accents across the app.','Avatar size is Small, Medium, Large, Extra large or Hidden, and it sets the agent head size in chat.','Mode is System, Light or Dark; System follows your device setting.','Red appears only for delete and error states.']},
+  agent:{t:'Agent', b:['The Agent page is the main agent\u2019s own page: avatar with the pencil menu (Change avatar / Edit name), name, live status, and tabs for Today, Approvals history, Reminders + Daily, and the profile with its VIBE and the SOUL / MEMORY cards.','Sub-agents live under it: the Sub-agents page lists every agent, and the New sub-agent page creates one with its own name, avatar, instructions and memory.','Any agent can be made the main agent at any time from its menu on the Sub-agents page.']},
+  agents:{t:'Agents', b:['Settings \u2192 Agents opens the Agent page — the main agent\u2019s page with Today, Approvals, Reminders + Daily, and its profile.','Under it, the Sub-agents page holds the full agents list: create as many agents as you like and chat with any of them.','Each agent has its own name, avatar, custom instructions and custom memory.','Any agent can be made the main agent at any time from its menu.','History and memory are shared by all agents by default; turn on individual history or memory for one agent in its Edit page and only that agent keeps its own.','Animation speed for the Agents UI lives on the Sub-agents page — drag the slider slowly and the live preview changes as you drag.']},
+  code:{t:'Code Mode & Play-First Preview', b:['Code replies arrive in a preview box, never written out in full down the chat: the full code sits inside the box and you scroll inside it to read all of it.','HTML code gets Code / Preview tabs in the box header — Preview runs the page inside the same box, and you scroll inside it too.','Full (or Preview full size) opens the code or the preview full size, on its own screen, where the code scrolls and the preview fills the screen.','Play First opens the box on Preview; Code First opens it on Code.']},
+  skills:{t:'Skill Library (22 Built-In Skills)', b:['Each skill is one job: a document, a deck, a test pass, a theme.','Use /skill <name> to apply one skill to the next reply, or run a skill directly with its own command.','get-more-perspectives: an advisory panel (Operator, Skeptic, Visionary, Customer Advocate, Finance Mind) that commits to a vote before you decide. Custom panels persist for the session.','match-my-writing-style: drafts in your voice, learned only from your own writing in this app and samples you paste — never from incoming mail, and never a Gmail or Drive scan in this local app. Drafts only; it never sends.','focus-my-energy: matches tasks to your energy (sharp, steady, fried) — Deep Work, Steady Work, Low Drain — with one clear DO NOW. A hard deadline today overrides energy matching.','Disabled skills are skipped by the router.']},
+  commands:{t:'Slash Commands', b:['Type / in the composer and the command box appears above it.','Tap a command to run it, or keep typing to filter the list.','/split opens the chosen chat beside your current one, top and bottom.']},
+  safety:{t:'Privacy & Key Safety', b:['Your key is used only for calls to the provider you picked.','Never paste a key into a chat message — keys belong in the Model section of the + sheet.']},
+  reset:{t:'Delete everything & reset', b:['This deletes everything AxoChat has saved on this device, in this browser, for this site — all chats and messages, all agents with their avatars, instructions and per-agent memory, every saved API key (including its sealed vault copy and the vault database), System files and Library files, saved memory, goals, scheduled messages and notifications, and all app settings such as theme, accent and appearance.','It cannot be undone. There is no restore from the app after a reset — download a backup first from History & backups if you want a copy of your chats, agents and files (backups never include API keys).','The app restarts as a brand-new user: the intro is shown again, asking what to call you, with the default agent and the default settings.','Only this device and this browser origin are cleared. AxoChat’s default models on the server are not affected — they are not your data and you do not need a key for them after the reset.']}
+};
+function qBtn(key){ return '<span class="qbtn" role="button" tabindex="0" data-q="'+key+'" aria-label="More detail">?</span>'; }
+document.addEventListener('click',function(e){
+  var q=e.target.closest('[data-q]'); if(q){ var d=DETAILS[q.getAttribute('data-q')]; if(d) detailSheet(d.t,d.b); }
+});
+/* =============== Chat actions =============== */
+function toggleTemp(){
+  /* The ONLY function that can turn Temporary chat on. It is wired
+     solely to Temporary chat's own toggles: the header pill button
+     while it shows the Temporary icon, and the "Temporary chat" row
+     in the dots menu. No New chat path calls this. */
+  state.temp=!state.temp; updateTargetLine(); updateTempIcon();
+  /* Re-render the chat + head right away so the agent avatar
+     starts (or stops) its eyes-closed-and-peeking loop the
+     moment Temporary chat toggles — renderMain swaps the
+     empty-chat hero, renderAgentHead the pinned top head. */
+  renderMain(); if(typeof renderAgentHead==='function') renderAgentHead();
+  toast(state.temp?'Temporary chat on — main chat stays continuous':'Temporary chat off');
+}
+function openChat(id){
+  if(!chatById(id)) return;
+  state.replyTo=null; if(typeof renderReplyBar==='function') renderReplyBar(); closeMsgMenu();
+  if(typeof setTabSel==='function') setTabSel('main');
+  state.currentId=id; setSidebar(false,true); closeSettings(true); renderAll();
+}
+function newChat(){
+  /* Starting a new chat NEVER turns Temporary chat on — it clears
+     it, so a fresh chat never inherits the temp banner or state.
+     Temporary chat turns on only from toggleTemp() (its own toggle). */
+  state.temp=false;
+  state.replyTo=null; if(typeof renderReplyBar==='function') renderReplyBar(); closeMsgMenu();
+  var tb=$('#tempBtn'); if(tb) tb.classList.remove('temp-on');
+  var c={id:'c'+(++uid), title:'New chat', messages:[]};
+  var nca=(typeof chatAgent==='function')? chatAgent() : null;
+  if(nca && nca.individualHistory) c.agentId=nca.id;
+  chats.splice(1,0,c); state.currentId=c.id; state.splitId=null;
+  setSidebar(false,true); closeSettings(true); renderAll();
+  $('#chatInput').focus();
+}
+function enterSplit(id){
+  if(id===state.currentId){ toast('Pick a different chat for split'); return; }
+  state.splitId=id; state.splitActive='bottom'; closeSettings(true); renderAll();
+  toast('Split screen on — tap a pane, then type');
+}
+function exitSplit(){ state.splitId=null; renderAll(); updateTargetLine(); }
+function renameChat(id){
+  var c=chatById(id); if(!c) return;
+  openSheet('<h3>Rename chat</h3><div class="field"><label>Title</label><input id="rnInput" type="text" value="'+esc(c.title)+'"></div>'
+    +'<button class="btn-primary" id="rnSave">Save</button><button class="btn-ghost" id="rnCancel">Cancel</button>');
+  $('#rnSave').addEventListener('click',function(){ var v=$('#rnInput').value.trim(); if(v){ c.title=v; renderAll(); } closeSheet(); });
+  $('#rnCancel').addEventListener('click',closeSheet);
+}
+function askDelete(id){
+  var c=chatById(id); if(!c) return;
+  openSheet('<h3>Delete this chat?</h3><p class="sub">'+esc(c.title)+' will be removed. This cannot be undone.</p>'
+    +'<button class="btn-danger" id="delYes">Delete</button><button class="btn-ghost" id="delNo">Cancel</button>');
+  $('#delYes').addEventListener('click',function(){
+    chats=chats.filter(function(x){return x.id!==id;});
+    if(state.splitId===id) state.splitId=null;
+    if(state.currentId===id) state.currentId='main';
+    closeSheet(); renderAll(); toast('Chat deleted');
+  });
+  $('#delNo').addEventListener('click',closeSheet);
+}
+document.addEventListener('click',function(e){
+  var b=e.target.closest('[data-act]');
+  if(b){
+    var m=null, mChat=null;
+    for(var i=0;i<chats.length && !m;i++){ var fm=findMsg(chats[i], b.getAttribute('data-id')); if(fm){ m=fm; mChat=chats[i]; } }
+    if(m){
+      var act=b.getAttribute('data-act');
+      if(act==='copy' && m.code) copyText(m.code.body);
+      else if(act==='copyai') copyText(m.text);
+      else if(act==='play' && m.code) openCodeFull(m, 'preview');
+      else if(act==='expandcode' && m.code) openCodeFull(m, (b.closest('.codeblock') && b.closest('.codeblock').getAttribute('data-codeview')==='preview')? 'preview' : 'code');
+      else if(act==='canvasopen' && m.code) openCanvasFull(m);
+      else if(act==='retrylast'){
+        /* Retry: drop this error message, RESET the relay
+           detection (a transient failure must never stick for
+           the whole session), and run the exact same request
+           again — the last user message is still in the chat. */
+        var rix=mChat.messages.indexOf(m); if(rix>=0) mChat.messages.splice(rix,1);
+        relayGone=false; relayStrikes=0;
+        setApiHealth('changed');
+        renderAll();
+        if(providerRouteOn()) callProvider(mChat, null);
+        else toast('Add an API key or turn on the Gptopen Model first');
+      }
+      else if(act==='choosediff') openApiPicker();
+      else if(act==='usemykey') openSettings('apis');
+      else if(act==='getfreekey') openSettings('freekeys');
+      else if(act==='avconfirm' && m.avatarProposal && !m.avatarProposal.resolved) confirmAvatarProposal(mChat, m);
+      else if(act==='avcancel' && m.avatarProposal && !m.avatarProposal.resolved){ m.avatarProposal.resolved='cancelled'; renderAll(); toast('Okay — the avatar was not changed'); }
+    }
+  }
+  var st=e.target.closest('[data-starter]');
+  if(st) sendText(st.getAttribute('data-starter'));
+});
+function copyText(t){
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(function(){ toast('Copied'); },function(){ toast('Copy failed'); }); }
+  else toast('Copy unavailable here');
+}
+function openPreview(code){
+  /* Play always opens the preview FULL SIZE now (the old half-
+     height sheet is gone): the full-size viewer in Preview view. */
+  openCodeFull({code:{lang:normalizeCodeLang('', code), body:String(code||'')}}, 'preview');
+}
+/* =============== Full-size code / preview viewer ===============
+   cfOpen mirrors the canvas rule: only a real user tap opens it,
+   and guardPreviewsClosed() keeps it hidden otherwise, so a
+   keyboard open/close can never resurrect it. */
+var cfMsg=null, cfOpen=false, cfView='code';
+function openCodeFull(m, view){
+  if(!m || !m.code) return;
+  cfMsg=m; cfOpen=true;
+  var runnable=codeIsRunnable(m.code);
+  $('#cfTitle').textContent=(m.code.lang||'code')+' · '+codeLineCount(m.code.body)+' lines';
+  $('#cfMeta').textContent=runnable? 'Preview fills the screen · code scrolls here' : 'Scroll to read the full code';
+  $('#cfCode').textContent=m.code.body;
+  $('#cfFrame').srcdoc='';
+  $('#cfTabPreview').style.display=runnable? '' : 'none';
+  $('#codeFullView').hidden=false;
+  setCfView(view==='preview' && runnable? 'preview' : 'code');
+}
+function setCfView(v){
+  cfView=v;
+  var runnable=cfMsg? codeIsRunnable(cfMsg.code) : false;
+  if(v==='preview' && !runnable) v='code';
+  cfView=v;
+  $('#cfCode').hidden=(v!=='code');
+  var fr=$('#cfFrame');
+  fr.hidden=(v!=='preview');
+  if(v==='preview' && cfMsg){ fr.srcdoc=cfMsg.code.body; }
+  $('#cfTabCode').classList.toggle('sel', v==='code');
+  $('#cfTabPreview').classList.toggle('sel', v==='preview');
+}
+function closeCodeFull(){
+  cfOpen=false; cfMsg=null;
+  $('#codeFullView').hidden=true;
+  $('#cfFrame').srcdoc='';
+}
+$('#cfBack').innerHTML=I.back;
+$('#cfCopy').innerHTML=I.copy;
+$('#cfBack').addEventListener('click',closeCodeFull);
+$('#cfCopy').addEventListener('click',function(){ if(cfMsg && cfMsg.code) copyText(cfMsg.code.body); });
+$('#cfTabCode').addEventListener('click',function(){ setCfView('code'); });
+$('#cfTabPreview').addEventListener('click',function(){ setCfView('preview'); });
+/* Code / Preview tabs INSIDE a chat code box: switch the pane in
+   place — the box keeps its size, the code pane scrolls inside
+   it, the preview pane runs the page inside it. */
+document.addEventListener('click',function(e){
+  var t=e.target.closest('[data-cbtab]'); if(!t) return;
+  var box=t.closest('.codeblock'); if(!box) return;
+  var want=t.getAttribute('data-cbtab');
+  box.setAttribute('data-codeview', want);
+  box.querySelectorAll('[data-cbtab]').forEach(function(x){ x.classList.toggle('sel', x.getAttribute('data-cbtab')===want); });
+  box.querySelectorAll('[data-cbpane]').forEach(function(p){ p.hidden=(p.getAttribute('data-cbpane')!==want); });
+  if(want==='preview') hydrateCodeFrames(box);
+});
+/* =============== Message menu (liquid glass) ===============
+   Tapping (or long-pressing) ANY message — main chat or either
+   split pane, user or assistant — opens one small minimal
+   Apple-like liquid glass menu anchored to that message:
+   Reply · Copy · Select · Share, then Edit on your own messages
+   or Regenerate on assistant messages, then Delete. Every row
+   works in place; nothing here is a dead control. The menu was
+   not showing before because messages rendered with no id and
+   no tap handler at all — both are fixed here and in msgHTML. */
+var msgMenu=$('#msgMenu'), msgMenuCtx=null, msgMenuEl=null;
+function msgFullText(m){
+  var t=m.text||'';
+  if(m.links && m.links.length) t+=(t?'\n':'')+m.links.map(function(e){return e.url;}).join('\n');
+  if(m.attachments && m.attachments.length) t+=(t?'\n':'')+m.attachments.map(function(a){return typeof a==='string'?a:(a.name||'File');}).join('\n');
+  return t+(m.code? '\n\n'+m.code.body : '');
+}
+function closeMsgMenu(){
+  msgMenu.classList.remove('show'); msgMenu.innerHTML=''; msgMenuCtx=null;
+  if(msgMenuEl){ msgMenuEl.classList.remove('menu-open'); msgMenuEl=null; }
+}
+function renderReplyBar(){
+  var bar=$('#replyBar'); if(!bar) return;
+  var rt=state.replyTo;
+  if(!rt){ bar.className=''; bar.innerHTML=''; return; }
+  bar.className='show';
+  bar.innerHTML='<span class="rb-label">Reply</span><span class="rb-text">'+esc(rt.text)+'</span><button id="replyCancel" aria-label="Cancel reply">'+I.x+'</button>';
+  $('#replyCancel').addEventListener('click',function(){ state.replyTo=null; renderReplyBar(); });
+}
+function openMsgMenuFor(msgEl){
+  if(!msgEl) return;
+  var id=msgEl.getAttribute('data-msg-id'), cid=msgEl.getAttribute('data-chat-id');
+  var chat=chatById(cid), m=findMsg(chat,id);
+  if(!m){ for(var i=0;i<chats.length && !m;i++){ var f=findMsg(chats[i],id); if(f){ chat=chats[i]; m=f; } } }
+  if(!m||!chat) return;
+  if(msgMenuCtx && msgMenuCtx.msg.id===m.id && msgMenu.classList.contains('show')){
+    /* A fresh tap on the same message toggles its menu closed; the
+       duplicate guard keeps the pointer tap + its click (one real
+       tap) from toggling it straight back. */
+    if(Date.now()-lastMsgMenuOpen.at<600) return;
+    lastMsgMenuOpen={key:m.id, at:Date.now()}; closeMsgMenu(); return;
+  }
+  closePop(); closeMsgMenu();
+  msgMenuCtx={chat:chat, msg:m}; msgMenuEl=msgEl; msgEl.classList.add('menu-open');
+  var items=[
+    {a:'reply', icon:I.reply, label:'Reply'},
+    {a:'copy', icon:I.copy, label:'Copy'},
+    {a:'select', icon:I.select, label:'Select'},
+    {a:'share', icon:I.share, label:'Share'}
+  ];
+  if(m.role==='user') items.push({a:'edit', icon:I.edit, label:'Edit'});
+  else items.push({a:'regen', icon:I.refresh, label:'Regenerate'});
+  items.push({sep:true});
+  items.push({a:'delete', icon:I.trash, label:'Delete', danger:true});
+  /* Reaction options lead the menu — they show on EVERY selected
+     message (yours and the agent's). The quick set is drawn from
+     the app's own reaction palette when it is loaded. */
+  var quick=['😂','😍','🔥','😮','😭','🫶','✨'];
+  if(typeof REACTION_SET!=='undefined') quick=quick.filter(function(e){ return REACTION_SET[e]; });
+  var reactHTML='<div class="msg-react-row" role="group" aria-label="React to this message">'
+    +quick.map(function(e){ return '<button data-mr="'+escA(e)+'" class="'+(m.reaction===e?'sel':'')+'" aria-label="React '+escA(e)+'">'+e+'</button>'; }).join('')+'</div>';
+  msgMenu.innerHTML=reactHTML+items.map(function(it){
+    if(it.sep) return '<div class="msep"></div>';
+    return '<button data-ma="'+it.a+'" class="'+(it.danger?'danger':'')+'" role="menuitem">'+it.icon+'<span>'+it.label+'</span></button>';
+  }).join('');
+  /* Anchor to the message: user menus right-align to the bubble,
+     assistant menus left-align to the text; flips above the message
+     when there is no room below, and always stays on screen. */
+  var anchor=msgEl.querySelector('.bubble-user')||msgEl.querySelector('.body')||msgEl;
+  var aRect=anchor.getBoundingClientRect(), vRect=msgEl.getBoundingClientRect();
+  var w=224, est=items.length*45+16+54;
+  var left=(m.role==='user') ? aRect.right-w : aRect.left;
+  left=Math.max(8, Math.min(left, window.innerWidth-w-8));
+  var top=vRect.bottom+6;
+  if(top+est>window.innerHeight-8) top=Math.max(8, vRect.top-est-6);
+  msgMenu.style.left=left+'px'; msgMenu.style.top=top+'px';
+  msgMenu.style.transformOrigin=(m.role==='user'?'top right':'top left');
+  msgMenu.classList.add('show');
+  lastMsgMenuOpen={key:m.id, at:Date.now()};
+  msgMenu.querySelectorAll('[data-ma]').forEach(function(b){
+    b.addEventListener('click',function(){ var a=b.getAttribute('data-ma'); var ctx=msgMenuCtx; closeMsgMenu(); if(ctx) handleMsgAction(a, ctx.chat, ctx.msg); });
+  });
+  msgMenu.querySelectorAll('[data-mr]').forEach(function(b){
+    b.addEventListener('click',function(){
+      var e=b.getAttribute('data-mr'); var ctx=msgMenuCtx; closeMsgMenu();
+      if(!ctx) return;
+      if(ctx.msg.reaction===e) delete ctx.msg.reaction;
+      else ctx.msg.reaction=e;
+      renderAll();
+    });
+  });
+}
+var lastMsgMenuOpen={key:'', at:0};
+function handleMsgAction(a, chat, m){
+  if(a==='copy'){ copyText(msgFullText(m)); }
+  else if(a==='reply'){
+    state.replyTo={chatId:chat.id, msgId:m.id, role:m.role, text:msgFullText(m).replace(/\s+/g,' ').slice(0,140)};
+    renderReplyBar(); input.focus(); toast('Replying — type your answer');
+  }
+  else if(a==='select'){
+    openSheet('<h3>Select text</h3><p class="sub">Tap and hold, or use Select all, to take any part of this message.</p>'
+      +'<div class="field"><textarea id="selMsgText" rows="6" readonly>'+esc(msgFullText(m))+'</textarea></div>'
+      +'<button class="btn-primary" id="selAllBtn">Select all</button><button class="btn-ghost" id="selCopyBtn">Copy text</button><button class="btn-ghost" id="selDoneBtn">Done</button>');
+    $('#selAllBtn').addEventListener('click',function(){ var t=$('#selMsgText'); t.focus(); t.select(); });
+    $('#selCopyBtn').addEventListener('click',function(){ copyText(msgFullText(m)); });
+    $('#selDoneBtn').addEventListener('click',closeSheet);
+  }
+  else if(a==='share'){
+    var t=msgFullText(m);
+    if(navigator.share){ navigator.share({text:t}).catch(function(){}); }
+    else copyText(t);
+  }
+  else if(a==='edit'){
+    openSheet('<h3>Edit message</h3><div class="field"><textarea id="editMsgText" rows="5">'+esc(m.text)+'</textarea></div>'
+      +'<button class="btn-primary" id="editMsgSave">Save</button><button class="btn-ghost" id="editMsgCancel">Cancel</button>');
+    $('#editMsgSave').addEventListener('click',function(){
+      var v=$('#editMsgText').value.trim(); if(!v){ toast('Message is empty'); return; }
+      m.text=v; closeSheet(); renderAll(); toast('Message edited');
+    });
+    $('#editMsgCancel').addEventListener('click',closeSheet);
+  }
+  else if(a==='regen'){
+    var idx=chat.messages.indexOf(m), prev='';
+    for(var i=idx-1;i>=0;i--){ if(chat.messages[i].role==='user'){ prev=chat.messages[i].text; break; } }
+    if(providerRouteOn()){ var oldCode=m.code||null; chat.messages.splice(idx,1); renderAll(); callProvider(chat, null, oldCode? {contextCode:oldCode} : null); toast('Regenerating…'); return; }
+    toast('Regenerating…');
+    setTimeout(function(){
+      if(m.code){ var r=codeReply(prev||'a small example'); m.text=r.text; m.code=r.code; }
+      else m.text=localReply(prev||m.text, state.memory? searchMemory(prev||m.text) : []);
+      renderAll(); toast('Regenerated');
+    },450);
+  }
+  else if(a==='delete'){
+    openSheet('<h3>Delete this message?</h3><p class="sub">'+esc(msgFullText(m).slice(0,120))+'</p>'
+      +'<button class="btn-danger" id="msgDelYes">Delete</button><button class="btn-ghost" id="msgDelNo">Cancel</button>');
+    $('#msgDelYes').addEventListener('click',function(){
+      var ix=chat.messages.indexOf(m); if(ix>=0) chat.messages.splice(ix,1);
+      if(state.replyTo && state.replyTo.msgId===m.id){ state.replyTo=null; renderReplyBar(); }
+      closeSheet(); renderAll(); toast('Message deleted');
+    });
+    $('#msgDelNo').addEventListener('click',closeSheet);
+  }
+}
+/* Tap detection: a tap is a short press that barely moves, so
+   scrolling up/down, sidebar swipes and row swipes never open the
+   menu by accident; a 560ms long press opens it too (Apple-style).
+   Buttons inside a message (Play, Copy) keep their own jobs and
+   never open it. The click fallback covers mouse clicks and any
+   tap the pointer stream misses; a 600ms duplicate guard stops
+   the pointer tap and its click from opening it twice. */
+var msgTap=null, msgTapTimer=null;
+function msgTapClear(){ msgTap=null; if(msgTapTimer){ clearTimeout(msgTapTimer); msgTapTimer=null; } }
+document.addEventListener('pointerdown',function(e){
+  if(msgMenu.classList.contains('show') && !msgMenu.contains(e.target) && !e.target.closest('.msg[data-msg-id]')) closeMsgMenu();
+  if(e.target.closest('#msgMenu,.sheet,#settingsView,#sidebar')) { msgTapClear(); return; }
+  if(e.target.closest('button,a,input,textarea,select')) { msgTapClear(); return; }
+  var msgEl=e.target.closest('.msg[data-msg-id]'); if(!msgEl){ msgTapClear(); return; }
+  msgTap={x:e.clientX, y:e.clientY, el:msgEl};
+  msgTapTimer=setTimeout(function(){ if(msgTap){ var el2=msgTap.el; msgTapClear(); openMsgMenuFor(el2); } },560);
+},{passive:true});
+document.addEventListener('pointermove',function(e){
+  if(msgTap && (Math.abs(e.clientX-msgTap.x)>12 || Math.abs(e.clientY-msgTap.y)>12)) msgTapClear();
+},{passive:true});
+document.addEventListener('pointerup',function(e){
+  if(!msgTap) return;
+  var el2=msgTap.el; msgTapClear(); openMsgMenuFor(el2);
+},{passive:true});
+document.addEventListener('pointercancel',msgTapClear,{passive:true});
+/* Double-tap to like: a second tap on the same message within 350ms
+   likes it (or un-likes it) instead of opening the menu. The like
+   shows as a heart badge on the message, and it is recorded in
+   memory as a preference signal — sanitised like all memory — so
+   the agent knows what landed well and can use it later: liked
+   messages surface through the same keyword memory search that
+   runs before replies. */
+var LIKE_HEART='<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" style="width:12px;height:12px;display:block"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.65l-1-1.05a5.5 5.5 0 0 0-7.8 7.8l1.05 1.05L12 21.2l7.75-7.75 1.05-1.05a5.5 5.5 0 0 0 0-7.8z"/></svg>';
+function recordLike(chat, m){
+  var clean=memorySanitize(msgFullText(m)).slice(0,220);
+  if(!clean) return;
+  for(var i=0;i<MEM.length;i++) if(MEM[i].msgId==='like:'+m.id) return;
+  var _lst=memStamp(Date.now()); MEM.push({id:'mem'+(++uid), msgId:'like:'+m.id, chatId:chat.id, chatTitle:chat.title, agent:memAgentName(), agentId:memAgentId(), role:'user', text:'Liked message — a preference signal; the user double-tapped this: '+clean, keys:memoryKeywords(clean), ts:Date.now(), date:_lst.date, time:_lst.time, when:_lst.label});
+}
+function removeLike(chat, m){
+  for(var i=MEM.length-1;i>=0;i--) if(MEM[i].msgId==='like:'+m.id) MEM.splice(i,1);
+}
+var likeToastShown=false;
+function toggleLike(chat, m){
+  m.liked=!m.liked;
+  if(m.liked){ recordLike(chat, m); if(!likeToastShown){ likeToastShown=true; toast('Liked — saved as a preference signal'); } }
+  else removeLike(chat, m);
+  renderAll();
+}
+var lastTapLike={id:'', at:0}, likeDown=null;
+document.addEventListener('pointerdown',function(e){
+  likeDown={x:e.clientX, y:e.clientY};
+},{passive:true});
+document.addEventListener('pointerup',function(e){
+  if(!likeDown) return;
+  var moved=Math.abs(e.clientX-likeDown.x)>12 || Math.abs(e.clientY-likeDown.y)>12;
+  likeDown=null;
+  if(moved) return;
+  if(e.target.closest && e.target.closest('button,a,input,textarea,select,.sheet,#msgMenu')) return;
+  var msgEl=e.target.closest && e.target.closest('.msg[data-msg-id]'); if(!msgEl) return;
+  var id=msgEl.getAttribute('data-msg-id'), now=Date.now();
+  if(lastTapLike.id===id && now-lastTapLike.at<350){
+    lastTapLike={id:'', at:0};
+    var chat=chatById(msgEl.getAttribute('data-chat-id')), m=findMsg(chat,id);
+    if(m){ closeMsgMenu(); toggleLike(chat, m); }
+  } else {
+    lastTapLike={id:id, at:now};
+  }
+},{passive:true});
+document.addEventListener('click',function(e){
+  if(e.target.closest('button,a,input,textarea,select,.sheet,#msgMenu')) return;
+  if(window.__axoSuppressMsgClick && Date.now()<window.__axoSuppressMsgClick) return; /* a swipe-to-reply just ended here */
+  var msgEl=e.target.closest('.msg[data-msg-id]'); if(!msgEl) return;
+  if(lastMsgMenuOpen.key===msgEl.getAttribute('data-msg-id') && Date.now()-lastMsgMenuOpen.at<600) return;
+  openMsgMenuFor(msgEl);
+});
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape') closeMsgMenu();
+  /* Keyboard: Enter or Space on a focused message opens its menu,
+     so the menu is fully usable on desktop without a mouse. */
+  if((e.key==='Enter'||e.key===' ') && e.target && e.target.classList && e.target.classList.contains('msg')){
+    e.preventDefault(); openMsgMenuFor(e.target);
+  }
+});
+document.addEventListener('scroll',function(e){
+  if(msgMenu.classList.contains('show') && e.target && e.target.closest && e.target.closest('#chatScroll,.pane-scroll,.sb-scroll,.set-scroll')) closeMsgMenu();
+},true);
+/* =============== Swipe to reply ===============
+   Swiping a message RIGHT (mobile touch or desktop mouse drag) replies
+   to that exact message: the reply bar arms above the composer and the
+   message is quoted in the next send — the same Reply the message menu
+   offers. The message follows the finger a little as feedback, then
+   snaps back. Direction lock keeps vertical scrolling untouched, a
+   leftward swipe keeps its existing job (opening the chats menu in the
+   message area), and the click that ends the swipe is suppressed so
+   the message menu never pops open on top of the reply. */
+(function(){
+  var g=null;
+  function begin(t,x,y){
+    if(!t || !t.closest) { g=null; return; }
+    if(t.closest('#sidebar,#settingsView,.sheet,.menu-pop,#composerZone,header,button,a,input,textarea,select,.codeblock pre')) { g=null; return; }
+    var m=t.closest('.msg[data-msg-id]');
+    g=m? {el:m, x:x, y:y, locked:null, fired:false} : null;
+  }
+  function fireReply(){
+    if(!g) return;
+    var msgEl=g.el, id=msgEl.getAttribute('data-msg-id'), cid=msgEl.getAttribute('data-chat-id');
+    var chat=chatById(cid), m=findMsg(chat,id);
+    if(!m){ for(var i=0;i<chats.length && !m;i++){ var f=findMsg(chats[i],id); if(f){ chat=chats[i]; m=f; } } }
+    g.fired=true;
+    msgEl.style.transition='transform .22s cubic-bezier(.32,.72,0,1)'; msgEl.style.transform='';
+    msgTapClear(); closeMsgMenu();
+    window.__axoSuppressMsgClick=Date.now()+500;
+    if(!m || !chat) return;
+    state.replyTo={chatId:chat.id, msgId:m.id, role:m.role, text:msgFullText(m).replace(/\s+/g,' ').slice(0,140)};
+    renderReplyBar(); input.focus();
+    toast('Replying — type your answer');
+  }
+  function drag(x,y){
+    if(!g || g.fired) return;
+    var dx=x-g.x, dy=y-g.y;
+    if(!g.locked){
+      if(Math.abs(dy)>10 && Math.abs(dy)>=Math.abs(dx)) g.locked='v';
+      else if(dx>14 && Math.abs(dx)>Math.abs(dy)*1.5) g.locked='h';
+    }
+    if(g.locked==='h'){
+      msgTapClear();
+      g.el.style.transition='none';
+      g.el.style.transform='translateX('+Math.min(72, Math.max(0, dx*0.55))+'px)';
+      if(dx>=72) fireReply();
+    }
+  }
+  function finish(){
+    if(g && g.el && !g.fired){ g.el.style.transition='transform .22s cubic-bezier(.32,.72,0,1)'; g.el.style.transform=''; }
+    g=null;
+  }
+  document.addEventListener('touchstart',function(e){ var t=e.touches[0]; if(t) begin(e.target,t.clientX,t.clientY); },{passive:true});
+  document.addEventListener('touchmove',function(e){ var t=e.touches[0]; if(t) drag(t.clientX,t.clientY); },{passive:true});
+  document.addEventListener('touchend',finish,{passive:true});
+  document.addEventListener('touchcancel',finish,{passive:true});
+  document.addEventListener('pointerdown',function(e){ if(e.pointerType==='touch') return; begin(e.target,e.clientX,e.clientY); },{passive:true});
+  document.addEventListener('pointermove',function(e){ if(e.pointerType==='touch') return; if(e.buttons) drag(e.clientX,e.clientY); },{passive:true});
+  document.addEventListener('pointerup',function(e){ if(e.pointerType==='touch') return; finish(); },{passive:true});
+  document.addEventListener('pointercancel',function(e){ if(e.pointerType==='touch') return; finish(); },{passive:true});
+})();
+/* =============== AI reactions ===============
+   Instructions for the AI (built in): you may react to a user message
+   with ONE emoji from the reaction set below — casually, sparingly,
+   and only when it genuinely fits that message's mood (a joke, good
+   news, affection, sadness, a celebration). Never react to plain
+   questions, technical or study messages, commands, or link/file-only
+   messages, and never react to every message or twice in a row in the
+   same chat. The reaction appears as a small badge on the user's own
+   message. When a provider model is connected, the same instructions
+   are sent with the request and its chosen reaction is honoured.
+   The set is segmented by grapheme so the ZWJ emojis stay intact. */
+var REACTION_SRC='🫠🥶🫶😂😶‍🌫️🥹😅😭✨🫴💋😘😳🙂‍↔️🔥💦🌝☠️😚🎀🎉🕺😮🤍😍🥰🥲🫢😑😐🤨🫡🤔🫣😶🫥😏🙄😮‍💨😪😔🤢🤮🤕😷😴🥵🥶🥸😎🧐🫤🙁💩💗😿🙀👿😈👾👻🙊🙉🙈';
+var REACTION_EMOJIS=(function(){
+  var fallback=['😂','🥰','🔥','🎉','🤔','😴','🫠','✨','🫶','🤍','😅','🥹','😔','🤕','☠️','😍','😘','😎','💗','🕺'];
+  try{
+    var seg=new Intl.Segmenter('en',{granularity:'grapheme'}), out=[], seen={};
+    Array.prototype.forEach.call(seg.segment(REACTION_SRC),function(s){ if(!seen[s.segment]){ seen[s.segment]=1; out.push(s.segment); } });
+    return out.length>20? out : fallback;
+  }catch(e){ return fallback; }
+})();
+var REACTION_SET={}; REACTION_EMOJIS.forEach(function(e){ REACTION_SET[e]=1; });
+var REACTION_INSTRUCTION='Reactions: you may react to the user\u2019s last message with ONE emoji from this set only: '+REACTION_SRC+'. Do it sparingly and casually — only when it genuinely fits the mood (a joke, good news, affection, sadness), never for plain questions and never on every message. To react, begin your reply with exactly "REACT: <emoji>" on its own line, then your reply. If no reaction fits, begin with "REACT: none".';
+function pickReaction(text){
+  var t=(text||'').trim(), low=t.toLowerCase();
+  if(!t || t.charAt(0)==='/' || t.length<2) return '';
+  var pick='';
+  if(/(haha|lol\b|lmao|rofl|funny|hilarious)/.test(low) || t.indexOf('😂')>=0) pick='😂';
+  else if(/(good night|sleepy|so tired|going to sleep|gn\b)/.test(low)) pick='😴';
+  else if(/(fever|sick|vomit|headache|not well|unwell|in pain)/.test(low)) pick='🤕';
+  else if(/(i am sad|i'm<script src="assets/app.js"></script>

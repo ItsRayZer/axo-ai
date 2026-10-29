@@ -96,12 +96,65 @@ function codeBoxHTML(m){
     +'</div></div>';
   return h;
 }
+/* =============== Safe markdown for AI replies ===============
+   Model prose arrives carrying markdown (**bold**, ## headings,
+   - lists) and used to be painted as raw escaped text, so the
+   markers showed literally in chat. This renderer is small and
+   SAFE: every line is HTML-escaped FIRST and only then are the
+   markdown tokens swapped for tags, so no raw HTML from a reply
+   can ever reach the DOM. Fenced code and inline code are lifted
+   out before inline formatting runs, so markers inside code stay
+   literal. The reply text is never altered or truncated — block
+   parsing only groups lines; every prose character survives. */
+function mdInline(s){
+  var codes=[];
+  s=s.replace(/`([^`\n]+)`/g,function(_,c){ codes.push(c); return '\u0001'+(codes.length-1)+'\u0001'; });
+  s=s.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+  s=s.replace(/__([^_]+)__/g,'<strong>$1</strong>');
+  s=s.replace(/~~([^~]+)~~/g,'<del>$1</del>');
+  s=s.replace(/\*([^*\n]+)\*/g,'<em>$1</em>');
+  s=s.replace(/(^|[^A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g,'$1<em>$2</em>');
+  s=s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+|mailto:[^)\s]+)\)/g,'<a class="md-link" href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  s=s.replace(/\u0001(\d+)\u0001/g,function(_,i){ return '<code class="md-code">'+codes[+i]+'</code>'; });
+  return s;
+}
+function renderMarkdown(text){
+  var src=String(text==null?'':text);
+  if(!src) return '';
+  var fences=[];
+  src=src.replace(/```[A-Za-z0-9_+#.-]*\n?([\s\S]*?)(?:```|$)/g,function(_,body){
+    fences.push('<pre class="md-pre"><code>'+esc(String(body).replace(/\n+$/,''))+'</code></pre>');
+    return '\n\n\u0002'+(fences.length-1)+'\u0002\n\n';
+  });
+  var lines=src.split('\n'), out=[], para=[], quote=[], list=null;
+  function flushPara(){ if(para.length){ out.push('<p class="md-p">'+para.map(function(l){ return mdInline(esc(l)); }).join('<br>')+'</p>'); para=[]; } }
+  function flushQuote(){ if(quote.length){ out.push('<blockquote class="md-quote">'+quote.map(function(l){ return mdInline(esc(l)); }).join('<br>')+'</blockquote>'); quote=[]; } }
+  function flushList(){ if(list){ out.push('<'+list.tag+' class="md-list">'+list.items.map(function(it){ return '<li>'+mdInline(esc(it))+'</li>'; }).join('')+'</'+list.tag+'>'); list=null; } }
+  function flushAll(){ flushPara(); flushQuote(); flushList(); }
+  lines.forEach(function(line){
+    var fm=line.match(/^\s*\u0002(\d+)\u0002\s*$/);
+    if(fm){ flushAll(); out.push(fences[+fm[1]]); return; }
+    if(!line.trim()){ flushAll(); return; }
+    var hm=line.match(/^(#{1,6})\s+(.*)$/);
+    if(hm){ flushAll(); var lvl=Math.min(3, hm[1].length); out.push('<div class="md-h md-h'+lvl+'">'+mdInline(esc(hm[2].replace(/\s+$/,'')))+'</div>'); return; }
+    if(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)){ flushAll(); out.push('<hr class="md-hr">'); return; }
+    var um=line.match(/^\s*[-*+]\s+(.*)$/);
+    if(um){ flushPara(); flushQuote(); if(!list || list.tag!=='ul'){ flushList(); list={tag:'ul', items:[]}; } list.items.push(um[1]); return; }
+    var om=line.match(/^\s*\d{1,3}[.)]\s+(.*)$/);
+    if(om){ flushPara(); flushQuote(); if(!list || list.tag!=='ol'){ flushList(); list={tag:'ol', items:[]}; } list.items.push(om[1]); return; }
+    var qm=line.match(/^\s*>\s?(.*)$/);
+    if(qm){ flushPara(); flushList(); quote.push(qm[1]); return; }
+    flushQuote(); flushList(); para.push(line.replace(/\s+$/,''));
+  });
+  flushAll();
+  return out.join('');
+}
 function msgHTML(m, chatId){
   var cid=chatId||state.currentId;
   var quote=m.replyToText? '<div class="reply-quote">'+esc(m.replyToText)+'</div>' : '';
   var att=msgAttHTML(m);
   if(m.role==='user'){ return '<div class="msg user" data-msg-id="'+m.id+'" data-chat-id="'+cid+'" tabindex="0" role="button" aria-label="Your message — open message menu">'+quote+att+(m.text?'<div class="bubble-user">'+esc(m.text)+'</div>':'')+(m.reaction?'<span class="msg-reaction" aria-label="AI reaction">'+esc(m.reaction)+'</span>':'')+(m.liked?'<span class="msg-like" aria-label="You liked this message">'+LIKE_HEART+'</span>':'')+'</div>'; }
-  var h='<div class="msg ai" data-msg-id="'+m.id+'" data-chat-id="'+cid+'" tabindex="0" role="button" aria-label="Assistant message — open message menu">'+quote+att+'<div class="body">'+esc(m.text)+'</div>';
+  var h='<div class="msg ai" data-msg-id="'+m.id+'" data-chat-id="'+cid+'" tabindex="0" role="button" aria-label="Assistant message — open message menu">'+quote+att+'<div class="body">'+renderMarkdown(m.text)+'</div>';
   if(m.limitCta || m.apiCta){
     /* Failure / shared-limit message actions — every one works:
        Retry re-runs the last request (relay detection resets, so
@@ -164,42 +217,67 @@ function findMsg(chat,id){ if(!chat) return null; for(var i=0;i<chat.messages.le
    likes / reactions and every other re-render replay nothing. */
 var seenMsgIds={}, msgAnimPrimed=false;
 function revealWordsIn(el){
-  /* Word-by-word: split the plain text into word spans (spaces and
+  /* Word-by-word: split each text node into word spans (spaces and
      line breaks stay as plain text nodes between them, so wrapping
      is untouched). Long replies group words per span so the node
      count stays bounded, and the stagger shrinks to fit the same
      ~420ms delay budget — the reveal is always FAST, never a slow
-     typewriter the reader has to wait on. */
-  if(!el || el.children.length) return;
-  var text=el.textContent;
-  if(!text || !text.trim()) return;
-  var tokens=text.split(/(\s+)/);
+     typewriter the reader has to wait on.
+     MISSING-SPACES BUG, fixed at the cause: the old version, when
+     grouping (groupSize>1 on long replies), silently DROPPED every
+     whitespace token and appended the group spans back-to-back;
+     .w-in spans are inline-block, so neighbouring groups rendered
+     glued together ("Here's what"+"I know" → "whatl knowabout",
+     "174 cm,"+"54 kg," → "174cm,54kg"). The relay text was always
+     intact — it was mangled here, between receiving and rendering.
+     Now whitespace is preserved EXACTLY: a space inside a group
+     stays verbatim in the span's text, and a space at a group
+     boundary becomes a real text node between the spans — the
+     concatenated result is character-for-character the input.
+     Rendered markdown bodies (which have element children) are
+     walked text-node by text-node, skipping code, so formatted
+     replies reveal the same way without breaking their markup. */
+  if(!el) return;
+  var walker=document.createTreeWalker(el, 4, {acceptNode:function(n){
+    if(!n.nodeValue || !n.nodeValue.trim()) return 2;
+    var p=n.parentNode;
+    if(p && (p.tagName==='CODE' || p.tagName==='PRE')) return 2;
+    return 1;
+  }});
+  var nodes=[];
+  while(walker.nextNode()) nodes.push(walker.currentNode);
+  if(!nodes.length) return;
   var wordCount=0;
-  tokens.forEach(function(t){ if(t && !/^\s+$/.test(t)) wordCount++; });
+  nodes.forEach(function(n){ n.nodeValue.split(/\s+/).forEach(function(w){ if(w) wordCount++; }); });
   if(wordCount<2) return;
   var groupSize=wordCount>220? Math.ceil(wordCount/220) : 1;
   var spanCount=Math.ceil(wordCount/groupSize);
   var stagger=Math.max(2, Math.min(14, Math.round(420/Math.max(1, spanCount-1))));
-  var frag=document.createDocumentFragment(), group=[], idx=0;
-  function flush(){
-    if(!group.length) return;
-    var s=document.createElement('span');
-    s.className='w-in'; s.textContent=group.join(' ');
-    s.style.animationDelay=(idx*stagger)+'ms'; idx++;
-    frag.appendChild(s); group=[];
-  }
-  tokens.forEach(function(tok){
-    if(!tok) return;
-    if(/^\s+$/.test(tok)){
-      if(tok.indexOf('\n')>=0){ flush(); frag.appendChild(document.createTextNode(tok)); }
-      else if(groupSize===1){ flush(); frag.appendChild(document.createTextNode(tok)); }
-      return;
+  var idx=0;
+  nodes.forEach(function(node){
+    var tokens=node.nodeValue.split(/(\s+)/);
+    var frag=document.createDocumentFragment(), group='', groupWords=0;
+    function flush(){
+      if(!groupWords) return;
+      var s=document.createElement('span');
+      s.className='w-in'; s.textContent=group;
+      s.style.animationDelay=(idx*stagger)+'ms'; idx++;
+      frag.appendChild(s); group=''; groupWords=0;
     }
-    group.push(tok);
-    if(group.length>=groupSize) flush();
+    tokens.forEach(function(tok){
+      if(!tok) return;
+      if(/^\s+$/.test(tok)){
+        if(tok.indexOf('\n')>=0 || groupWords>=groupSize){ flush(); frag.appendChild(document.createTextNode(tok)); }
+        else if(groupWords>0){ group+=tok; }
+        else { frag.appendChild(document.createTextNode(tok)); }
+        return;
+      }
+      if(groupWords>=groupSize) flush();
+      group+=tok; groupWords++;
+    });
+    flush();
+    if(node.parentNode) node.parentNode.replaceChild(frag, node);
   });
-  flush();
-  el.textContent=''; el.appendChild(frag);
 }
 function animateFreshMessages(scope, ids){
   if(!ids.length) return;
@@ -3014,10 +3092,11 @@ function activeWrap(){
 }
 function pushTyping(kind){
   setAgentEmotion('typing');
-  /* Status pill: the selected agent's OWN name + live verb, both
-     in the top head (circular avatar + pill) and in this in-chat
-     row (small circular avatar + pill). kind picks the verb:
-     thinking / working / coding / writing / searching / fixing. */
+  /* The ONE typing indicator: this in-chat row — the selected
+     agent's OWN name + live verb + animated dots (small circular
+     avatar + pill). kind picks the verb: thinking / working /
+     coding / writing / searching / fixing. The top head shows
+     only the agent's small name while busy (setAgentStatus). */
   if(typeof setAgentStatus==='function') setAgentStatus(kind||'thinking');
   var a=(typeof chatAgent==='function')? chatAgent() : null;
   var nm=a? a.name : 'Axo';
@@ -6200,7 +6279,11 @@ var AGENT_STATUS_CYCLES={
 function agentStatusVerb(kind){ return 'is '+(kind||'working'); }
 function agentStatusHTML(a, sz){
   if(!agentStatus.kind || !a) return '';
-  return '<div class="agent-status-pill" role="status" aria-live="polite"><span class="asp-name">'+esc(a.name)+'</span><span class="asp-verb" data-asp-verb>'+esc(agentStatusVerb(agentStatus.kind))+'<span class="asp-dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span></span></div>';
+  /* Top of chat while busy: ONLY the selected agent's own name in
+     small text — no avatar, no "is thinking" verb, no dots. The
+     single typing indicator lives in the chat flow (pushTyping's
+     in-chat row: "<Name> is thinking..." with animated dots). */
+  return '<div class="agent-status-name" role="status" aria-live="polite" data-asp-name>'+esc(a.name)+'</div>';
 }
 function refreshAgentStatusText(){
   var a=chatAgent(); if(!a || !agentStatus.kind) return;
@@ -6245,8 +6328,9 @@ function headHTMLForAgent(a){
      loop for as long as temp stays on. */
   var tempPeek=isCurrent && !!state.temp;
   /* Top avatar: circular avatar, and — while this agent is busy —
-     the status pill overlapping its lower edge (name on top, verb
-     below), exactly like the reference. Idle: avatar alone, clean. */
+     only the agent's name in small text below it (no verb, no
+     dots, no pill): the one typing indicator is the in-chat row.
+     Idle: avatar alone, clean. */
   return '<div class="chat-agent-head'+(busy?' is-busy':'')+(tempPeek?' is-temp':'')+'"><div class="ca-stack"><button class="ca-ava" data-agenthead="'+(a?a.id:'')+'" style="width:'+sz+'px;height:'+sz+'px" aria-label="Open '+(a?esc(a.name):'agent')+'\u2019s page — swipe left or right to switch agent"><span class="agent-ava-slot">'+avatarHTMLFor(a, busy? agentStatus.kind : undefined)+'</span>'+(tempPeek? tempPeekEyesHTML() : '')+'</button>'+(busy? agentStatusHTML(a, sz) : '')+'</div></div>';
 }
 /* ===== Custom avatar builder (Change Avatar editor) =====

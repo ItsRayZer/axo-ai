@@ -153,6 +153,60 @@
     <button class="send-btn" id="cvSend" aria-label="Send"></button>
   </div>
 </div>
+<!-- Full-size code / preview viewer: opened from a code box's Full
+     button (Code view) or Play button (Preview view). The code
+     scrolls inside this screen; the preview fills it. Back returns
+     to the chat exactly as it was. -->
+<div id="codeFullView" hidden>
+  <div class="cv-head">
+    <button class="cv-iconbtn" id="cfBack" aria-label="Back"></button>
+    <div class="cv-title" id="cfTitle">Code</div>
+    <button class="cv-iconbtn" id="cfCopy" aria-label="Copy code"></button>
+  </div>
+  <div class="cf-bar">
+    <span class="cf-tabs" role="tablist" aria-label="Code or preview">
+      <button id="cfTabCode" role="tab">Code</button>
+      <button id="cfTabPreview" role="tab">Preview</button>
+    </span>
+    <span class="cf-meta" id="cfMeta"></span>
+  </div>
+  <pre id="cfCode" tabindex="0" aria-label="Full code — scroll to read it all"></pre>
+  <iframe id="cfFrame" title="Code preview — full size" sandbox="allow-scripts" hidden></iframe>
+</div>
+<!-- Intro for NEW users — a premium Apple-like welcome OUTSIDE the
+     main app (it covers it completely until finished). It asks ONE
+     thing only, typed in slow letter by letter: what to call the
+     user. Then the default agent is ready (it runs on the app
+     relay — no key is embedded anywhere and none is needed), or
+     the user creates their own agent right here. Returning users
+     (intro done, a saved name, or any existing chat) never see it. -->
+<div id="introView" hidden role="dialog" aria-modal="true" aria-label="Welcome">
+  <div class="intro-inner">
+    <div class="intro-step" id="introStep1">
+      <div class="intro-ava" id="introAva" aria-hidden="true"></div>
+      <h1 class="intro-h" id="introQ1" aria-label="What will we call you?"></h1>
+      <p class="intro-sub" id="introSub1">One quick thing before we start.</p>
+      <div class="intro-field"><input id="introName" type="text" placeholder="Your name" autocomplete="name" enterkeyhint="continue" maxlength="40" aria-label="Your name"></div>
+      <button class="intro-primary" id="introNext" disabled>Continue</button>
+      <button class="intro-skip" id="introSkipName">Skip for now</button>
+    </div>
+    <div class="intro-step" id="introStep2" hidden>
+      <h1 class="intro-h" id="introQ2" aria-label="Meet your agent"></h1>
+      <p class="intro-sub" id="introSub2">Your agent is ready — no API key needed. It runs on the app relay.</p>
+      <button class="intro-agent" id="introDefaultAgent">
+        <span class="intro-agent-ava" id="introDefAva" aria-hidden="true"></span>
+        <span class="intro-agent-meta"><span class="intro-agent-name" id="introDefName">Mia</span><span class="intro-agent-sub">Default agent · Ready · Via the app relay</span></span>
+        <span class="intro-agent-go">Start chatting</span>
+      </button>
+      <div class="intro-or"><span></span>or<span></span></div>
+      <div class="intro-create">
+        <div class="intro-create-title">Create your own agent</div>
+        <div class="intro-field"><input id="introAgentName" type="text" placeholder="Name your agent" autocomplete="off" enterkeyhint="done" maxlength="40" aria-label="Name your agent"></div>
+        <button class="intro-primary" id="introCreate" disabled>Create my agent</button>
+      </div>
+    </div>
+  </div>
+</div>
 <!-- No accept filter and no count/size cap on the "anything" picker:
      links, images, files, video — anything, no limit. The image and
      video pickers are only conveniences that open the right gallery;
@@ -205,6 +259,7 @@ var I = {
   info: ic('<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/>'),
   copy: ic('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>','sm'),
   play: '<svg class="ic sm" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M7 4.5v15l13-7.5-13-7.5z"/></svg>',
+  expand: ic('<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>','sm'),
   upload: ic('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>'),
   download: ic('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>'),
   folder: ic('<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>'),
@@ -288,7 +343,7 @@ var state = {
   chatTheme:'#ffffff', chatThemeName:'White',
   memory:true, webSearch:true, deepThink:false, canvasMode:false,
   avatarSize:'medium', mode:'system',
-  style:'balanced', tempVal:0.7, autoPlay:true, agentMode:'Auto',
+  style:'balanced', tempVal:0.7, autoPlay:true, agentMode:'Auto', introDone:false, relayPick:'',
   provider:'', providerBase:'', apiKey:'', model:'', apiKeys:[], activeApiId:'', relayOn:true, relayAutoV3:false, mistralAgentId:'', skillsOn:{},
   apiHealth:'unset', apiDetail:'',
   usage:{requests:0, ok:0, failed:0, quota:0, tokIn:0, tokOut:0},
@@ -512,6 +567,11 @@ function keysFor(p) {
 }
 
 export default async function handler(req, res) {
+  // Every response from this function carries this header, so the
+  // app can positively tell a LIVE relay apart from a site where
+  // api/relay was never deployed (whose 404 page has neither the
+  // header nor a JSON body).
+  res.setHeader('X-Axo-Relay', '1');
   if (req.method !== 'POST') {
     res.status(405).json({ error: { message: 'POST only' } });
     return;
@@ -602,10 +662,25 @@ export default async function handler(req, res) {
     }
     res.status(last.status);
     res.setHeader('Content-Type', 'application/json');
-    if (last.json !== undefined) res.json(last.json);
-    else res.send(last.text);
+    if (last.json !== undefined) {
+      const j = last.json || {};
+      // Mark relayed provider errors as relay answers: a provider
+      // 404/429/501 passing through must never be mistaken by the
+      // app for "no relay deployed on this site".
+      if (last.status >= 400 && !j.relay) j.relay = true;
+      res.json(j);
+    } else {
+      // ALWAYS answer JSON: pass provider JSON through untouched,
+      // and wrap anything else (e.g. a provider HTML error page)
+      // as JSON, so the app can always tell this function answered.
+      let parsed = null;
+      try { parsed = JSON.parse(last.text); } catch (e) {}
+      if (parsed) res.json(parsed);
+      else res.json({ relay: true, error: { message: String(last.text || 'Provider error').slice(0, 300) } });
+    }
   } catch (e) {
-    res.status(502).json({ error: { message: 'Relay failed: ' + ((e && e.message) || 'network error') } });
+    res.setHeader('X-Axo-Relay', '1');
+    res.status(502).json({ relay: true, error: { message: 'Relay failed: ' + ((e && e.message) || 'network error') } });
   }
 }
 </script>

@@ -48,18 +48,72 @@ function canvasFeatureItems(m){
   else items.push('<li><strong>Clean UI:</strong> the generated styling is self-contained in the same file.</li>');
   return items.join('');
 }
+/* =============== Code boxes — code lives INSIDE a preview box ===============
+   AI code is never written out in full down the chat. It renders
+   in one boxed element: the header carries the language, the line
+   count and (for HTML) Code / Preview tabs; the code pane scrolls
+   INSIDE the box in both directions and holds the FULL code —
+   nothing is truncated, the box just contains it; the preview
+   pane runs the page inside the same box. Full opens the code or
+   the preview full size (#codeFullView); Play opens the preview
+   full size straight away. */
+function codeIsRunnable(code){
+  if(!code || !code.body) return false;
+  var l=String(code.lang||'').toLowerCase();
+  return l==='html' || l==='htm' || /<!doctype\s+html|<html\b/i.test(code.body);
+}
+function codeLineCount(body){ return String(body||'').split('\n').length; }
+function codeMsgById(id){
+  for(var i=0;i<chats.length;i++){ var m=findMsg(chats[i], id); if(m) return m; }
+  return null;
+}
+/* Preview iframes get their srcdoc from the message itself (never
+   from an HTML attribute, so generated markup can't break out of
+   the attribute), and only once their pane is actually shown. */
+function hydrateCodeFrames(scope){
+  if(!scope || !scope.querySelectorAll) return;
+  scope.querySelectorAll('iframe[data-cbframe]').forEach(function(fr){
+    if(fr.getAttribute('data-done')) return;
+    var pane=fr.closest('[data-cbpane]');
+    if(pane && pane.hidden) return;
+    var m=codeMsgById(fr.getAttribute('data-cbframe'));
+    if(m && m.code){ fr.srcdoc=m.code.body; fr.setAttribute('data-done','1'); }
+  });
+}
+function codeBoxHTML(m){
+  var runnable=codeIsRunnable(m.code);
+  var lines=codeLineCount(m.code.body);
+  var previewFirst=runnable && !!state.autoPlay;
+  var h='<div class="codeblock" data-codeview="'+(previewFirst?'preview':'code')+'">'
+    +'<div class="codeblock-head"><span>'+esc(m.code.lang||'code')+'</span><span class="cb-meta">'+lines+' line'+(lines===1?'':'s')+'</span><span class="sp"></span>'
+    +(runnable? '<span class="cb-tabs" role="tablist" aria-label="Code or preview"><button class="cb-tab'+(previewFirst?'':' sel')+'" data-cbtab="code" data-id="'+m.id+'" role="tab">Code</button><button class="cb-tab'+(previewFirst?' sel':'')+'" data-cbtab="preview" data-id="'+m.id+'" role="tab">Preview</button></span>' : '')
+    +'<button data-act="expandcode" data-id="'+m.id+'">'+I.expand+'Full</button>'
+    +'<button data-act="copy" data-id="'+m.id+'">'+I.copy+'Copy</button></div>'
+    +'<pre class="cb-pre" data-cbpane="code" tabindex="0" aria-label="Code — scroll inside to read it all"'+(previewFirst?' hidden':'')+'>'+esc(m.code.body)+'</pre>'
+    +(runnable? '<div data-cbpane="preview"'+(previewFirst?'':' hidden')+'><iframe class="cb-frame" data-cbframe="'+m.id+'" title="Code preview — scroll inside" sandbox="allow-scripts"></iframe></div>' : '')
+    +'<div class="cb-foot"><span>'+(runnable? 'Scroll inside to see it all' : 'Scroll inside to read the full code')+'</span><span class="sp"></span>'
+    +(runnable? '<button data-act="play" data-id="'+m.id+'">'+I.play+'Preview full size</button>' : '<button data-act="expandcode" data-id="'+m.id+'">'+I.expand+'View full size</button>')
+    +'</div></div>';
+  return h;
+}
 function msgHTML(m, chatId){
   var cid=chatId||state.currentId;
   var quote=m.replyToText? '<div class="reply-quote">'+esc(m.replyToText)+'</div>' : '';
   var att=msgAttHTML(m);
   if(m.role==='user'){ return '<div class="msg user" data-msg-id="'+m.id+'" data-chat-id="'+cid+'" tabindex="0" role="button" aria-label="Your message — open message menu">'+quote+att+(m.text?'<div class="bubble-user">'+esc(m.text)+'</div>':'')+(m.reaction?'<span class="msg-reaction" aria-label="AI reaction">'+esc(m.reaction)+'</span>':'')+(m.liked?'<span class="msg-like" aria-label="You liked this message">'+LIKE_HEART+'</span>':'')+'</div>'; }
   var h='<div class="msg ai" data-msg-id="'+m.id+'" data-chat-id="'+cid+'" tabindex="0" role="button" aria-label="Assistant message — open message menu">'+quote+att+'<div class="body">'+esc(m.text)+'</div>';
-  if(m.limitCta){
-    /* Shared-limit message actions: "Use my own API key" opens
-       Settings → APIs & Providers (the API key box); "Get a free
-       API key" opens the Free API keys document, whose rows open
-       each provider's own site. */
-    h+='<div class="limit-cta"><button type="button" class="btn-primary" data-act="usemykey" data-id="'+m.id+'">Use my own API key</button><button type="button" class="btn-ghost" data-act="getfreekey" data-id="'+m.id+'">Get a free API key</button></div>';
+  if(m.limitCta || m.apiCta){
+    /* Failure / shared-limit message actions — every one works:
+       Retry re-runs the last request (relay detection resets, so
+       a transient failure never sticks); Choose a different free
+       API opens the picker, where a shared relay provider or an
+       added key can be picked; Use my own API key opens the API
+       key box; Get a free API key opens the Free API keys page. */
+    h+='<div class="limit-cta">'
+      +'<button type="button" class="btn-primary" data-act="retrylast" data-id="'+m.id+'">Retry</button>'
+      +'<button type="button" class="btn-ghost" data-act="choosediff" data-id="'+m.id+'">Choose a different free API</button>'
+      +'<button type="button" class="btn-ghost" data-act="usemykey" data-id="'+m.id+'">Use my own API key</button>'
+      +'<button type="button" class="btn-ghost" data-act="getfreekey" data-id="'+m.id+'">Get a free API key</button></div>';
   }
   if(m.canvas){
     var cvDone=m.canvas.status==='done';
@@ -92,10 +146,7 @@ function msgHTML(m, chatId){
       +'</div>';
   }
   if(m.code){
-    h+='<div class="codeblock"><div class="codeblock-head"><span>'+esc(m.code.lang||'code')+'</span><span class="sp"></span>'
-      +'<button data-act="play" data-id="'+m.id+'">'+I.play+'Play</button>'
-      +'<button data-act="copy" data-id="'+m.id+'">'+I.copy+'Copy</button></div>'
-      +'<pre>'+esc(m.code.body)+'</pre></div>';
+    h+=codeBoxHTML(m);
   }
   if(m.reaction) h+='<span class="msg-reaction" aria-label="Your reaction">'+esc(m.reaction)+'</span>';
   h+='<div class="msg-actions"><button data-act="copyai" data-id="'+m.id+'" aria-label="Copy reply">'+I.copy+'</button></div>'+(m.liked?'<span class="msg-like" aria-label="You liked this message">'+LIKE_HEART+'</span>':'')+'</div>';
@@ -147,6 +198,7 @@ function renderMain(){
   if(sig!==lastMsgSig || switched){
     lastMsgSig=sig;
     w.innerHTML=c.messages.map(function(m){ return msgHTML(m, c.id); }).join('');
+    hydrateCodeFrames(w);
     if(switched || nearBottom) sc.scrollTop=sc.scrollHeight;
     else sc.scrollTop=Math.min(oldTop, Math.max(0, sc.scrollHeight - sc.clientHeight));
   }
@@ -246,6 +298,7 @@ function renderSplit(){
   $('#paneBottomTitle').textContent=bc?bc.title:'';
   $('#paneTopMsgs').innerHTML=tc?tc.messages.map(function(m){ return msgHTML(m, tc.id); }).join(''):'';
   $('#paneBottomMsgs').innerHTML=bc?bc.messages.map(function(m){ return msgHTML(m, bc.id); }).join(''):'';
+  hydrateCodeFrames($('#paneTopMsgs')); hydrateCodeFrames($('#paneBottomMsgs'));
   $('#paneTop').classList.toggle('active',state.splitActive==='top');
   $('#paneBottom').classList.toggle('active',state.splitActive==='bottom');
   ptEl.scrollTop = capT.near ? ptEl.scrollHeight : capT.top;
@@ -362,15 +415,61 @@ function sbOpen(){ return app.classList.contains('sb-open'); }
    feeds the agent head and Settings → APIs & Providers. */
 function apiIncomplete(){ return !apiEntries().length && !state.relayOn; }
 function apiWorking(){ return apiEntries().length>0 && state.apiHealth==='ok'; }
+/* Success / failure TIMESTAMPS: the "not working" state may only
+   show when the last real attempt actually failed AFTER the last
+   success. A model that answered — in chat, on Test, anywhere —
+   is working, and no stale error from an earlier attempt (or from
+   a test ping that used a different, stricter request) may hide
+   the type box or claim otherwise afterwards. */
+var apiOkAt=0, apiFailAt=0;
 function updateApiPill(){
   /* Kept name (callers everywhere): now drives the composer swap. */
   updateComposerMode();
 }
-function setApiHealth(h, detail){ state.apiHealth=h; state.apiDetail=detail||''; updateApiPill(); /* Keep the chat in sync the moment the setup changes (key saved / removed / reply health): re-render so the agent head appears or clears right away instead of waiting for the next unrelated render. */ if(typeof renderMain==='function' && state.view==='chat'){ try{ renderMain(); }catch(e){} } }
+function setApiHealth(h, detail){
+  if(h==='ok') apiOkAt=Date.now();
+  else if(h==='error' || h==='quota') apiFailAt=Date.now();
+  state.apiHealth=h; state.apiDetail=detail||''; updateApiPill(); /* Keep the chat in sync the moment the setup changes (key saved / removed / reply health): re-render so the agent head appears or clears right away instead of waiting for the next unrelated render. */ if(typeof renderMain==='function' && state.view==='chat'){ try{ renderMain(); }catch(e){} } }
 function apiFailureKind(status, payload){
   var t=''; try{ t=(typeof payload==='string'?payload:JSON.stringify(payload||'')).toLowerCase(); }catch(e){}
   if(status===429 || t.indexOf('quota')>=0 || t.indexOf('rate limit')>=0 || t.indexOf('rate_limit')>=0 || t.indexOf('insufficient')>=0 || t.indexOf('resource_exhausted')>=0 || t.indexOf('billing')>=0) return 'quota';
   return 'error';
+}
+/* Reply-text extraction, tolerant of every shape a WORKING model
+   actually returns — a reply in any of these shapes is a success,
+   never a failure:
+   - choices[0].message.content as a string OR as an array of
+     parts (OpenAI-style content parts),
+   - choices[0].text (completions-style),
+   - choices[0].message.reasoning_content when content is empty
+     (reasoning models that spent their budget thinking — the
+     model DID answer; treating it as "not working" was a false
+     error),
+   - output_text (Responses API shape),
+   - Gemini candidates (parts may be missing — guarded),
+   - Anthropic content blocks. */
+function extractReplyTextAny(j){
+  if(!j) return null;
+  try{
+    if(j.choices && j.choices[0]){
+      var ch=j.choices[0];
+      if(ch.message){
+        var c=ch.message.content;
+        if(typeof c==='string' && c) return c;
+        if(Array.isArray(c)){ var joined=c.map(function(b){ return b && (b.type==='text'||typeof b.text==='string')? (b.text||'') : ''; }).join(''); if(joined) return joined; }
+        if(ch.message.reasoning_content) return ch.message.reasoning_content;
+      }
+      if(typeof ch.text==='string' && ch.text) return ch.text;
+    }
+    if(typeof j.output_text==='string' && j.output_text) return j.output_text;
+    if(j.candidates && j.candidates[0] && j.candidates[0].content){
+      var parts=j.candidates[0].content.parts||[];
+      var g=parts.map(function(pt){ return (pt && pt.text)||''; }).join('');
+      if(g) return g;
+    }
+    if(Array.isArray(j.content)){ var a=j.content.map(function(b){ return b && b.type==='text'? (b.text||'') : ''; }).join(''); if(a) return a; }
+  }catch(e){}
+  return null;
 }
 /* After a Save in the + sheet or Settings: no key → show the pill;
    a first working save → hide it; changing key/provider/base/model
@@ -394,13 +493,13 @@ function apiSaved(prev, pastedKey){
    agent head, usage page). */
 var API_PROVIDERS={
   gemini:{name:'Google Gemini', type:'gemini', base:'https://generativelanguage.googleapis.com/v1beta', defModel:'gemini-2.5-flash'},
-  openrouter:{name:'OpenRouter', type:'openai', base:'https://openrouter.ai/api/v1', defModel:'anthropic/claude-sonnet-4.5'},
+  openrouter:{name:'OpenRouter', type:'openai', base:'https://openrouter.ai/api/v1', defModel:'meta-llama/llama-3.3-70b-instruct:free'},
   openai:{name:'OpenAI', type:'openai', base:'https://api.openai.com/v1', defModel:'gpt-4o-mini'},
   anthropic:{name:'Anthropic', type:'anthropic', base:'https://api.anthropic.com/v1', defModel:'claude-sonnet-4-5'},
   groq:{name:'Groq', type:'openai', base:'https://api.groq.com/openai/v1', defModel:'llama-3.3-70b-versatile'},
   xai:{name:'xAI', type:'openai', base:'https://api.x.ai/v1', defModel:'grok-4'},
   deepseek:{name:'DeepSeek', type:'openai', base:'https://api.deepseek.com/v1', defModel:'deepseek-chat'},
-  nvidia:{name:'NVIDIA', type:'openai', base:'https://integrate.api.nvidia.com/v1', defModel:'meta/llama-3.3-70b-instruct'},
+  nvidia:{name:'NVIDIA', type:'openai', base:'https://integrate.api.nvidia.com/v1', defModel:'meta/llama-3.1-70b-instruct'},
   mistral:{name:'Mistral', type:'openai', base:'https://api.mistral.ai/v1', defModel:'mistral-large-latest', agents:true},
   together:{name:'Together', type:'openai', base:'https://api.together.xyz/v1', defModel:'meta-llama/Llama-3.3-70B-Instruct-Turbo'},
   huggingface:{name:'Hugging Face', type:'openai', base:'https://router.huggingface.co/v1', defModel:'meta-llama/Llama-3.3-70B-Instruct'},
@@ -731,17 +830,24 @@ function setActiveApi(id){ if(apiEntryById(id)){ state.activeApiId=id; syncLegac
    response the app can see. Where no relay is deployed (like a
    plain static preview) the call simply fails and sending falls
    through to the user's own added keys, exactly as before. */
-/* Relay reachability, learned live: a relay call that fails at the
-   network level, or answers 404/405, or answers a non-JSON body,
-   proves there is no relay function on THIS origin (a plain static
-   preview serves the page but has no /api/relay — the deployed site
-   does). Once proven, relayGone skips every remaining relay entry
-   instantly instead of burning one slow doomed request per provider,
-   and the failure is reported as what it is. A real relay always
-   answers JSON (its own errors included), and a provider that is
-   merely not configured answers 501 — that is NOT relay-gone, the
-   next relay provider is still tried. */
-var relayGone=false;
+/* Relay reachability, learned live — and UNLEARNED just as fast:
+   the relay is only "gone" for the CURRENT round of attempts,
+   and every new send and every Test resets the verdict and
+   probes again, so one transient failure (a dropped mobile
+   connection, a cold start) can never poison the whole session.
+   A relay is proven gone only when a call returns NO JSON body
+   AND no X-Axo-Relay header — a static host answering its 404
+   page, or a plain network refusal. A real relay function always
+   answers JSON and sends that header, INCLUDING when it passes a
+   provider's error straight through: a provider 404 (a dead
+   model name) or 501 (that provider's variable is not set on the
+   server) means the relay IS there and working — only that one
+   provider/model failed, and the next one is tried. Mistaking a
+   relayed provider status for "no relay deployed" was the bug
+   that showed "Shared APIs not reachable" on the live deployed
+   site while its APIs were fine. */
+var relayGone=false, relayStrikes=0;
+function relayAnswered(res){ return !!(res && (res.j!=null || res.relayHdr)); }
 function relayEntries(){
   if(!state.relayOn) return [];
   /* Every free-key provider has a relay route: the server adds
@@ -762,6 +868,9 @@ function apiAttemptOrder(){
      attempted — an unrecognised key is never sent anywhere. */
   var l=apiEntries().filter(function(e){ return !!e.provider; });
   var a=activeApiEntry(), out=relayEntries();
+  /* A shared provider the user explicitly chose (in the API
+     picker: "Choose a different free API") goes first. */
+  if(state.relayPick) out.sort(function(x,y){ return (y.provider===state.relayPick?1:0)-(x.provider===state.relayPick?1:0); });
   if(a && a.provider) out.push(a);
   l.forEach(function(e){ if(!a || e.id!==a.id) out.push(e); });
   return out;
@@ -933,7 +1042,13 @@ function testApiEntry(entry){
    stops at the first API that answers; that answer flips the
    health to ok and the normal type box flows back by itself. */
 var apiTesting=false;
-function composerApiMode(){ return apiIncomplete() || state.apiHealth==='error' || state.apiHealth==='quota'; }
+function composerApiMode(){
+  if(apiIncomplete()) return true;
+  /* A success newer than the last failure wins: models that are
+     actually working never show the not-working box. */
+  if(apiOkAt && apiOkAt>=apiFailAt) return false;
+  return state.apiHealth==='error' || state.apiHealth==='quota';
+}
 function updateComposerMode(){
   var z=$('#composerZone'); if(!z) return;
   z.classList.toggle('api-mode', composerApiMode());
@@ -942,7 +1057,7 @@ function updateComposerMode(){
 function updateApiBoxLabel(){
   var t=$('#apiBoxTitle'), s=$('#apiBoxSub'); if(!t||!s) return;
   if(apiTesting){ t.textContent='Testing APIs…'; s.textContent='Trying the shared APIs and every added key'; return; }
-  if(relayGone && !apiEntries().length && state.relayOn){ t.textContent='Shared APIs not reachable here'; s.textContent='The relay runs on the deployed site — add your own key'; return; }
+  if(relayGone && !apiEntries().length && state.relayOn){ t.textContent='Shared APIs didn\u2019t answer'; s.textContent='Tap retry, or choose a different free API'; return; }
   if(state.apiHealth==='quota'){ t.textContent='API limit reached'; s.textContent='Lots of people are using the shared APIs — use your own key'; return; }
   if(apiEntries().length){ t.textContent='No API working'; s.textContent=apiEntryLabel(activeApiEntry())+' — tap to select or add'; return; }
   t.textContent='No API set up'; s.textContent='Select or add an API to start chatting';
@@ -952,23 +1067,29 @@ function pingRelay(entry){
   var body={provider:entry.provider, model:(p? p.defModel : entry.model), messages:[{role:'user', content:'Reply with OK'}], temperature:0, max_tokens:8};
   if(entry.provider==='mistral' && mistralAgentOn()) body.agent_id=state.mistralAgentId;
   return fetch('/api/relay',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})
-    .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j, status:r.status}; }).catch(function(){ return {ok:r.ok, j:null, status:r.status}; }); })
+    .then(function(r){ var hdr=r.headers.get('x-axo-relay'); return r.json().then(function(j){ return {ok:r.ok, j:j, status:r.status, relayHdr:hdr}; }).catch(function(){ return {ok:r.ok, j:null, status:r.status, relayHdr:hdr}; }); })
     .then(function(res){
-      if(res.j==null || res.status===404 || res.status===405){ relayGone=true; return {ok:false, gone:true, msg:'Relay not reachable from this preview'}; }
-      var out=null, j=res.j;
-      if(j){
-        if(j.choices && j.choices[0] && j.choices[0].message) out=j.choices[0].message.content;
-        else if(j.candidates && j.candidates[0] && j.candidates[0].content) out=j.candidates[0].content.parts.map(function(pt){ return pt.text||''; }).join('');
-        else if(Array.isArray(j.content)) out=j.content.map(function(b){ return b && b.type==='text'? (b.text||'') : ''; }).join('');
-      }
-      if(res.ok && out) return {ok:true};
+      /* Gone ONLY when nothing relay-like answered at all: no
+         JSON body and no relay header (a static host's 404 page,
+         or a refused connection). Any JSON — even a provider
+         error the relay passed through — proves the relay is
+         live; only this provider failed. */
+      if(!relayAnswered(res)){ relayGone=true; return {ok:false, gone:true, msg:'Relay didn\u2019t answer'}; }
+      relayGone=false; relayStrikes=0;
+      /* Any 2xx from the relay means the provider answered —
+         the content of a one-word ping is irrelevant (reasoning
+         models may return it empty), so res.ok alone is success. */
+      if(res.ok) return {ok:true};
       var kind=apiFailureKind(res.status, res.j);
       return {ok:false, kind:kind, msg: res.status===501? 'Not set on the server (HTTP 501)' : 'HTTP '+res.status};
     })
-    .catch(function(){ relayGone=true; return {ok:false, gone:true, msg:'Relay not reachable from this preview'}; });
+    .catch(function(){ relayStrikes++; if(relayStrikes>=2) relayGone=true; return {ok:false, gone:relayStrikes>=2, msg:'Relay didn\u2019t answer'}; });
 }
 function testAllApis(){
   if(apiTesting) return;
+  /* Every test re-probes the relay from scratch: a "gone"
+     verdict from an earlier round never carries over. */
+  relayGone=false; relayStrikes=0;
   var entries=apiAttemptOrder();
   if(!entries.length){ toast('Add an API key first'); openApiPicker(); return; }
   apiTesting=true;
@@ -983,7 +1104,7 @@ function testAllApis(){
   }
   function step(i){
     if(i>=entries.length){
-      finish(false, (relayGone && !apiEntries().length)? 'Shared APIs are not reachable from this preview' : (sawQuota? 'Every API is at its limit right now' : 'No API answered — select or add one'));
+      finish(false, (relayGone && !apiEntries().length)? 'The shared relay didn\u2019t answer — tap retry, or choose a different free API' : (sawQuota? 'Every API is at its limit right now' : 'No API answered — select or add one'));
       return;
     }
     var e=entries[i];
@@ -1002,13 +1123,47 @@ function testAllApis(){
   }
   step(0);
 }
+/* Choose a different free API (from the picker or an error
+   message): the picked shared provider is tried FIRST from now
+   on (state.relayPick drives apiAttemptOrder), the relay verdict
+   is reset, and the provider is pinged on the spot — a working
+   answer flips health to ok and the normal type box returns. If
+   the current chat is waiting on a failed request, it is retried
+   straight away with the new choice first. */
+function useRelayProvider(pid){
+  if(!pid) return;
+  state.relayPick=pid; state.relayOn=true; relayGone=false; relayStrikes=0;
+  if(typeof saveLocalSoon==='function') saveLocalSoon();
+  var f=freeApiFor(pid);
+  var name=f? f.site : pid;
+  var entry={id:'relay-'+pid, relay:true, provider:pid, base:'', model:(API_PROVIDERS[pid]||{}).defModel, models:[], key:'', status:'relay', detail:'App relay'};
+  toast('Trying '+name+' via the shared relay…');
+  pingRelay(entry).then(function(r){
+    if(r.ok){ setApiHealth('ok'); toast(name+' is working — via the shared relay'); updateComposerMode(); return; }
+    if(r.gone){ toast('The shared relay didn\u2019t answer — it may not be deployed on this site yet'); }
+    else toast(name+' didn\u2019t answer ('+(r.msg||'error')+') — pick another free API or retry');
+    updateComposerMode();
+  });
+}
 function apiPickRowsHTML(q){
   q=String(q||'').toLowerCase();
   function match(n){ return !q || String(n).toLowerCase().indexOf(q)>=0; }
   var out='';
   if(match('Shared free APIs app relay')){
-    var rSub= relayGone? 'Not reachable from this preview' : (state.relayOn? 'On — free for everyone via the server' : 'Off on this device');
+    var rSub= relayGone? 'Didn\u2019t answer last time — tap Test to re-check' : (state.relayOn? 'On — free for everyone via the server' : 'Off on this device');
     out+='<div class="api-item"><div class="api-row"><span class="api-dot '+(relayGone?'error':(state.relayOn?'ok':''))+'"></span><span class="api-meta"><span class="api-name">Shared free APIs (app relay)</span><span class="api-sub">'+esc(rSub)+'</span></span><button class="api-use" data-pickrelay="1">'+(state.relayOn?'Test':'Turn on')+'</button></div></div>';
+  }
+  /* Choose a DIFFERENT free API: every shared provider, one row
+     each — Use makes that provider the first one tried (and
+     re-tests it on the spot), instead of the automatic order. */
+  if(state.relayOn){
+    var provPick='';
+    FREE_APIS.forEach(function(f){
+      if(!match(f.site+' shared relay')) return;
+      var picked=state.relayPick===f.provider;
+      provPick+='<div class="api-item"><div class="api-row'+(picked?' active':'')+'"><span class="api-meta"><span class="api-name">'+esc(f.site)+'</span><span class="api-sub">Shared · via the app relay'+(picked?' · Chosen':'')+'</span></span>'+(picked? '<span class="api-active-tag">Chosen</span>' : '<button class="api-use" data-pickprov="'+f.provider+'">Use this API</button>')+'</div></div>';
+    });
+    if(provPick) out+='<p class="set-note" style="margin:14px 0 8px">Or choose a different free API — it is tried first:</p>'+provPick;
   }
   var a=activeApiEntry();
   apiEntries().forEach(function(e){
@@ -1049,6 +1204,10 @@ function openApiPicker(){
     list.querySelectorAll('[data-pickrelay]').forEach(function(b){ b.addEventListener('click',function(){
       if(!state.relayOn){ state.relayOn=true; state.relayAutoV3=true; saveLocalSoon(); }
       closeSheet(); testAllApis();
+    }); });
+    list.querySelectorAll('[data-pickprov]').forEach(function(b){ b.addEventListener('click',function(){
+      var pid=b.getAttribute('data-pickprov');
+      closeSheet(); useRelayProvider(pid);
     }); });
   }
   wireRows();
@@ -1335,7 +1494,7 @@ var DETAILS={
   appearance:{t:'Appearance & Liquid Glass', b:['The phone preview at the top shows the agent avatar, its name label and your bubbles exactly as they will look in chat.','Chat theme is a row of colour circles — White is the default — and it recolours your bubbles and accents across the app.','Avatar size is Small, Medium, Large, Extra large or Hidden, and it sets the agent head size in chat.','Mode is System, Light or Dark; System follows your device setting.','Red appears only for delete and error states.']},
   agent:{t:'Agent', b:['The Agent page is the main agent\u2019s own page: avatar with the pencil menu (Change avatar / Edit name), name, live status, and tabs for Today, Approvals history, Reminders + Daily, and the profile with its VIBE and the SOUL / MEMORY cards.','Sub-agents live under it: the Sub-agents page lists every agent, and the New sub-agent page creates one with its own name, avatar, instructions and memory.','Any agent can be made the main agent at any time from its menu on the Sub-agents page.']},
   agents:{t:'Agents', b:['Settings \u2192 Agents opens the Agent page — the main agent\u2019s page with Today, Approvals, Reminders + Daily, and its profile.','Under it, the Sub-agents page holds the full agents list: create as many agents as you like and chat with any of them.','Each agent has its own name, avatar, custom instructions and custom memory.','Any agent can be made the main agent at any time from its menu.','History and memory are shared by all agents by default; turn on individual history or memory for one agent in its Edit page and only that agent keeps its own.','Animation speed for the Agents UI lives on the Sub-agents page — drag the slider slowly and the live preview changes as you drag.']},
-  code:{t:'Code Mode & Play-First Preview', b:['Code replies arrive as artifacts with a Play button.','Play First runs the preview straight away; Code First shows the code first.']},
+  code:{t:'Code Mode & Play-First Preview', b:['Code replies arrive in a preview box, never written out in full down the chat: the full code sits inside the box and you scroll inside it to read all of it.','HTML code gets Code / Preview tabs in the box header — Preview runs the page inside the same box, and you scroll inside it too.','Full (or Preview full size) opens the code or the preview full size, on its own screen, where the code scrolls and the preview fills the screen.','Play First opens the box on Preview; Code First opens it on Code.']},
   skills:{t:'Skill Library (22 Built-In Skills)', b:['Each skill is one job: a document, a deck, a test pass, a theme.','Use /skill <name> to apply one skill to the next reply, or run a skill directly with its own command.','get-more-perspectives: an advisory panel (Operator, Skeptic, Visionary, Customer Advocate, Finance Mind) that commits to a vote before you decide. Custom panels persist for the session.','match-my-writing-style: drafts in your voice, learned only from your own writing in this app and samples you paste — never from incoming mail, and never a Gmail or Drive scan in this local app. Drafts only; it never sends.','focus-my-energy: matches tasks to your energy (sharp, steady, fried) — Deep Work, Steady Work, Low Drain — with one clear DO NOW. A hard deadline today overrides energy matching.','Disabled skills are skipped by the router.']},
   commands:{t:'Slash Commands', b:['Type / in the composer and the command box appears above it.','Tap a command to run it, or keep typing to filter the list.','/split opens the chosen chat beside your current one, top and bottom.']},
   safety:{t:'Privacy & Key Safety', b:['Your key is used only for calls to the provider you picked.','Never paste a key into a chat message — keys belong in the Model section of the + sheet.']}
@@ -1407,8 +1566,22 @@ document.addEventListener('click',function(e){
       var act=b.getAttribute('data-act');
       if(act==='copy' && m.code) copyText(m.code.body);
       else if(act==='copyai') copyText(m.text);
-      else if(act==='play' && m.code) openPreview(m.code.body);
+      else if(act==='play' && m.code) openCodeFull(m, 'preview');
+      else if(act==='expandcode' && m.code) openCodeFull(m, (b.closest('.codeblock') && b.closest('.codeblock').getAttribute('data-codeview')==='preview')? 'preview' : 'code');
       else if(act==='canvasopen' && m.code) openCanvasFull(m);
+      else if(act==='retrylast'){
+        /* Retry: drop this error message, RESET the relay
+           detection (a transient failure must never stick for
+           the whole session), and run the exact same request
+           again — the last user message is still in the chat. */
+        var rix=mChat.messages.indexOf(m); if(rix>=0) mChat.messages.splice(rix,1);
+        relayGone=false; relayStrikes=0;
+        setApiHealth('changed');
+        renderAll();
+        if(providerRouteOn()) callProvider(mChat, null);
+        else toast('Add an API key or turn on the app relay first');
+      }
+      else if(act==='choosediff') openApiPicker();
       else if(act==='usemykey') openSettings('apis');
       else if(act==='getfreekey') openSettings('freekeys');
       else if(act==='avconfirm' && m.avatarProposal && !m.avatarProposal.resolved) confirmAvatarProposal(mChat, m);
@@ -1423,10 +1596,62 @@ function copyText(t){
   else toast('Copy unavailable here');
 }
 function openPreview(code){
-  openSheet('<h3>Preview</h3><p class="sub">Running the code from this reply.</p><iframe id="previewFrame" title="Code preview" sandbox="allow-scripts"></iframe><button class="btn-ghost" id="pvClose">Close</button>');
-  $('#previewFrame').srcdoc=code;
-  $('#pvClose').addEventListener('click',closeSheet);
+  /* Play always opens the preview FULL SIZE now (the old half-
+     height sheet is gone): the full-size viewer in Preview view. */
+  openCodeFull({code:{lang:normalizeCodeLang('', code), body:String(code||'')}}, 'preview');
 }
+/* =============== Full-size code / preview viewer ===============
+   cfOpen mirrors the canvas rule: only a real user tap opens it,
+   and guardPreviewsClosed() keeps it hidden otherwise, so a
+   keyboard open/close can never resurrect it. */
+var cfMsg=null, cfOpen=false, cfView='code';
+function openCodeFull(m, view){
+  if(!m || !m.code) return;
+  cfMsg=m; cfOpen=true;
+  var runnable=codeIsRunnable(m.code);
+  $('#cfTitle').textContent=(m.code.lang||'code')+' · '+codeLineCount(m.code.body)+' lines';
+  $('#cfMeta').textContent=runnable? 'Preview fills the screen · code scrolls here' : 'Scroll to read the full code';
+  $('#cfCode').textContent=m.code.body;
+  $('#cfFrame').srcdoc='';
+  $('#cfTabPreview').style.display=runnable? '' : 'none';
+  $('#codeFullView').hidden=false;
+  setCfView(view==='preview' && runnable? 'preview' : 'code');
+}
+function setCfView(v){
+  cfView=v;
+  var runnable=cfMsg? codeIsRunnable(cfMsg.code) : false;
+  if(v==='preview' && !runnable) v='code';
+  cfView=v;
+  $('#cfCode').hidden=(v!=='code');
+  var fr=$('#cfFrame');
+  fr.hidden=(v!=='preview');
+  if(v==='preview' && cfMsg){ fr.srcdoc=cfMsg.code.body; }
+  $('#cfTabCode').classList.toggle('sel', v==='code');
+  $('#cfTabPreview').classList.toggle('sel', v==='preview');
+}
+function closeCodeFull(){
+  cfOpen=false; cfMsg=null;
+  $('#codeFullView').hidden=true;
+  $('#cfFrame').srcdoc='';
+}
+$('#cfBack').innerHTML=I.back;
+$('#cfCopy').innerHTML=I.copy;
+$('#cfBack').addEventListener('click',closeCodeFull);
+$('#cfCopy').addEventListener('click',function(){ if(cfMsg && cfMsg.code) copyText(cfMsg.code.body); });
+$('#cfTabCode').addEventListener('click',function(){ setCfView('code'); });
+$('#cfTabPreview').addEventListener('click',function(){ setCfView('preview'); });
+/* Code / Preview tabs INSIDE a chat code box: switch the pane in
+   place — the box keeps its size, the code pane scrolls inside
+   it, the preview pane runs the page inside it. */
+document.addEventListener('click',function(e){
+  var t=e.target.closest('[data-cbtab]'); if(!t) return;
+  var box=t.closest('.codeblock'); if(!box) return;
+  var want=t.getAttribute('data-cbtab');
+  box.setAttribute('data-codeview', want);
+  box.querySelectorAll('[data-cbtab]').forEach(function(x){ x.classList.toggle('sel', x.getAttribute('data-cbtab')===want); });
+  box.querySelectorAll('[data-cbpane]').forEach(function(p){ p.hidden=(p.getAttribute('data-cbpane')!==want); });
+  if(want==='preview') hydrateCodeFrames(box);
+});
 /* =============== Message menu (liquid glass) ===============
    Tapping (or long-pressing) ANY message — main chat or either
    split pane, user or assistant — opens one small minimal
@@ -2667,7 +2892,8 @@ var CODER_INSTRUCTION=[
   'For debugging, find the root cause from the latest code and error in the conversation. If the change is substantial, return the full corrected file or code block; if it is tiny, give the exact replacement and say precisely where it goes.',
   'If the user says “continue”, continue from the exact stopping point of the previous partial answer without restarting, repeating completed code or changing direction.',
   'Before answering, check identifiers, event handlers, syntax, opening/closing tags, empty states, edge cases and mobile layout. Do not claim that you ran, tested, deployed, opened or verified anything outside this conversation.',
-  'Keep prose outside the code concise: one short summary before the block and, only when useful, a few concrete notes after it. Do not ask questions that a sensible default can resolve; state any important assumption briefly.'
+  'Keep prose outside the code concise: one short summary before the block and, only when useful, a few concrete notes after it. Do not ask questions that a sensible default can resolve; state any important assumption briefly.',
+  'Never write code out in full in your prose: all code belongs inside the single fenced block, which the app renders in a scrollable preview box with Code / Preview tabs and a full-size view. The text around the block stays a short summary — no code snippets dumped into the chat text.'
 ].join('\n');
 var CANVAS_CODER_INSTRUCTION='This build will be placed into the existing Gptopen Canvas card and preview. Put one short sentence before the ```html block and nothing after the block. The single HTML file is the whole deliverable.';
 function lastUserText(chat){
@@ -2884,13 +3110,7 @@ function callProvider(chat, memHits, opts){
     }
     return {url:(entry.base||p.base).replace(/\/$/,'')+'/chat/completions', headers:reqHeaders, body:{model:model, messages:outMsgs, temperature:temperature, max_tokens:maxTok}};
   }
-  function extractReplyText(j){
-    if(!j) return null;
-    if(j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) return j.choices[0].message.content;
-    if(j.candidates && j.candidates[0] && j.candidates[0].content) return j.candidates[0].content.parts.map(function(pt){return pt.text||'';}).join('');
-    if(Array.isArray(j.content)) return j.content.map(function(b){ return b && b.type==='text'? (b.text||'') : ''; }).join('') || null;
-    return null;
-  }
+  function extractReplyText(j){ return extractReplyTextAny(j); }
   /* Automatic failover — exhaustive, in every way: try the active
      key first with its chosen model, then EVERY other model on
      that same key (its full provider model list, freshly fetched
@@ -2987,9 +3207,9 @@ function callProvider(chat, memHits, opts){
            /api/relay — the deployed site does): say exactly that
            instead of blaming the user's keys, with the same two
            working actions as the limit message. */
-        chat.messages.push({id:mid(), role:'ai', limitCta:true, text:'The shared free APIs run through this site\u2019s own server relay, and the relay is not reachable from this preview — it only runs on the deployed site, so the shared providers could not even be tried here. To chat in this preview, add your own API key: tap \u201cUse my own API key\u201d to open the key box, or \u201cGet a free API key\u201d for the sites that give one free.'});
+        chat.messages.push({id:mid(), role:'ai', apiCta:true, text:'The shared free APIs didn\u2019t answer — this site\u2019s server relay (api/relay) didn\u2019t respond at all, so the shared providers couldn\u2019t be tried. That happens when the relay isn\u2019t deployed on this site yet, or the connection dropped — it is not your keys. Tap Retry to try again, Choose a different free API, or use your own API key.'});
       } else {
-        chat.messages.push({id:mid(), role:'ai', text:'None of your APIs worked — every model on every added key was tried automatically ('+totalTried+' attempt'+(totalTried===1?'':'s')+' across '+attemptEntries.length+' API'+(attemptEntries.length===1?'':'s')+'), in every way, before showing this error. Add another key, or check the keys in Settings → APIs & Providers.'});
+        chat.messages.push({id:mid(), role:'ai', apiCta:true, text:'None of your APIs worked — every model on every added key was tried automatically ('+totalTried+' attempt'+(totalTried===1?'':'s')+' across '+attemptEntries.length+' API'+(attemptEntries.length===1?'':'s')+'), in every way, before showing this error. Tap Retry to try again, Choose a different free API, or check the keys in Settings → APIs & Providers.'});
       }
       renderAll(); return;
     }
@@ -3038,21 +3258,26 @@ function callProvider(chat, memHits, opts){
     totalTried++;
     if(!entry.relay) keyTried=true;
     postToProvider(msgs, entry, model)
-    .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j, status:r.status}; }).catch(function(){ return {ok:r.ok, j:null, status:r.status}; }); })
+    .then(function(r){ var hdr=r.headers.get('x-axo-relay'); return r.json().then(function(j){ return {ok:r.ok, j:j, status:r.status, relayHdr:hdr}; }).catch(function(){ return {ok:r.ok, j:null, status:r.status, relayHdr:hdr}; }); })
     .then(function(res){
       var out=extractReplyText(res.j);
-      if(entry.relay && !(out && res.ok) && (res.j==null || res.status===404 || res.status===405)){
-        /* No relay function answered on this origin (network-level
-           absence, a 404/405, or a non-JSON body — e.g. a static
-           preview serving its index page): mark the relay gone so
-           every remaining relay entry is skipped at once, and move
-           on to the user's own keys. */
+      if(entry.relay && !(out && res.ok) && !relayAnswered(res)){
+        /* No relay answered at all — no JSON body and no relay
+           header (a static host's error page, or nothing deployed
+           at /api/relay on this site): mark the relay gone FOR
+           THIS ROUND so the remaining relay entries are skipped
+           at once, and move on to the user's own keys. The next
+           send resets the verdict and probes again. A relayed
+           provider error (any JSON, any status — 404 for a dead
+           model, 501 for an unset variable) is NOT this: the
+           relay is alive, only that provider failed. */
         relayGone=true; relayGoneHit=true;
-        lastFailKind='error'; lastFailDetail='Relay not reachable from this preview';
+        lastFailKind='error'; lastFailDetail='Relay didn\u2019t answer';
         state.usage.failed++;
         attemptApi(apiIdx+1);
         return;
       }
+      if(entry.relay && relayAnswered(res)){ relayGone=false; relayStrikes=0; }
       if(!(out && res.ok)){
         var kind=apiFailureKind(res.status, res.j);
         lastFailKind=kind;
@@ -3069,7 +3294,11 @@ function callProvider(chat, memHits, opts){
          top pill hides while the agent head shows. */
       entry.model=model;
       entry.status='ok'; entry.detail='Working — '+model;
-      if(state.activeApiId!==entry.id){ state.activeApiId=entry.id; }
+      /* A relay entry is not one of the user's keys: it never
+         becomes the saved active API entry (that id would not
+         resolve to a real key later and could mask the key that
+         is actually set up). Own keys still adopt as active. */
+      if(!entry.relay && state.activeApiId!==entry.id){ state.activeApiId=entry.id; }
       syncLegacyApi();
       setApiHealth('ok');
       state.usage.ok++;
@@ -3121,10 +3350,13 @@ function callProvider(chat, memHits, opts){
       }
     })
     .catch(function(){
-      /* A relay call that rejects outright never reached a relay
-         function on this origin — the relay is gone here; skip the
-         rest of its entries and fall through to the user's keys. */
-      if(entry.relay){ relayGone=true; relayGoneHit=true; lastFailKind='error'; lastFailDetail='Relay not reachable from this preview'; state.usage.failed++; attemptApi(apiIdx+1); return; }
+      /* A relay call that rejects outright didn't reach a relay
+         function this time (connection dropped, or none deployed
+         on this site): skip the rest of the relay entries FOR
+         THIS ROUND and fall through to the user's keys. The
+         verdict is reset at the start of every send, so it can
+         never stick after a transient failure. */
+      if(entry.relay){ relayStrikes++; relayGone=true; relayGoneHit=true; lastFailKind='error'; lastFailDetail='Relay didn\u2019t answer'; state.usage.failed++; attemptApi(apiIdx+1); return; }
       /* Network / CORS on this model: keep trying — next model
          on the same key, then the next key and all its models. */
       lastFailKind='error'; lastFailDetail='Network or CORS · '+model;
@@ -3132,6 +3364,9 @@ function callProvider(chat, memHits, opts){
       attemptModel(apiIdx, entry, models, mIdx+1, didFreshFetch);
     });
   }
+  /* Every send starts with a FRESH relay verdict: "gone" is a
+     per-round finding, never a session sentence. */
+  relayGone=false; relayStrikes=0;
   attemptApi(0);
 }
 /* =============== Composer =============== */
@@ -3203,6 +3438,8 @@ function pickCmd(c){
 function guardPreviewsClosed(){
   var cv=$('#canvasView');
   if(cv && !cvOpen) cv.hidden=true;
+  var cfv=$('#codeFullView');
+  if(cfv && !(typeof cfOpen!=='undefined' && cfOpen)) cfv.hidden=true;
   if(sheet && !sheet.classList.contains('show') && sheetScrim) sheetScrim.classList.remove('show');
 }
 if(window.visualViewport){
@@ -4393,7 +4630,7 @@ function settingsIDE(){
        full Settings list, like every other Settings section. */
   var fromLibrary=state.settingsOrigin==='library';
   setView.innerHTML=setHead(fromLibrary?'Library':'IDE panel', null)+'<div class="set-scroll"><div class="set-inner">'
-    +(lastCode? '<div class="codeblock"><div class="codeblock-head"><span>'+esc(lastCode.code.lang||'code')+'</span><span class="sp"></span><button data-act="play" data-id="'+lastCode.id+'">'+I.play+'Play</button><button data-act="copy" data-id="'+lastCode.id+'">'+I.copy+'Copy</button></div><pre>'+esc(lastCode.code.body)+'</pre></div>' : '<p class="set-note">No code artifacts yet. Ask with /code in chat and the latest one lands here.</p>')
+    +(lastCode? '<div class="codeblock"><div class="codeblock-head"><span>'+esc(lastCode.code.lang||'code')+'</span><span class="cb-meta">'+codeLineCount(lastCode.code.body)+' lines</span><span class="sp"></span><button data-act="expandcode" data-id="'+lastCode.id+'">'+I.expand+'Full</button><button data-act="play" data-id="'+lastCode.id+'">'+I.play+'Play</button><button data-act="copy" data-id="'+lastCode.id+'">'+I.copy+'Copy</button></div><pre>'+esc(lastCode.code.body)+'</pre></div>' : '<p class="set-note">No code artifacts yet. Ask with /code in chat and the latest one lands here.</p>')
     +'</div></div>';
   if(fromLibrary){
     wireBack(function(){
@@ -6698,7 +6935,7 @@ function stripBlobUrl(k, v){ return (typeof v==='string' && v.indexOf('blob:')==
    out unsealed, and never dropped mid-migration either. */
 var vaultReady=false, vaultBroken=false, vaultPlain={}, lastMemSummarySig='';
 function localStateSubset(){
-  var keys=['currentId','theme','accent','accentName','chatTheme','chatThemeName','memory','webSearch','deepThink','canvasMode','avatarSize','mode','style','tempVal','autoPlay','agentMode','apiKeys','activeApiId','relayOn','relayAutoV3','mistralAgentId','skillsOn','usage','showArchived','panel','panelCustomised','voiceCard','voiceSnapshotShown','energyProfile','energyOffered','energyNotes','lastEnergy'];
+  var keys=['currentId','theme','accent','accentName','chatTheme','chatThemeName','memory','webSearch','deepThink','canvasMode','avatarSize','mode','style','tempVal','autoPlay','agentMode','introDone','relayPick','apiKeys','activeApiId','relayOn','relayAutoV3','mistralAgentId','skillsOn','usage','showArchived','panel','panelCustomised','voiceCard','voiceSnapshotShown','energyProfile','energyOffered','energyNotes','lastEnergy'];
   var o={};
   keys.forEach(function(k){ if(state[k]!==undefined) o[k]=state[k]; });
   if(o.apiKeys && typeof apiKeysForStore==='function') o.apiKeys=apiKeysForStore();
@@ -6819,6 +7056,108 @@ window.addEventListener('beforeunload', saveLocal);
 document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='hidden') saveLocal(); });
 saveLocal();
 
+/* =============== Intro — new users only, outside the main app ===============
+   Shown once, before the app, when (and only when) this is a
+   genuinely new user: intro not finished, no saved display name,
+   and no message in any chat yet. A returning user is silently
+   marked done and never sees it again. The intro asks ONE thing
+   only — "What will we call you?", typed in slow letter by
+   letter — then offers the default agent (ready, running on the
+   app relay: state.relayOn is on and NO key is embedded anywhere
+   or needed) or creating their own agent on the spot. The name
+   goes to the shared profile (saveDisplayName) and USER.md, the
+   same places every agent reads. */
+var introShown=false;
+function introNeeded(){
+  if(state.introDone) return false;
+  var hasMsgs=chats.some(function(c){ return c.messages && c.messages.length; });
+  if(knownUserName() || hasMsgs){ state.introDone=true; return false; }
+  return true;
+}
+/* Slow letter-by-letter: each letter lands with a soft rise and
+   unblur, ~62ms apart — deliberately unhurried, Apple-keynote
+   pace. Reduced motion shows the line at once. */
+function introTypeLetters(el, text, done){
+  if(!el) { if(done) done(); return; }
+  el.setAttribute('aria-label', text);
+  el.innerHTML='';
+  var reduced=window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var spans=[];
+  for(var i=0;i<text.length;i++){
+    var s=document.createElement('span');
+    s.className='il'+(text[i]===' '? ' sp' : '');
+    s.textContent=text[i]===' '? '\u00a0' : text[i];
+    el.appendChild(s); spans.push(s);
+  }
+  if(reduced){ spans.forEach(function(s){ s.classList.add('on'); }); if(done) done(); return; }
+  spans.forEach(function(s, ix){ setTimeout(function(){ s.classList.add('on'); }, 90+ix*62); });
+  if(done) setTimeout(done, 90+spans.length*62+120);
+}
+function finishIntro(agent){
+  state.introDone=true; saveLocalSoon();
+  var v=$('#introView');
+  if(agent){
+    var chat=activeTargetChat();
+    if(chat && !chat.messages.length){
+      var un=knownUserName();
+      pushAI(chat, 'Hi'+(un? ' '+un : '')+' \u2014 I\u2019m '+agent.name+', your agent. I\u2019m ready, and I run on the app relay, so no API key is needed to chat with me. What are we doing first?');
+    }
+  }
+  renderAll();
+  if(!v) return;
+  var reduced=window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  v.classList.add('intro-out');
+  setTimeout(function(){ v.hidden=true; v.classList.remove('intro-out'); }, reduced? 0 : 500);
+}
+function maybeShowIntro(){
+  if(introShown) return;
+  if(!introNeeded()) return;
+  introShown=true;
+  /* The default agent works through the app relay — that is its
+     power source for a new user, never an embedded key. */
+  state.relayOn=true;
+  var m=mainAgent();
+  $('#introAva').innerHTML='<span class="mini-ava" style="width:104px;height:104px;display:block">'+avatarHTMLFor(m,'idle')+'</span>';
+  $('#introDefAva').innerHTML='<span class="mini-ava" style="width:54px;height:54px;display:block">'+avatarHTMLFor(m,'idle')+'</span>';
+  $('#introDefName').textContent=m.name;
+  var v=$('#introView'); v.hidden=false;
+  introTypeLetters($('#introQ1'), 'What will we call you?', function(){ $('#introSub1').classList.add('on'); });
+  var nameIn=$('#introName'), nextBtn=$('#introNext');
+  nameIn.addEventListener('input',function(){ nextBtn.disabled=!nameIn.value.trim(); });
+  nameIn.addEventListener('keydown',function(e){ if(e.key==='Enter' && nameIn.value.trim()){ e.preventDefault(); nextBtn.click(); } });
+  function toStep2(){
+    var nm=nameIn.value.trim().slice(0,40);
+    if(nm){
+      saveDisplayName(nm);
+      try{ afAppendLearned('USER.md','Prefers to be called '+nm+'.'); }catch(e){}
+    }
+    saveLocalSoon();
+    $('#introStep1').hidden=true;
+    var s2=$('#introStep2'); s2.hidden=false;
+    introTypeLetters($('#introQ2'), nm? 'Nice to meet you, '+nm+'.' : 'Meet your agent.', function(){ $('#introSub2').classList.add('on'); });
+    $('#introSub2').classList.add('on');
+  }
+  nextBtn.addEventListener('click',toStep2);
+  $('#introSkipName').addEventListener('click',function(){ nameIn.value=''; toStep2(); });
+  $('#introDefaultAgent').addEventListener('click',function(){
+    setChatAgent(mainAgentId);
+    finishIntro(mainAgent());
+    toast('Chatting with '+mainAgent().name+' \u2014 via the app relay');
+  });
+  var agIn=$('#introAgentName'), createBtn=$('#introCreate');
+  agIn.addEventListener('input',function(){ createBtn.disabled=!agIn.value.trim(); });
+  agIn.addEventListener('keydown',function(e){ if(e.key==='Enter' && agIn.value.trim()){ e.preventDefault(); createBtn.click(); } });
+  createBtn.addEventListener('click',function(){
+    var nm=agIn.value.trim().slice(0,40); if(!nm) return;
+    if(findAgentByName(nm)){ toast('That name is taken \u2014 try another'); return; }
+    var a=createAgentRecord(nm,'','cue');
+    a.autoLearn=true; syncAgentFile(a);
+    setChatAgent(a.id);
+    finishIntro(a);
+    toast('Chatting with '+a.name+' \u2014 your new agent, via the app relay');
+  });
+}
+
 /* =============== Boot =============== */
 /* Memory covers ALL chats from the start: the messages already in
    every chat are saved to memory at boot (sanitised, like new ones). */
@@ -6829,4 +7168,5 @@ if(window.innerWidth>=820){ app.classList.remove('sb-closed'); app.classList.add
 else { sidebar.style.display='none'; sbWarm(); }
 updateApiPill();
 renderAll(); updateTargetLine(); autoGrow(); updateSend(); syncBnav();
+maybeShowIntro();
 

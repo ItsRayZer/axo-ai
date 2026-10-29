@@ -246,10 +246,36 @@ header.chat-head{position:relative; z-index:6; display:flex; align-items:center;
 .canvas-card.writing .canvas-status{animation:canvasPulse 1.15s ease-in-out infinite;}
 @keyframes canvasPulse{50%{opacity:.4}}
 @media (prefers-reduced-motion:reduce){.canvas-card.writing .canvas-status{animation:none}}
-.codeblock-head{display:flex; align-items:center; gap:8px; padding:8px 12px; background:var(--rowbg); font-size:12.5px; color:var(--muted); font-weight:600;}
+.codeblock-head{display:flex; align-items:center; gap:8px; padding:8px 12px; background:var(--rowbg); font-size:12.5px; color:var(--muted); font-weight:600; flex-wrap:wrap;}
 .codeblock-head .sp{flex:1;}
 .codeblock-head button{display:flex; align-items:center; gap:5px; font-size:12.5px; font-weight:600; color:var(--text); padding:5px 9px; border-radius:8px; background:var(--hover);}
-.codeblock pre{margin:0; padding:12px 14px; overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; min-width:0; max-width:100%;}
+/* Code NEVER dumps in full down the chat any more: the whole code
+   lives inside this one preview box and the user scrolls INSIDE
+   the box (both directions) to read all of it. Nothing is cut —
+   the full code is in the <pre>, the box just contains it. Code /
+   Preview tabs switch inside the same box, and Full opens the
+   code or the preview full size (see #codeFullView). */
+.codeblock pre{margin:0; padding:12px 14px; max-height:min(320px,44dvh); overflow:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; touch-action:pan-x pan-y; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13px; line-height:1.5; white-space:pre; overflow-wrap:normal; word-break:normal; min-width:0; max-width:100%;}
+.cb-meta{font-weight:500; color:var(--muted); white-space:nowrap;}
+.cb-tabs{display:inline-flex; gap:2px; background:var(--input); border:1px solid var(--border); border-radius:999px; padding:2px;}
+.codeblock-head .cb-tab{background:transparent; color:var(--muted); border-radius:999px; padding:5px 12px;}
+.codeblock-head .cb-tab.sel{background:var(--surface2); color:var(--text);}
+.cb-frame{display:block; width:100%; height:min(320px,44dvh); border:0; border-top:1px solid var(--border); background:#fff;}
+.cb-foot{display:flex; align-items:center; gap:8px; padding:7px 12px; border-top:1px solid var(--border); font-size:12px; color:var(--muted);}
+.cb-foot .sp{flex:1;}
+.cb-foot button{display:flex; align-items:center; gap:5px; font-size:12.5px; font-weight:600; color:var(--text); padding:5px 9px; border-radius:8px; background:var(--hover);}
+/* ---------- Full-size code / preview viewer ---------- */
+#codeFullView{position:fixed; inset:0; z-index:1180; background:var(--bg); display:flex; flex-direction:column;}
+#codeFullView[hidden]{display:none;}
+.cf-bar{display:flex; align-items:center; gap:8px; padding:2px 14px 10px;}
+.cf-tabs{display:inline-flex; gap:2px; background:var(--input); border:1px solid var(--border); border-radius:999px; padding:2px;}
+.cf-tabs button{padding:7px 16px; border-radius:999px; font-size:14px; font-weight:600; color:var(--muted);}
+.cf-tabs button.sel{background:var(--surface2); color:var(--text);}
+.cf-meta{margin-left:auto; font-size:12.5px; color:var(--muted); font-weight:500; white-space:nowrap;}
+#cfCode{flex:1; min-height:0; margin:0; padding:14px 16px calc(14px + env(safe-area-inset-bottom)); overflow:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; touch-action:pan-x pan-y; background:var(--surface); color:var(--text); font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13px; line-height:1.55; white-space:pre;}
+#cfCode[hidden]{display:none;}
+#cfFrame{flex:1; min-height:0; width:100%; border:0; background:#fff;}
+#cfFrame[hidden]{display:none;}
 .welcome{max-width:760px; margin:6vh auto 0; padding:0 22px; text-align:left;}
 .welcome h1{font-size:27px; font-weight:700; letter-spacing:-.02em; margin:0 0 6px;}
 .welcome p{color:var(--muted); margin:0 0 20px; font-size:15.5px;}
@@ -1095,6 +1121,57 @@ button.ca-ava{border:0; padding:0; cursor:pointer; background:transparent;}
 @media (prefers-reduced-motion:reduce){
   .send-btn:not(:disabled){animation:none !important;}
   .ca-ava .av-svg,.chat-agent-head .av-svg{animation:none !important;}
+}
+
+/* ---------- Intro (new users only, OUTSIDE the main app) ----------
+   A premium Apple-like welcome that covers the whole screen before
+   the app: the default agent's avatar, one question typed in slow
+   letter by letter — "What will we call you?" — and nothing else.
+   The name is the only thing asked. Then the default agent (ready,
+   running on the app relay — no key is embedded anywhere and none
+   is needed) or creating your own agent. Black / white / grey with
+   liquid glass, matching the app; the flow out with a soft fade. */
+#introView{position:fixed; inset:0; z-index:2000; background:var(--bg); color:var(--text); overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; transition:opacity .48s var(--ease), transform .48s var(--ease);}
+#introView[hidden]{display:none;}
+#introView.intro-out{opacity:0; transform:scale(1.035); pointer-events:none;}
+.intro-inner{min-height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:calc(28px + env(safe-area-inset-top)) 24px calc(28px + env(safe-area-inset-bottom)); max-width:520px; margin:0 auto; width:100%;}
+.intro-step{width:100%; display:flex; flex-direction:column; align-items:center; text-align:center; animation:introRise .7s var(--ease);}
+.intro-step[hidden]{display:none;}
+@keyframes introRise{from{opacity:0; transform:translateY(16px);}to{opacity:1; transform:translateY(0);}}
+.intro-ava{width:104px; height:104px; margin-bottom:26px; filter:drop-shadow(0 18px 34px rgba(0,0,0,.35)); animation:introFloat 4.2s ease-in-out infinite;}
+.intro-ava .mini-ava,.intro-ava svg{width:104px !important; height:104px !important; display:block;}
+@keyframes introFloat{0%,100%{transform:translateY(0);}50%{transform:translateY(-7px);}}
+.intro-h{font-size:clamp(30px,8.4vw,40px); font-weight:700; letter-spacing:-.03em; line-height:1.14; margin:0 0 10px; min-height:1.14em;}
+.intro-h .il{display:inline-block; opacity:0; transform:translateY(.34em); filter:blur(5px); transition:opacity .55s ease, transform .55s var(--ease), filter .55s ease;}
+.intro-h .il.on{opacity:1; transform:translateY(0); filter:blur(0);}
+.intro-h .il.sp{width:.28em;}
+.intro-sub{color:var(--muted); font-size:16px; line-height:1.45; margin:0 0 28px; max-width:340px; opacity:0; transform:translateY(8px); transition:opacity .6s ease, transform .6s var(--ease);}
+.intro-sub.on{opacity:1; transform:translateY(0);}
+.intro-field{width:100%; max-width:360px; background:var(--glass); backdrop-filter:blur(22px) saturate(1.4); -webkit-backdrop-filter:blur(22px) saturate(1.4); border:1px solid var(--border2); border-radius:999px; padding:4px; box-shadow:inset 0 1px 0 rgba(255,255,255,.08), 0 14px 34px rgba(0,0,0,.22);}
+.intro-field input{width:100%; background:transparent; border:0; outline:none; text-align:center; color:var(--text); font-size:18px; font-weight:550; padding:13px 18px;}
+.intro-field input::placeholder{color:var(--muted);}
+.intro-primary{width:100%; max-width:360px; margin-top:14px; background:var(--accent); color:var(--accent-ink); font-size:16.5px; font-weight:650; padding:15px 20px; border-radius:999px; transition:opacity .25s, transform .15s;}
+.intro-primary:active{transform:scale(.985);}
+.intro-primary:disabled{opacity:.32;}
+.intro-skip{margin-top:16px; color:var(--muted); font-size:15px; font-weight:550; padding:8px 12px;}
+.intro-agent{display:flex; align-items:center; gap:14px; width:100%; max-width:400px; text-align:left; background:var(--glass); backdrop-filter:blur(22px) saturate(1.4); -webkit-backdrop-filter:blur(22px) saturate(1.4); border:1px solid var(--border2); border-radius:24px; padding:16px; color:var(--text); box-shadow:inset 0 1px 0 rgba(255,255,255,.08), 0 16px 38px rgba(0,0,0,.24);}
+.intro-agent:active{background:var(--hover);}
+.intro-agent-ava{width:54px; height:54px; flex:none; display:block;}
+.intro-agent-ava .mini-ava,.intro-agent-ava svg{width:54px !important; height:54px !important; display:block;}
+.intro-agent-meta{flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;}
+.intro-agent-name{font-size:17.5px; font-weight:650; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.intro-agent-sub{font-size:13px; color:var(--muted); line-height:1.35;}
+.intro-agent-go{flex:none; background:var(--accent); color:var(--accent-ink); font-size:13.5px; font-weight:650; padding:8px 13px; border-radius:999px; white-space:nowrap;}
+.intro-or{display:flex; align-items:center; gap:12px; width:100%; max-width:400px; margin:22px 0 18px; color:var(--muted); font-size:13px; font-weight:600;}
+.intro-or span{flex:1; height:1px; background:var(--border2);}
+.intro-create{width:100%; max-width:400px; display:flex; flex-direction:column; align-items:center;}
+.intro-create-title{font-size:18px; font-weight:650; letter-spacing:-.01em; margin-bottom:12px;}
+.intro-create .intro-field,.intro-create .intro-primary{max-width:400px;}
+@media (prefers-reduced-motion:reduce){
+  .intro-ava,.intro-step{animation:none;}
+  .intro-h .il{transition:none;}
+  .intro-sub{transition:none;}
+  #introView{transition:none;}
 }
 
 .hidden{display:none !important;}

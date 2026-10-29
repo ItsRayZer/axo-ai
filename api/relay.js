@@ -1,56 +1,74 @@
 // api/relay.js — Vercel serverless function. This file runs ONLY
 // on the server; it is not part of the web page and the browser
-// never sees it or the keys.
+// never sees it or the keys. It powers the ONE built-in model the
+// app shows — the Gptopen Model.
 //
 // The keys live in Vercel environment variables, server-side.
-// Every provider is read under the variable name it was added
-// with, and the standard name works as a fallback too — no
-// renaming is ever needed:
+// The Gptopen Model has exactly TWO default providers — Groq
+// and OpenRouter. Every other default provider was removed by
+// the owner's decision. Set both in Vercel -> Project ->
+// Settings -> Environment Variables (Production), then redeploy:
 //   GROQ_API_KEY          — Groq          (api.groq.com/openai/v1)
 //   OPENROUTER_API_KEY    — OpenRouter    (openrouter.ai/api/v1)
-//   GEMINI_API_KEY        — Google Gemini (fallback: GOOGLE_API_KEY)
-//   HUGGINGFACE_API_KEY   — Hugging Face  (fallback: HF_TOKEN)
-//   DEEPSEEK_API_KEY      — DeepSeek      (api.deepseek.com/v1)
-//   CHATGPT_API_KEY       — OpenAI        (fallback: OPENAI_API_KEY)
-//   MISTRAL_API_KEY       — Mistral       (api.mistral.ai/v1)
-//   MISTRAL2_API_KEY      — Mistral, second key: used automatically
-//                           when MISTRAL_API_KEY hits its limit (429)
-//   MISTRAL_AGENT_ID      — Mistral Agent id (ag_…) — optional; when
-//                           set, EVERY relay user's Mistral chats use
-//                           that saved agent automatically (Agents API)
-//   KIMI_API_KEY          — Kimi / Moonshot AI (fallback: MOONSHOT_API_KEY)
-//   TOGETHER_API_KEY      — Together      (api.together.xyz/v1)
-//   COHERE_API_KEY        — Cohere        (api.cohere.com/compatibility/v1)
-//   GITHUB_TOKEN          — GitHub Models (fallback: GH_TOKEN)
-//   NVIDIA_API_KEY        — NVIDIA NIM    (integrate.api.nvidia.com/v1)
-//   ANTHROPIC_API_KEY     — Anthropic     (fallback: CLAUDE_API_KEY)
-//   XAI_API_KEY           — xAI           (api.x.ai/v1)
-// Set the ones you have in Vercel -> Project -> Settings ->
-// Environment Variables (Production), then redeploy. The app calls
-// POST /api/relay with { provider, model, messages } and NO key;
-// this function adds the matching key here, on the server, and
-// forwards the call. Gemini and Anthropic replies are converted
-// back to the OpenAI shape the app reads; every other reply
-// passes untouched. When a provider has more than one key set
-// (Mistral, or a name + its fallback holding different keys), a
-// 429 from one key tries the next key automatically.
+//
+// MODELS — live-verified through this relay on 2026-10-29 with
+// the app's real request shape (the previous defaults had been
+// retired by the providers, which is why the Gptopen Model
+// "didn't answer" even with working keys):
+// - Groq: openai/gpt-oss-120b and openai/gpt-oss-20b answer on
+//   the server key. llama-3.1-8b-instant, llama-3.3-70b-versatile,
+//   qwen/qwen3-32b, kimi-k2 and llama-4-scout all returned
+//   model_not_found; gemma2-9b-it is decommissioned.
+// - OpenRouter: every named :free model tried had been retired
+//   or paywalled (qwen3-next:free, deepseek-r1:free,
+//   deepseek-chat:free, qwen3-coder:free, kimi-k2:free,
+//   glm-4.5-air:free, gemma-3:free, llama-3.2/3.3:free — all
+//   404). What answers: 'openrouter/free', OpenRouter's own
+//   free-model router, and nvidia/nemotron-3.5-super-vl:free.
+//   RE-VERIFIED later on 2026-10-29: the router is a roulette —
+//   it landed on a content-safety classifier that answered
+//   "User Safety: safe" instead of chatting — so the DEFAULT is
+//   now the pinned, verified chat model
+//   nvidia/nemotron-3.5-super-vl:free, and 'openrouter/free' is
+//   only the fallback (the app rejects classifier-style
+//   non-answers and moves on).
+//
+// WHY IT COULD FAIL BEFORE, AND WHAT THIS VERSION DOES ABOUT EACH:
+// - Variable set for Preview only, or not set at all -> that
+//   provider answers 501 and the app moves on to the other one;
+//   set it for Production and redeploy (env vars never apply
+//   retroactively).
+// - A provider retired the model name the app asked for -> each
+//   provider carries server-side FALLBACK models: a model error
+//   (400/404 naming the model) retries the next model
+//   automatically, then the app also gets a final
+//   { provider: 'auto' } sweep (below) that ignores the
+//   requested model entirely.
+// - One key at its limit or rejected -> the NEXT key for that
+//   provider is tried (429 / 401 / 403 move to the next key).
+// - A provider hanging forever -> every upstream call has a 25s
+//   timeout, so a dead route fails fast and failover proceeds.
+// - POST /api/relay with { provider: 'auto', messages } -> the
+//   server itself walks Groq, then OpenRouter, with its default
+//   + fallback models, and returns the first real answer — the
+//   app's last-resort call.
+// - GET /api/relay answers { relay: true, ok: true } so the
+//   deployment can be checked in a browser.
+// Both providers speak the OpenAI chat shape, so replies pass
+// through untouched.
 
 const PROVIDERS = {
   groq:        { base: 'https://api.groq.com/openai/v1', envs: ['GROQ_API_KEY'] },
-  openrouter:  { base: 'https://openrouter.ai/api/v1', envs: ['OPENROUTER_API_KEY'] },
-  gemini:      { base: 'https://generativelanguage.googleapis.com/v1beta', envs: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'], gemini: true },
-  huggingface: { base: 'https://router.huggingface.co/v1', envs: ['HUGGINGFACE_API_KEY', 'HF_TOKEN'] },
-  deepseek:    { base: 'https://api.deepseek.com/v1', envs: ['DEEPSEEK_API_KEY'] },
-  openai:      { base: 'https://api.openai.com/v1', envs: ['CHATGPT_API_KEY', 'OPENAI_API_KEY'] },
-  mistral:     { base: 'https://api.mistral.ai/v1', envs: ['MISTRAL_API_KEY', 'MISTRAL2_API_KEY'] },
-  kimi:        { base: 'https://api.moonshot.ai/v1', envs: ['KIMI_API_KEY', 'MOONSHOT_API_KEY'] },
-  together:    { base: 'https://api.together.xyz/v1', envs: ['TOGETHER_API_KEY'] },
-  cohere:      { base: 'https://api.cohere.com/compatibility/v1', envs: ['COHERE_API_KEY'] },
-  github:      { base: 'https://models.github.ai/inference', envs: ['GITHUB_TOKEN', 'GH_TOKEN'] },
-  nvidia:      { base: 'https://integrate.api.nvidia.com/v1', envs: ['NVIDIA_API_KEY'] },
-  anthropic:   { base: 'https://api.anthropic.com/v1', envs: ['ANTHROPIC_API_KEY', 'CLAUDE_API_KEY'], anthropic: true },
-  xai:         { base: 'https://api.x.ai/v1', envs: ['XAI_API_KEY'] }
+  openrouter:  { base: 'https://openrouter.ai/api/v1', envs: ['OPENROUTER_API_KEY'] }
 };
+const DEFAULT_MODEL = {
+  groq: 'openai/gpt-oss-120b', openrouter: 'nvidia/nemotron-3.5-super-vl:free'
+};
+const FALLBACKS = {
+  groq: ['openai/gpt-oss-20b'],
+  openrouter: ['openrouter/free']
+};
+const AUTO_ORDER = ['groq', 'openrouter'];
 
 function keysFor(p) {
   const out = [];
@@ -60,6 +78,92 @@ function keysFor(p) {
   });
   return out;
 }
+async function fetchT(url, opts) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => { try { ctl.abort(); } catch (e) {} }, 25000);
+  try { return await fetch(url, Object.assign({}, opts, { signal: ctl.signal })); }
+  finally { clearTimeout(t); }
+}
+
+async function attempt(p, key, model, body) {
+  const messages = body.messages || [];
+  // Both providers speak the OpenAI chat shape — one code path.
+  // Groq hardening: Groq's endpoint is picky about repeated
+  // system messages, so all system context is merged into ONE
+  // system message at the head before the call (the app sends
+  // several: persona, memory, reaction rules).
+  let sendMessages = messages;
+  if (p === PROVIDERS.groq) {
+    const sys = [], rest = [];
+    messages.forEach((m) => { if (m && m.role === 'system') sys.push(String(m.content || '')); else rest.push(m); });
+    if (sys.length > 1) sendMessages = [{ role: 'system', content: sys.join('\n\n---\n\n') }].concat(rest);
+  }
+  const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key };
+  if (p === PROVIDERS.openrouter) { headers['HTTP-Referer'] = 'https://gptopen.vercel.app'; headers['X-Title'] = 'Gptopen'; }
+  const up = await fetchT(p.base + '/chat/completions', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ model, messages: sendMessages, temperature: body.temperature, max_tokens: body.max_tokens })
+  });
+  return { status: up.status, text: await up.text() };
+}
+
+function resultText(r) {
+  if (!r) return '';
+  if (r.text) return r.text;
+  try { return JSON.stringify(r.json || ''); } catch (e) { return ''; }
+}
+function isModelError(status, text) {
+  return (status === 400 || status === 404 || status === 422) && /model|not[ _-]?found|deprecated|does not exist/i.test(text || '');
+}
+function hasAnswer(r) {
+  if (!r || r.status < 200 || r.status >= 300) return false;
+  let j = r.json;
+  if (!j && r.text) { try { j = JSON.parse(r.text); } catch (e) {} }
+  if (!j) return false;
+  const ch = j.choices && j.choices[0];
+  return !!((ch && ch.message && (ch.message.content || ch.message.reasoning_content)) || (ch && ch.text) || j.output_text);
+}
+
+/* One provider, every way it can answer: each configured key,
+   and for each key the requested model, the provider default,
+   then its fallback models. A model error moves to the next
+   model; a limit / rejected key (429 / 401 / 403) moves to the
+   next key; any other error is returned as-is. */
+async function runProvider(name, body) {
+  const p = PROVIDERS[name];
+  if (!p) return null;
+  const keys = keysFor(p);
+  if (!keys.length) return { status: 501, json: { relay: true, error: { message: 'None of ' + p.envs.join(' / ') + ' is set on the server' } } };
+  const models = [], seen = {};
+  [body.model, DEFAULT_MODEL[name]].concat(FALLBACKS[name] || []).forEach((m) => { if (m && !seen[m]) { seen[m] = 1; models.push(m); } });
+  let last = null;
+  for (let ki = 0; ki < keys.length; ki++) {
+    for (let mi = 0; mi < models.length; mi++) {
+      last = await attempt(p, keys[ki], models[mi], body);
+      if (last.status >= 200 && last.status < 300) return last;
+      if (isModelError(last.status, resultText(last))) continue;
+      if (last.status === 429 || last.status === 401 || last.status === 403) break;
+      return last;
+    }
+  }
+  return last;
+}
+
+/* The auto sweep: walk the two default providers whose variable
+   is set (Groq, then OpenRouter) and return the first real
+   answer. */
+async function runAuto(body) {
+  let last = null;
+  for (let i = 0; i < AUTO_ORDER.length; i++) {
+    const name = AUTO_ORDER[i];
+    if (!keysFor(PROVIDERS[name]).length) continue;
+    const r = await runProvider(name, Object.assign({}, body, { model: '' }));
+    if (hasAnswer(r)) return r;
+    if (r) last = r;
+  }
+  return last || { status: 501, json: { relay: true, error: { message: 'No provider keys are set on the server' } } };
+}
 
 export default async function handler(req, res) {
   // Every response from this function carries this header, so the
@@ -67,93 +171,27 @@ export default async function handler(req, res) {
   // api/relay was never deployed (whose 404 page has neither the
   // header nor a JSON body).
   res.setHeader('X-Axo-Relay', '1');
+  if (req.method === 'GET') {
+    // Health check: open /api/relay in a browser to prove the
+    // function is deployed. (No key information is ever shown.)
+    res.status(200).json({ relay: true, ok: true });
+    return;
+  }
   if (req.method !== 'POST') {
-    res.status(405).json({ error: { message: 'POST only' } });
+    res.status(405).json({ relay: true, error: { message: 'POST only' } });
     return;
   }
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-    const p = PROVIDERS[body.provider];
-    if (!p) {
-      res.status(400).json({ error: { message: 'Unknown provider' } });
-      return;
-    }
-    const keys = keysFor(p);
-    if (!keys.length) {
-      res.status(501).json({ error: { message: 'None of ' + p.envs.join(' / ') + ' is set on the server' } });
-      return;
-    }
-    const messages = body.messages || [];
-
-    async function attempt(key) {
-      // Mistral Agent — automatic: the app's own agent_id wins,
-      // otherwise the server's MISTRAL_AGENT_ID is used, so every
-      // relay user gets the agent with nothing to set.
-      if (body.provider === 'mistral') {
-        const agentId = body.agent_id || process.env.MISTRAL_AGENT_ID || '';
-        if (/^ag_/.test(agentId)) {
-          const up = await fetch(p.base + '/agents/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-            body: JSON.stringify({ agent_id: agentId, messages })
-          });
-          return { status: up.status, text: await up.text() };
-        }
-      }
-      // Gemini speaks its own format: convert in, convert back out.
-      if (p.gemini) {
-        const systems = [], convo = [];
-        messages.forEach((m) => {
-          if (m.role === 'system') systems.push(m.content);
-          else convo.push({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: String(m.content || '') }] });
-        });
-        const gBody = { contents: convo, generationConfig: { temperature: body.temperature, maxOutputTokens: body.max_tokens } };
-        if (systems.length) gBody.systemInstruction = { parts: [{ text: systems.join('\n\n---\n\n') }] };
-        const up = await fetch(p.base + '/models/' + encodeURIComponent(body.model || 'gemini-2.5-flash') + ':generateContent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-          body: JSON.stringify(gBody)
-        });
-        const j = await up.json().catch(() => null);
-        if (!up.ok) return { status: up.status, json: j || { error: { message: 'Gemini error' } } };
-        const cand = j && j.candidates && j.candidates[0];
-        const text = cand && cand.content ? (cand.content.parts || []).map((pt) => pt.text || '').join('') : '';
-        return { status: 200, json: { choices: [{ message: { content: text }, finish_reason: cand && /MAX_TOKENS/i.test(cand.finishReason || '') ? 'length' : 'stop' }], usage: j && j.usageMetadata ? { prompt_tokens: j.usageMetadata.promptTokenCount || 0, completion_tokens: j.usageMetadata.candidatesTokenCount || 0 } : undefined } };
-      }
-      // Anthropic speaks its own format too: convert in and out.
-      if (p.anthropic) {
-        const systems = [], convo = [];
-        messages.forEach((m) => {
-          if (m.role === 'system') systems.push(m.content);
-          else convo.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || '') });
-        });
-        const aBody = { model: body.model || 'claude-sonnet-4-5', messages: convo, temperature: body.temperature, max_tokens: body.max_tokens || 2048 };
-        if (systems.length) aBody.system = systems.join('\n\n---\n\n');
-        const up = await fetch(p.base + '/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify(aBody)
-        });
-        const j = await up.json().catch(() => null);
-        if (!up.ok) return { status: up.status, json: j || { error: { message: 'Anthropic error' } } };
-        const text = (j && Array.isArray(j.content)) ? j.content.map((b) => (b && b.type === 'text') ? (b.text || '') : '').join('') : '';
-        return { status: 200, json: { choices: [{ message: { content: text }, finish_reason: j && j.stop_reason === 'max_tokens' ? 'length' : 'stop' }], usage: j && j.usage ? { prompt_tokens: j.usage.input_tokens || 0, completion_tokens: j.usage.output_tokens || 0 } : undefined } };
-      }
-      const up = await fetch(p.base + '/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-        body: JSON.stringify({ model: body.model, messages, temperature: body.temperature, max_tokens: body.max_tokens })
-      });
-      return { status: up.status, text: await up.text() };
-    }
-
-    // Try each configured key in order; a 429 (limit over) moves
-    // on to the next key — e.g. MISTRAL_API_KEY, then
-    // MISTRAL2_API_KEY — and only the last result is returned.
     let last = null;
-    for (let i = 0; i < keys.length; i++) {
-      last = await attempt(keys[i]);
-      if (last.status !== 429) break;
+    if (body.provider === 'auto') {
+      last = await runAuto(body);
+    } else {
+      if (!PROVIDERS[body.provider]) {
+        res.status(400).json({ relay: true, error: { message: 'Unknown provider' } });
+        return;
+      }
+      last = await runProvider(body.provider, body);
     }
     res.status(last.status);
     res.setHeader('Content-Type', 'application/json');

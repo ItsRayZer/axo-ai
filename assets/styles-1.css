@@ -9,6 +9,8 @@
   --peek:#161618; --peek-desk:#141416; --pill:#232326;
   --ease:cubic-bezier(.32,.72,0,1);
   --sb-ease:cubic-bezier(.22,1,.36,1); --sb-ms:360ms;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-display:-apple-system,BlinkMacSystemFont,"SF Pro Display","Inter Tight",Inter,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
 }
 html[data-theme="white"]{
   --bg:#ffffff; --surface:#f2f2f7; --surface2:#e5e5ea; --text:#111111; --text2:#333333;
@@ -20,7 +22,7 @@ html[data-theme="white"]{
 @media (min-width:820px){ :root{ --sidebar-w:284px; } }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
 html,body{height:100%; overscroll-behavior:none;}
-body{margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif; font-size:16px; overflow:hidden;}
+body{margin:0; background:var(--bg); color:var(--text); font-family:var(--font); font-size:16px; overflow:hidden; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; text-rendering:optimizeLegibility; font-optical-sizing:auto; letter-spacing:-.011em;}
 button{font:inherit; color:inherit; background:none; border:none; cursor:pointer; padding:0;}
 input,textarea,select{font:inherit; color:inherit;}
 svg{display:block;}
@@ -32,9 +34,11 @@ svg{display:block;}
 /* Sidebar sits UNDER the stage; the stage slides over it on close.
    §35 curved side-chat UI (original code, kept exactly): when the side
    menu is open the chat stage pushes right and curves into a card —
-   mobile: translateX(sidebar) scale(.965), 34px radius, #161618 peek;
-   desktop: 30px radius card with an 8px margin. Never flattened. */
-#sidebar{position:absolute; top:0; left:0; bottom:0; width:var(--sidebar-w); background:var(--bg); z-index:1; display:flex; flex-direction:column; transform:translate3d(-102%,0,0); backface-visibility:hidden; -webkit-backface-visibility:hidden;}
+   mobile: a STRAIGHT translateX(sidebar) slide (no scale, no radius
+   morph — the 34px curve is the card's fixed shape, applied whole in
+   the same frame the slide starts), #161618 peek; desktop: 30px
+   radius card with an 8px margin. Never flattened. */
+#sidebar{position:absolute; top:0; left:0; bottom:0; width:var(--sidebar-w); background:var(--bg); z-index:1; display:flex; flex-direction:column; transform:translate3d(-102%,0,0); backface-visibility:hidden; -webkit-backface-visibility:hidden; touch-action:pan-y;}
 #sidebar.noanim{transition:none !important;}
 #stage{position:absolute; inset:0; background:var(--bg); z-index:2; display:flex; flex-direction:column; backface-visibility:hidden; -webkit-backface-visibility:hidden; transform-origin:left top; overflow:hidden; box-shadow:-18px 0 44px rgba(0,0,0,.35);}
 #stage.noanim{transition:none !important;}
@@ -44,24 +48,15 @@ svg{display:block;}
    huge extra layer alive and re-raster it, which is part of why the
    menu felt stuck between runs. */
 #app.anim #sidebar,#app.anim #stage{will-change:transform;}
-/* While the menu is moving, the two full-screen backdrop blurs inside
-   the stage freeze (their gradient backgrounds stay, so the look is
-   unchanged) — re-blurring them on every frame of the slide was the
-   biggest single cause of dropped frames. They come back the moment
-   the run ends. */
-#app.anim .topblur,#app.anim .bottomblur,#app.dragging .topblur,#app.dragging .bottomblur{backdrop-filter:none; -webkit-backdrop-filter:none;}
-/* While the menu is moving on a phone, EVERY glass surface inside the
-   stage freezes too — composer, header pills, reply/cmd bars, link
-   cards — and the stage's big soft shadow is dropped for the run:
-   re-blurring and re-shadowing a full-screen scaling layer on every
-   frame was the rest of the dropped frames. Everything returns the
-   moment the run ends, so the settled look is unchanged. */
-@media (max-width:819px){
-  #app.anim #stage,#app.dragging #stage{box-shadow:none !important;}
-  #app.anim .composer,#app.anim .circle-btn,#app.anim .head-pill,#app.anim #replyBar,#app.anim #cmdBox,#app.anim .lp-pending,
-  #app.dragging .composer,#app.dragging .circle-btn,#app.dragging .head-pill,#app.dragging #replyBar,#app.dragging #cmdBox,#app.dragging .lp-pending{backdrop-filter:none !important; -webkit-backdrop-filter:none !important;}
-}
-#scrim{position:absolute; inset:0; background:transparent; opacity:0; pointer-events:none; z-index:3;}
+/* FLICKER FIX: the old "freeze" rules that killed backdrop-filter
+   on every glass surface (top/bottom blurs, composer, header pills)
+   and dropped the stage shadow for the length of a sidebar run are
+   GONE. Toggling backdrop-filter off at the start of the run and
+   back on at the end made the whole chat screen visibly pop/flash
+   twice on every open and close — that pop WAS the flicker users
+   saw. The slide is compositor transforms only; the glass simply
+   rides along and never changes state mid-run. */
+#scrim{position:absolute; inset:0; background:transparent; opacity:0; pointer-events:none; z-index:3; touch-action:pan-y;}
 @media (min-width:820px){
   #sidebar{transform:translateX(0); visibility:visible !important;}
   #stage{transform:translateX(var(--sidebar-w)); width:calc(100% - var(--sidebar-w) - 8px); margin:8px 8px 8px 0; height:calc(100% - 16px); border-radius:30px; background:var(--peek-desk); border:1px solid var(--border); box-shadow:-12px 0 40px rgba(0,0,0,.55);}
@@ -72,21 +67,30 @@ svg{display:block;}
   #scrim{display:none;}
 }
 @media (max-width:819px){
-  /* Mobile: ONLY transform + border-radius animate — the two properties
-     the compositor can run without repainting the whole stage every
-     frame. Background and shadow are set once by the sb-open class,
-     never transitioned, so the slide holds a steady 60fps flow. */
+  /* Mobile: ONLY transform animates — a pure compositor slide, so
+     the run never repaints or re-rasters the stage mid-flight and
+     holds a steady, buttery flow. The scale and the border-radius
+     transition are GONE: the old run shrank the stage to .965
+     while its radius morphed 0→34px, which read as a curvy,
+     not-smooth opening and forced a repaint every frame. The
+     34px curve is now the peeking card's FIXED shape — set whole,
+     inline, in the same frame the slide starts — so the stage
+     travels in one straight line, already curved, like the menu
+     itself. Background and shadow are likewise set once, inline,
+     never transitioned. */
   #app.anim #sidebar{transition:transform var(--sb-ms) var(--sb-ease);}
-  #app.anim #stage{transition:transform var(--sb-ms) var(--sb-ease), border-radius var(--sb-ms) var(--sb-ease);}
-  /* Curved peeking card: the stage keeps its inline translate/scale
-     (set in JS) and gains the original 34px curve here. */
-  /* Open-menu stage edge: the scale now anchors at the top-left, so
-     the top of the peeking stage stays flush with the top of the
-     screen — no inset notch at the top, no stray strip above the
-     stage at the top right, and no top border line. The curve and
-     the hairline live on the LEFT edge only (the edge facing the
-     menu); the top and right edges carry no border at all. */
-  #app.sb-open #stage{border-radius:34px 0 0 34px; background:var(--peek); border-left:1px solid var(--border2); box-shadow:-16px 0 48px rgba(0,0,0,.75);}
+  #app.anim #stage{transition:transform var(--sb-ms) var(--sb-ease);}
+  /* NO radius rule for .sb-open here any more: as a class rule it
+     landed a full frame BEFORE the inline transform target (the
+     sb-open class toggles synchronously, the transform a frame
+     later), so the still-fullscreen chat showed its corners CUT
+     at the curve for a frame on every open — the "menu looks cut
+     at the curve" glitch. The radius now lives ONLY inline, set
+     by setSidebar / the drag in the exact frame the transform
+     moves, and on close it stays on for the whole slide back and
+     is cleared only once the stage is fullscreen again. The curve
+     and the hairline live on the LEFT edge only (the edge facing
+     the menu); the top and right edges carry no border at all. */
   #app.sb-open #scrim{pointer-events:auto;}
 }
 
@@ -144,12 +148,17 @@ svg{display:block;}
 .avatar{width:38px;height:38px;border-radius:50%;background:var(--surface2);display:grid;place-items:center;font-weight:700;flex:none;}
 
 /* ---------- Chat header ---------- */
-/* Top bar — transparent GRADIENT blur, never a solid block: darkest
-   (most opaque) at the very top edge, fading lighter downward into
-   fully transparent, in both themes (it is built from var(--bg)).
-   The mask fades the backdrop blur itself out with the colour, so
-   there is no hard edge where the bar ends. */
-.topblur{position:absolute; top:0; left:0; right:0; height:calc(116px + env(safe-area-inset-top)); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); background:linear-gradient(to bottom, color-mix(in srgb, var(--bg) 94%, transparent) 0%, color-mix(in srgb, var(--bg) 78%, transparent) 26%, color-mix(in srgb, var(--bg) 46%, transparent) 55%, color-mix(in srgb, var(--bg) 16%, transparent) 82%, transparent 100%); -webkit-mask-image:linear-gradient(to bottom, #000 0%, #000 34%, transparent 100%); mask-image:linear-gradient(to bottom, #000 0%, #000 34%, transparent 100%); z-index:5; pointer-events:none;}
+/* Top avatar background — REMOVED FULLY: the old .topblur slab
+   (an absolutely-positioned layer over the top ~116px of the
+   stage, above the scrolling messages) is GONE — element deleted
+   from the DOM, rule deleted here, no replacement layer of any
+   kind: no background, no gradient, no backdrop filter, no mask
+   behind the header or the top avatar. The top avatar now lives
+   INSIDE the header's own layout (see #agentHeadBar), so the
+   header + avatar occupy real flow space above #chatScroll and
+   scrolled text can never slide under or be hidden behind the
+   avatar area; #chatScroll also stacks above the head bar, so
+   message text always paints over any avatar overflow. */
 header.chat-head{position:relative; z-index:6; display:flex; align-items:center; gap:10px; padding:calc(10px + env(safe-area-inset-top)) 12px 8px; min-height:60px;}
 .circle-btn{position:relative; width:44px; height:44px; border-radius:50%; background:var(--glass); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border:1px solid var(--border); display:grid; place-items:center; color:var(--text); flex:none;}
 .circle-btn .dot{position:absolute; top:2px; right:2px; width:9px; height:9px; border-radius:50%; background:var(--accent); border:2px solid var(--bg);}
@@ -159,7 +168,13 @@ header.chat-head{position:relative; z-index:6; display:flex; align-items:center;
 .msg-reaction{align-self:flex-end; margin:-9px 12px 0 0; background:var(--surface); border:1px solid var(--border2); border-radius:999px; padding:1px 7px; font-size:13px; line-height:1.55; position:relative; z-index:1; box-shadow:0 4px 12px rgba(0,0,0,.25);}
 .msg-like{align-self:flex-end; margin:-9px 12px 0 0; background:var(--surface); border:1px solid var(--border2); color:var(--accent); border-radius:999px; padding:4px 6px; position:relative; z-index:1; box-shadow:0 4px 12px rgba(0,0,0,.25); display:inline-flex;}
 .msg.ai .msg-like{align-self:flex-start; margin:-9px 0 0 12px;}
-.head-center{flex:1; display:flex; justify-content:center; min-width:0;}
+/* The top agent avatar sits at the EXACT centre of the header —
+   absolutely positioned on the header's own midpoint, not centred
+   in the leftover flex space between the (narrow) chats button and
+   the (wide) new-chat/dots pill, which pushed it visibly off-centre. */
+.head-center{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; z-index:1;}
+.head-center #agentHeadBar{pointer-events:auto;}
+header.chat-head .head-pill{margin-left:auto;}
 .model-pill{display:flex; align-items:center; gap:7px; background:var(--glass); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border:1px solid var(--border); border-radius:999px; padding:9px 14px; font-size:14.5px; font-weight:600; max-width:100%;}
 .model-pill .mdot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none;}
 .model-pill.on .mdot{background:var(--accent);}
@@ -179,7 +194,12 @@ header.chat-head{position:relative; z-index:6; display:flex; align-items:center;
 .head-pill .sep{width:1px; height:22px; background:var(--border2);}
 
 /* ---------- Messages ---------- */
-#chatScroll{flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; overscroll-behavior-y:contain; -webkit-overflow-scrolling:touch; touch-action:pan-y; padding:8px 0 10px; position:relative; z-index:1;}
+/* Messages stack ABOVE the top avatar area (z-index 8 over the
+   head bar's 6): the scroll box starts below the header in flow,
+   and even if the avatar's float motion or SVG overflow reaches
+   a few pixels past the header's bottom edge, the message text
+   paints over it — never under it, never hidden behind it. */
+#chatScroll{flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; overscroll-behavior-y:contain; -webkit-overflow-scrolling:touch; touch-action:pan-y; padding:10px 0 10px; scroll-padding-top:10px; position:relative; z-index:8;}
 .msg-wrap{max-width:760px; margin:0 auto; padding:0 16px; display:flex; flex-direction:column; gap:14px;}
 .msg{display:flex; flex-direction:column; min-width:0; max-width:100%; cursor:pointer; border-radius:18px;}
 .msg.user{align-items:flex-end;}
@@ -204,6 +224,25 @@ header.chat-head{position:relative; z-index:6; display:flex; align-items:center;
 .typing i:nth-child(2){animation-delay:.18s;} .typing i:nth-child(3){animation-delay:.36s;}
 @keyframes tp{0%,60%,100%{opacity:.3; transform:translateY(0);}30%{opacity:1; transform:translateY(-3px);}}
 @media (prefers-reduced-motion:reduce){.typing i{animation:none;}}
+/* ---------- New-message liquid reveal (fast, Apple-like) ----------
+   Only a message that has JUST arrived gets .msg-in (renderMain
+   tracks seen ids, so history and re-renders never replay it).
+   The message itself melts in — a small rise, a .985 scale and a
+   blur that sharpens — while its words land ONE BY ONE (.w-in
+   spans, staggered in JS with the whole cascade capped at ~420ms
+   of delay, so even a long reply finishes fast). The user bubble
+   also gets a single liquid-glass sheen sweep as it lands. Word
+   spans are inline-block so each word can lift and de-blur on its
+   own; the spaces between them stay plain text nodes, so wrapping
+   and line breaks are untouched. */
+.msg.msg-in{animation:msgLiquidIn .38s cubic-bezier(.22,1,.36,1) both;}
+@keyframes msgLiquidIn{from{opacity:0; transform:translateY(10px) scale(.985); filter:blur(6px);}to{opacity:1; transform:translateY(0) scale(1); filter:blur(0);}}
+.msg .w-in{display:inline-block; animation:wordLiquidIn .28s cubic-bezier(.22,1,.36,1) both;}
+@keyframes wordLiquidIn{from{opacity:0; transform:translateY(.26em) scale(.96); filter:blur(5px);}to{opacity:1; transform:translateY(0) scale(1); filter:blur(0);}}
+.msg.msg-in .bubble-user{position:relative; overflow:hidden;}
+.msg.msg-in .bubble-user::after{content:""; position:absolute; inset:0; border-radius:inherit; background:linear-gradient(115deg, transparent 32%, rgba(255,255,255,.14) 48%, transparent 64%); transform:translateX(-130%); animation:msgSheen .55s cubic-bezier(.22,1,.36,1) .05s both; pointer-events:none;}
+@keyframes msgSheen{from{transform:translateX(-130%);}to{transform:translateX(130%);}}
+@media (prefers-reduced-motion:reduce){.msg.msg-in,.msg .w-in,.msg.msg-in .bubble-user::after{animation:none;}}
 .codeblock{margin:10px 0; border:1px solid var(--border); border-radius:14px; overflow:hidden; background:var(--surface); min-width:0; max-width:100%;}
 .canvas-building{font-size:15.5px; margin:12px 0 2px;}
 .canvas-card{display:block; width:100%; text-align:left; background:var(--surface); border:1px solid var(--border); border-radius:22px; padding:18px; margin:10px 0; color:var(--text);}
@@ -429,6 +468,25 @@ html.kb-open .cv-composer{bottom:6px;}
 }
 #targetLine{display:none; font-size:11.5px; color:var(--muted); padding:0 8px 4px;}
 #targetLine.show{display:block;} #targetLine b{color:var(--accent); font-weight:650;}
+/* Composer model label + chat-screen model picker: a small tappable
+   label above the composer naming the provider and the model actually
+   in use; tapping it opens the picker sheet (ChatGPT-style rows,
+   current model checked). */
+#composerModelLabel{display:flex; align-items:center; gap:6px; max-width:100%; margin:0 2px 7px; padding:5px 10px; border-radius:999px; background:var(--rowbg); border:1px solid var(--border); color:var(--muted); font-size:12px; font-weight:600; text-align:left;}
+#composerModelLabel:active{background:var(--hover); color:var(--text);}
+#composerModelLabel .cml-text{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text2);}
+#composerModelLabel .cml-chev{flex:none; opacity:.7;}
+#composerZone.api-mode #composerModelLabel{display:none;}
+.mpick-providers{display:flex; gap:8px; margin:4px 0 12px; flex-wrap:wrap;}
+.mpick-prov{padding:8px 14px; border-radius:999px; background:var(--input); border:1px solid var(--border); font-size:14px; font-weight:600; color:var(--muted);}
+.mpick-prov.sel{background:var(--accent); color:var(--accent-ink); border-color:transparent;}
+.mpick-row{display:flex; align-items:center; gap:11px; width:100%; text-align:left; padding:12px 13px; border-radius:14px; background:var(--rowbg); border:1px solid var(--border); margin-bottom:8px; color:var(--text);}
+.mpick-row:active{background:var(--hover);}
+.mpick-row .mp-meta{flex:1; min-width:0; display:flex; flex-direction:column; gap:1px;}
+.mpick-row .mp-name{font-size:14.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.mpick-row .mp-sub{font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.mpick-row .mp-check{flex:none; width:22px; height:22px; border-radius:50%; background:var(--accent); color:var(--accent-ink); display:grid; place-items:center; font-size:13px; font-weight:800;}
+.mpick-row .mp-tag{flex:none; font-size:10.5px; font-weight:700; color:var(--muted); border:1px solid var(--border2); padding:2px 7px; border-radius:999px; text-transform:uppercase; letter-spacing:.04em;}
 
 /* ---------- Menus, sheets, dialogs ---------- */
 .menu-pop{position:fixed; z-index:1300; min-width:228px; background:var(--glass2); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px); border:1px solid var(--border2); border-radius:16px; padding:6px; box-shadow:0 18px 50px rgba(0,0,0,.4); display:none;}
@@ -553,6 +611,9 @@ html.kb-open .cv-composer{bottom:6px;}
 .set-row{display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:14px 15px; font-size:15.5px; font-weight:550; border-bottom:1px solid var(--border);}
 .set-row:last-child{border-bottom:none;}
 .set-row:active{background:var(--hover);}
+.set-row.danger{color:var(--danger);}
+.set-row.danger .ric{color:var(--danger);}
+.set-row.danger .val{color:var(--danger);}
 .set-row .val{margin-left:auto; color:var(--muted); font-size:14px; font-weight:400; display:flex; align-items:center; gap:7px;}
 .set-row .ric{color:var(--text2); display:grid; place-items:center; width:24px;}
 .set-search{display:flex; align-items:center; gap:8px; background:var(--glass); backdrop-filter:blur(16px); border:1px solid var(--border); border-radius:999px; padding:11px 15px; color:var(--muted); position:sticky; bottom:10px; margin-top:2px;}
@@ -963,8 +1024,26 @@ input[type="range"]{width:100%; accent-color:var(--accent);}
 :root{--agent-speed:1;}
 html[data-theme="white"] .sb-logo{filter:invert(1);}
 html[data-theme="white"] .lib-ico img{filter:invert(1);}
-#agentHeadBar{display:none; justify-content:center; position:relative; z-index:6; flex:none; padding:0; margin-top:-38px; background:transparent;}
-#agentHeadBar .chat-agent-head{padding:0 0 2px; background:transparent;}
+/* The bar lives INSIDE the chat header's centre slot (.head-center),
+   in normal flow — NO negative margin, NO overlap: the old
+   margin-top:-38px pulled the bar up over the header row and its
+   lower edge hung over the top of the message scroll area, so the
+   first scrolled lines slid under the avatar and were clipped /
+   hidden behind its area (the "top avatar background" bug the
+   user kept reporting, on top of the deleted .topblur slab that
+   used to paint solid page colour over exactly that zone). Now
+   the header grows to fit the avatar, the messages start strictly
+   below the header, and nothing of the avatar overlaps them. */
+#agentHeadBar{display:none; justify-content:center; position:relative; z-index:6; flex:none; padding:0; margin:0; background:transparent; pointer-events:none;}
+/* HIT-TEST: the bar sits in the header's centre slot between the
+   chats (sidebar) button and the Temporary / New chat + dots pill,
+   and stays click-through, so ONLY the avatar button itself
+   (.ca-ava) takes pointer events — its tap (open agent page) and
+   its swipe (switch agent) still work because those events target
+   the avatar and bubble to the bar's handlers as before. The
+   status pill and ghost heads were already pointer-events:none. */
+#agentHeadBar .chat-agent-head{padding:0 0 2px; background:transparent; pointer-events:none;}
+#agentHeadBar .ca-ava{pointer-events:auto;}
 /* Top avatar presence: kept small by default (Medium) and high at
    the top — no extra scale-up on the slot, so the rendered size is
    exactly the size map in chatAgentHeadHTML. The button around it
@@ -1039,7 +1118,7 @@ button.ca-ava{border:0; padding:0; cursor:pointer; background:transparent;}
 .agent-list-row .mini-ava{animation:none !important;}
 .msg{contain:layout style;}
 .chat-row-main{contain:layout style;}
-.topblur,.bottomblur{transform:translateZ(0);}
+.bottomblur{transform:translateZ(0);}
 /* Glow animation — a slow, premium pulse where a glow belongs:
    the big Avatar-page preview disc, the send button while it can
    send, and primary buttons. (Never behind the top chat avatar:
@@ -1107,9 +1186,9 @@ button.ca-ava{border:0; padding:0; cursor:pointer; background:transparent;}
       message's real height after its first paint, so the scroll
       position and scrollbar stay honest. */
 .msg{content-visibility:auto; contain-intrinsic-size:auto 132px;}
-.chat-row{content-visibility:auto; contain-intrinsic-size:auto 52px;}
+.chat-row{content-visibility:auto; contain-intrinsic-size:auto 58px;}
 @media (max-width:819px){
-  .topblur,.bottomblur{backdrop-filter:blur(10px) saturate(1.2); -webkit-backdrop-filter:blur(10px) saturate(1.2);}
+  .bottomblur{backdrop-filter:blur(10px) saturate(1.2); -webkit-backdrop-filter:blur(10px) saturate(1.2);}
   .composer,.circle-btn,.model-pill,.head-pill,.set-search,.av-seg{backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);}
   #cmdBox,.lp-pending,#replyBar,#toast,.lib-cell{backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);}
   .menu-pop,.cv-menu,.lib-menu{backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);}
@@ -1122,6 +1201,61 @@ button.ca-ava{border:0; padding:0; cursor:pointer; background:transparent;}
   .send-btn:not(:disabled){animation:none !important;}
   .ca-ava .av-svg,.chat-agent-head .av-svg{animation:none !important;}
 }
+
+/* ---------- Agent status pill + overlapping agent swipe ----------
+   When the selected agent is busy, its circular avatar at the top
+   of the chat (and the in-chat typing row) carries a status pill
+   exactly like the reference: the round avatar on top, a wide dark
+   liquid-glass pill overlapping its lower edge, the agent's OWN
+   name in bold on the first line (Axo by default, Nova, or whatever
+   the user renamed / selected — never hard-coded) and the live
+   verb underneath — "is thinking", "is working", "is coding",
+   "is writing", "is searching", "is fixing" — with animated dots.
+   The pill only exists while busy; it flows in/out Apple-style.
+   Swipe switching is OVERLAPPING, not sequential: the incoming
+   agent slides in while the outgoing ghost is still sliding out,
+   both visible at once, cross-fading over the same space. */
+.ca-stack{position:relative; display:flex; flex-direction:column; align-items:center;}
+.ca-stack .ca-ava .agent-ava-slot img{border-radius:50%;}
+.chat-agent-head.is-busy .ca-ava{animation:caFloat 2.2s ease-in-out infinite, aspRing 1.6s ease-in-out infinite;}
+@keyframes aspRing{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb, var(--text) 0%, transparent), 0 8px 22px rgba(0,0,0,.22);}50%{box-shadow:0 0 0 5px color-mix(in srgb, var(--text) 14%, transparent), 0 8px 22px rgba(0,0,0,.22);}}
+.agent-status-pill{position:relative; z-index:2; margin-top:-20px; min-width:148px; max-width:min(240px,72vw); padding:22px 20px 11px; border-radius:30px; background:var(--surface2); background:color-mix(in srgb, var(--surface2) 88%, transparent); -webkit-backdrop-filter:blur(18px) saturate(1.4); backdrop-filter:blur(18px) saturate(1.4); border:1px solid var(--border2); box-shadow:0 14px 34px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.09); display:flex; flex-direction:column; align-items:center; gap:1px; text-align:center; overflow:hidden; animation:aspIn .45s var(--ease) both; pointer-events:none;}
+.agent-status-pill::after{content:''; position:absolute; inset:0; background:linear-gradient(115deg, transparent 32%, rgba(255,255,255,.09) 48%, transparent 64%); transform:translateX(-130%); animation:apiSheen 3.6s ease-in-out infinite; pointer-events:none;}
+@keyframes aspIn{from{opacity:0; transform:translateY(8px) scale(.92); filter:blur(5px);}to{opacity:1; transform:translateY(0) scale(1); filter:blur(0);}}
+.asp-name{font-size:19px; font-weight:700; letter-spacing:-.02em; line-height:1.15; color:var(--text); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.asp-verb{font-size:14.5px; font-weight:500; line-height:1.3; color:var(--muted); display:inline-flex; align-items:baseline;}
+.asp-dots{display:inline-flex; margin-left:1px;}
+.asp-dots i{font-style:normal; animation:aspDot 1.2s infinite;}
+.asp-dots i:nth-child(2){animation-delay:.18s;} .asp-dots i:nth-child(3){animation-delay:.36s;}
+@keyframes aspDot{0%,60%,100%{opacity:.2;}30%{opacity:1;}}
+/* In-chat status row — same avatar + pill, left-aligned in the flow */
+.msg-status{cursor:default !important;}
+.status-inline{display:flex; align-items:flex-start; gap:0; animation:aspIn .4s var(--ease) both;}
+.status-inline-ava{width:38px; height:38px; border-radius:50%; flex:none; position:relative; z-index:2;}
+.status-inline-ava svg{width:100%; height:100%; display:block;}
+.status-inline-ava img{width:100%; height:100%; display:block; object-fit:cover; border-radius:50%; box-shadow:0 6px 16px rgba(0,0,0,.25);}
+.status-inline-ava .av-svg{animation:avBob 1s ease-in-out infinite !important;}
+.status-inline-pill{margin-left:-10px; margin-top:8px; padding:9px 14px 9px 18px; border-radius:999px; background:var(--surface2); background:color-mix(in srgb, var(--surface2) 88%, transparent); -webkit-backdrop-filter:blur(16px) saturate(1.4); backdrop-filter:blur(16px) saturate(1.4); border:1px solid var(--border2); box-shadow:0 8px 22px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.08); font-size:14px; line-height:1.3; color:var(--muted); display:inline-flex; align-items:baseline; gap:5px; max-width:min(300px,78vw);}
+.status-inline-pill b{color:var(--text); font-weight:700; white-space:nowrap;}
+.status-inline-pill .asp-verb{font-size:14px;}
+.status-inline-pill .typing{padding:0 0 0 2px; align-self:center;}
+/* Overlapping swipe: ghost (outgoing) floats over the same space
+   while the incoming head is already in flow sliding in. */
+#agentHeadBar{isolation:isolate;}
+.chat-agent-head.is-ghost{position:absolute; left:0; right:0; top:0; z-index:3; pointer-events:none; margin:0 auto;}
+.chat-agent-head.is-incoming{position:relative; z-index:2;}
+@media (prefers-reduced-motion:reduce){
+  .agent-status-pill,.status-inline{animation:none;}
+  .agent-status-pill::after,.asp-dots i{animation:none;}
+  .chat-agent-head.is-busy .ca-ava{animation:none;}
+}
+
+.home-hero{display:flex;flex-direction:column;align-items:center;padding:30px 0 4px;}
+.home-hero-ava{width:176px;height:176px;animation:caFloat 3.8s ease-in-out infinite;will-change:transform;}
+.persona-panel{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:14px 16px;}
+.persona-panel p{margin:0 0 8px;font-size:14.5px;line-height:1.5;}
+.persona-panel .persona-style{color:var(--muted);}
+@media (prefers-reduced-motion:reduce){.home-hero-ava{animation:none;}}
 
 /* ---------- Intro (new users only, OUTSIDE the main app) ----------
    A premium Apple-like welcome that covers the whole screen before
@@ -1138,8 +1272,8 @@ button.ca-ava{border:0; padding:0; cursor:pointer; background:transparent;}
 .intro-step{width:100%; display:flex; flex-direction:column; align-items:center; text-align:center; animation:introRise .7s var(--ease);}
 .intro-step[hidden]{display:none;}
 @keyframes introRise{from{opacity:0; transform:translateY(16px);}to{opacity:1; transform:translateY(0);}}
-.intro-ava{width:104px; height:104px; margin-bottom:26px; filter:drop-shadow(0 18px 34px rgba(0,0,0,.35)); animation:introFloat 4.2s ease-in-out infinite;}
-.intro-ava .mini-ava,.intro-ava svg{width:104px !important; height:104px !important; display:block;}
+.intro-ava{width:148px; height:148px; margin-bottom:26px; animation:introFloat 4.2s ease-in-out infinite;}
+.intro-ava .mini-ava,.intro-ava svg{width:148px !important; height:148px !important; display:block;}
 @keyframes introFloat{0%,100%{transform:translateY(0);}50%{transform:translateY(-7px);}}
 .intro-h{font-size:clamp(30px,8.4vw,40px); font-weight:700; letter-spacing:-.03em; line-height:1.14; margin:0 0 10px; min-height:1.14em;}
 .intro-h .il{display:inline-block; opacity:0; transform:translateY(.34em); filter:blur(5px); transition:opacity .55s ease, transform .55s var(--ease), filter .55s ease;}
@@ -1167,6 +1301,60 @@ button.ca-ava{border:0; padding:0; cursor:pointer; background:transparent;}
 .intro-create{width:100%; max-width:400px; display:flex; flex-direction:column; align-items:center;}
 .intro-create-title{font-size:18px; font-weight:650; letter-spacing:-.01em; margin-bottom:12px;}
 .intro-create .intro-field,.intro-create .intro-primary{max-width:400px;}
+/* Intro step 2 — the family picker: the four family agents as
+   tappable cards. Step 3 — make your own: look, personality,
+   instructions and memory, all optional except the name. */
+.intro-fam{display:grid; grid-template-columns:1fr 1fr; gap:12px; width:100%; max-width:400px;}
+.intro-fam-card{display:flex; flex-direction:column; align-items:center; text-align:center; gap:3px; background:var(--glass); backdrop-filter:blur(22px) saturate(1.4); -webkit-backdrop-filter:blur(22px) saturate(1.4); border:1px solid var(--border2); border-radius:24px; padding:18px 12px 15px; color:var(--text); box-shadow:inset 0 1px 0 rgba(255,255,255,.08), 0 16px 38px rgba(0,0,0,.24);}
+.intro-fam-card:active{background:var(--hover);}
+.intro-fam-ava{width:76px; height:76px; display:block; margin-bottom:5px;}
+.intro-fam-ava .mini-ava,.intro-fam-ava svg{width:76px !important; height:76px !important; display:block;}
+.intro-fam-name{font-size:17px; font-weight:650;}
+.intro-fam-sub{font-size:12.5px; color:var(--muted); line-height:1.35;}
+.intro-makeown{width:100%; max-width:400px; background:transparent; border:1px solid var(--border2); color:var(--text); font-size:16px; font-weight:600; padding:15px 20px; border-radius:999px;}
+.intro-makeown:active{background:var(--hover);}
+.intro3{width:100%; max-width:400px; display:flex; flex-direction:column; align-items:center; text-align:left;}
+.intro3 .intro-h{text-align:center;}
+.intro-back{align-self:flex-start; display:inline-flex; align-items:center; gap:5px; color:var(--muted); font-size:15px; font-weight:550; padding:8px 10px 8px 2px; margin-bottom:2px;}
+.intro-prev{width:110px; height:110px; margin:4px auto 16px; display:block;}
+.intro-prev .mini-ava,.intro-prev svg{width:110px !important; height:110px !important; display:block;}
+.intro-label{width:100%; font-size:13px; font-weight:650; color:var(--muted); margin:18px 0 8px; letter-spacing:.01em;}
+.intro-label:first-of-type{margin-top:2px;}
+.intro-chips{display:flex; flex-wrap:wrap; gap:8px; width:100%;}
+.intro-chip{display:inline-flex; align-items:center; gap:7px; background:var(--glass); border:1px solid var(--border2); color:var(--text); font-size:14px; font-weight:550; padding:8px 13px; border-radius:999px;}
+.intro-chip .mini-ava,.intro-chip svg{width:26px !important; height:26px !important; display:block;}
+.intro-chip.sel{background:var(--accent); color:var(--accent-ink); border-color:transparent;}
+.intro-chip:active{transform:scale(.97);}
+.intro-area{width:100%; background:var(--glass); backdrop-filter:blur(22px) saturate(1.4); -webkit-backdrop-filter:blur(22px) saturate(1.4); border:1px solid var(--border2); border-radius:20px; padding:4px;}
+.intro-area textarea{width:100%; background:transparent; border:0; outline:none; resize:none; color:var(--text); font-size:15.5px; line-height:1.45; padding:11px 14px; font-family:inherit;}
+.intro-area textarea::placeholder{color:var(--muted);}
+.intro3 .intro-field,.intro3 .intro-primary{max-width:400px;}
+.intro3 .intro-primary{margin-top:20px;}
+.intro3 .intro-field{max-width:400px; width:100%;}
+/* Step 3 top bar: Back to the family on the left, Create in the
+   TOP RIGHT (moved up from the bottom of the form, per the
+   owner's ask) — sticky, so Create stays reachable however far
+   the customise form below is scrolled. */
+.intro3-topbar{width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; position:sticky; top:0; z-index:6; background:var(--bg); padding:6px 0 8px; margin-bottom:2px;}
+.intro3-topbar .intro-back{margin:0; align-self:auto;}
+.intro3 .intro-primary.intro-create-top{width:auto; max-width:none; margin:0; padding:10px 20px; font-size:15.5px; flex:none;}
+.intro3 .intro-create-hint{margin:2px 0 6px; text-align:left; align-self:flex-start;}
+/* The Shape / Face / Colour picker wraps span the form width,
+   same as the Colourway wrap. */
+#introCwWrap,#introShapeWrap,#introColorWrap{width:100%;}
+.intro-pick-note{font-size:12.5px; color:var(--muted); line-height:1.45; margin:8px 0 0;}
+/* Intro step 1 — the family GROUP image above the name question:
+   all four family agents together, Axo in front, Muse and Fox at
+   the sides, Lumi behind — one composed group portrait from the
+   same character art the picker cards use. */
+#introAva.intro-group{width:262px; height:172px; position:relative; margin-bottom:22px; animation:none;}
+.intro-group .g-ava{position:absolute; display:block; animation:introFloat 4.2s ease-in-out infinite;}
+.intro-group .g-axo{width:122px; height:122px; left:50%; margin-left:-61px; bottom:0; z-index:3;}
+.intro-group .g-muse{width:94px; height:94px; left:2px; bottom:4px; z-index:2; animation-delay:.5s;}
+.intro-group .g-fox{width:94px; height:94px; right:2px; bottom:4px; z-index:2; animation-delay:1s;}
+.intro-group .g-lumi{width:82px; height:82px; left:50%; margin-left:-41px; top:0; z-index:1; animation-delay:1.5s;}
+#introAva.intro-group .mini-ava{width:100% !important; height:100% !important;}
+#introAva.intro-group svg{width:100% !important; height:100% !important;}
 @media (prefers-reduced-motion:reduce){
   .intro-ava,.intro-step{animation:none;}
   .intro-h .il{transition:none;}
@@ -1175,3 +1363,261 @@ button.ca-ava{border:0; padding:0; cursor:pointer; background:transparent;}
 }
 
 .hidden{display:none !important;}
+
+/* ---------- Agent create / edit — two-tab redesign ----------
+   The New sub-agent and Edit agent pages are ONE page with two
+   small tabs at the bottom: "Avatar" first — the exact Avatar
+   editing page UI (same stage, peeks, Shape/Face/Colour panels,
+   colourways, frames, presets, emotes, personality) — and
+   "Instructions & memory", which REPLACES the page with the
+   name / vibe / instructions / memory fields in a clean,
+   minimal layout. The tab bar stays at the bottom on both
+   pages, so from Instructions the Avatar tab is right there
+   below, exactly like the Instructions tab sits below Avatar. */
+.ae2-tabs{display:flex; gap:4px; background:var(--glass); -webkit-backdrop-filter:blur(18px) saturate(1.4); backdrop-filter:blur(18px) saturate(1.4); border-top:1px solid var(--border); padding:10px 14px calc(10px + env(safe-area-inset-bottom)); position:relative; z-index:3;}
+.ae2-tabs button{flex:1; display:flex; align-items:center; justify-content:center; gap:8px; padding:11px 10px; border-radius:999px; font-size:14.5px; font-weight:650; color:var(--muted); background:transparent; transition:background .22s var(--ease), color .22s var(--ease), transform .12s;}
+.ae2-tabs button:active{transform:scale(.97);}
+.ae2-tabs button.sel{background:var(--accent); color:var(--accent-ink); box-shadow:0 6px 18px rgba(0,0,0,.22);}
+.ae2-tabs button .ic{width:18px; height:18px;}
+/* New sub-agent top Create: one small pill in the header, where
+   the ? button used to sit — the page's only action. Minimal:
+   no bottom action bar, no Next button. */
+.nc-create-top{flex:none; background:var(--accent); color:var(--accent-ink); border-radius:999px; padding:9px 18px; font-size:15px; font-weight:650; letter-spacing:-.01em; min-width:84px;}
+.nc-create-top:active{filter:brightness(1.1); transform:scale(.97);}
+.nc-name-line{display:flex; align-items:baseline; gap:10px; padding:2px 0 16px;}
+.nc-name-line .nl-label{font-size:13px; letter-spacing:.02em; color:var(--muted); font-weight:600;}
+.nc-name-line .nl-val{font-size:16.5px; font-weight:650; color:var(--text);}
+.nc-name-line .nl-note{font-size:12.5px; color:var(--muted);}
+.ae2-page{animation:ae2In .34s var(--ease) both;}
+@keyframes ae2In{from{opacity:0; transform:translateY(10px);}to{opacity:1; transform:translateY(0);}}
+@media (prefers-reduced-motion:reduce){.ae2-page{animation:none;} .ae2-tabs button{transition:none;}}
+/* Instructions & memory page — clean and minimal: no card, no
+   window frame, just quiet fields with generous air. */
+.ae2-clean{padding-top:10px;}
+.ae2-clean .field{margin-bottom:18px;}
+.ae2-clean .field label{font-size:13px; letter-spacing:.02em;}
+.ae2-clean .set-group{margin-top:22px;}
+
+/* ---------- Sidebar chat rows: the agent's image ----------
+   Every chat row carries its own agent's image — small and
+   minimal, nothing else added: the topic stays the topic, the
+   row stays clean. The image is STILL on every row except the
+   live one — the selected chat, whose agent is the one open /
+   working on this page: only that image moves (its idle float,
+   or the working emote's own motion while it works). */
+.sb-chat-ava{width:34px; height:34px; border-radius:50%; overflow:hidden; flex:none; display:block; background:transparent;}
+.sb-chat-ava img,.sb-chat-ava svg{width:100%; height:100%; display:block; object-fit:cover;}
+.sb-chat-ava .av-svg{animation:none !important;}
+
+
+/* ---------- 3D-like characters (Axo · Muse · Fox · Lumi) ----------
+   The main characters are drawn IN CODE as soft-3D mascots —
+   clay gradients, glossy highlights, rim shade and a soft floor
+   shadow inside every SVG — similar in spirit to the character
+   sheets the user shared, never flat 2D photo crops. Every
+   default emote has its OWN face AND its own motion, and busy
+   poses carry their props (laptop, book, orb, notes, Zzz). */
+.av-svg.char3d{overflow:visible; background:transparent !important; will-change:transform; transform:translateZ(0); backface-visibility:hidden; -webkit-backface-visibility:hidden;}
+.av-svg.char3d .char-eyes{transform-box:fill-box; transform-origin:center; animation:avBlink 4.6s infinite;}
+.av-svg.char3d .char-spark{transform-box:fill-box; transform-origin:center; animation:charSpark 2.4s ease-in-out infinite;}
+.av-svg.char3d .char-spark.s2{animation-delay:.8s;}
+@keyframes charSpark{0%,100%{opacity:.25; transform:scale(.82) rotate(0deg)}50%{opacity:1; transform:scale(1.12) rotate(14deg)}}
+.av-svg.char3d .char-wing-l{transform-box:fill-box; transform-origin:right center; animation:charWing 2.8s ease-in-out infinite;}
+.av-svg.char3d .char-wing-r{transform-box:fill-box; transform-origin:left center; animation:charWing 2.8s ease-in-out infinite reverse;}
+@keyframes charWing{0%,100%{transform:rotate(0deg)}50%{transform:rotate(-6deg)}}
+.av-svg.char3d .char-gills,.av-svg.char3d .char-ear{transform-box:fill-box; transform-origin:center bottom; animation:charSwaySoft 5.2s ease-in-out infinite;}
+@keyframes charSwaySoft{0%,100%{transform:rotate(-1.1deg)}50%{transform:rotate(1.1deg)}}
+/* Smooth, high-frame-rate life — transform/opacity ONLY, long
+   silky easings, and NO cheap up-and-down bobbing: the character
+   breathes (scale), sways (rotate) and reacts in place. */
+@keyframes charBreathe{0%,100%{transform:scale(1) rotate(-.6deg)}50%{transform:scale(1.022) rotate(.6deg)}}
+@keyframes charJoy{0%,100%{transform:scale(1.015) rotate(-1.5deg)}50%{transform:scale(1.045) rotate(1.5deg)}}
+@keyframes charLaugh{0%,100%{transform:scale(1.03) rotate(-2deg)}25%{transform:scale(1.05) rotate(2deg)}50%{transform:scale(1.03) rotate(-2deg)}75%{transform:scale(1.05) rotate(2deg)}}
+@keyframes charTilt{0%,100%{transform:rotate(-3.2deg) scale(1.015)}50%{transform:rotate(2.2deg) scale(1.03)}}
+@keyframes charPop{0%,100%{transform:scale(1.02)}35%{transform:scale(1.09)}60%{transform:scale(1.04)}}
+@keyframes charCalm{0%,100%{transform:scale(.995) rotate(-.5deg)}50%{transform:scale(1.012) rotate(.5deg)}}
+@keyframes charShakeS{0%,100%{transform:translateX(0) rotate(0deg)}25%{transform:translateX(-1.2%) rotate(-1deg)}75%{transform:translateX(1.2%) rotate(1deg)}}
+@keyframes charFocus{0%,100%{transform:rotate(-1.6deg) scale(1.015)}50%{transform:rotate(1.6deg) scale(1.015)}}
+@keyframes charDanceS{0%,100%{transform:rotate(-4.5deg) scale(1.03)}25%{transform:rotate(3.5deg) scale(1.055)}50%{transform:rotate(-4deg) scale(1.03)}75%{transform:rotate(4.5deg) scale(1.055)}}
+.av-svg.char3d.emo-idle{animation:charBreathe 4.8s cubic-bezier(.45,0,.35,1) infinite !important;}
+.av-svg.char3d.emo-happy,.av-svg.char3d.emo-proud{animation:charJoy 3.4s cubic-bezier(.45,0,.35,1) infinite !important;}
+.av-svg.char3d.emo-excited{animation:charJoy 1.9s cubic-bezier(.45,0,.35,1) infinite !important;}
+.av-svg.char3d.emo-laughing{animation:charLaugh 1.6s cubic-bezier(.45,0,.35,1) infinite !important;}
+.av-svg.char3d.emo-curious,.av-svg.char3d.emo-thinking{animation:charTilt 4.6s cubic-bezier(.45,0,.35,1) infinite !important;}
+.av-svg.char3d.emo-confused{animation:charTilt 3.4s cubic-bezier(.45,0,.35,1) infinite !important;}
+.av-svg.char3d.emo-surprised{animation:charPop 2.6s cubic-bezier(.45,0,.35,1) infinite !important;}
+.av-svg.char3d.emo-sad{animation:charCalm 5.2s cubic-bezier(.45,0,.35,1) infinite !important;}
+.av-svg.char3d.emo-angry,.av-svg.char3d.emo-fixing{animation:charShakeS .45s ease-in-out infinite !important;}
+.av-svg.char3d.emo-sleepy,.av-svg.char3d.emo-sleeping{animation:charCalm 5.6s cubic-bezier(.45,0,.35,1) infinite !important;}
+.av-svg.char3d.emo-typing,.av-svg.char3d.emo-coding,.av-svg.char3d.emo-writing,.av-svg.char3d.emo-reading{animation:charFocus 2.2s cubic-bezier(.45,0,.35,1) infinite !important;}
+.av-svg.char3d.emo-working,.av-svg.char3d.emo-searching{animation:charFocus 1.7s cubic-bezier(.45,0,.35,1) infinite !important;}
+.av-svg.char3d.emo-dancing{animation:charDanceS 1.15s cubic-bezier(.45,0,.35,1) infinite !important;}
+/* No up/down bobbing on the wrappers either when a 3D character
+   is inside — they breathe in place instead, and every backdrop
+   behind them stays fully transparent (PNG-cutout look). */
+.ca-ava:has(.char3d),.ag-avatar:has(.char3d),.home-hero-ava:has(.char3d),.avedit-preview:has(.char3d),.intro-ava:has(.char3d){animation:charBreathe 4.8s cubic-bezier(.45,0,.35,1) infinite !important; background:transparent !important; box-shadow:none !important; border-radius:0 !important; overflow:visible !important; filter:none !important;}
+.intro-ava:has(.char3d) .mini-ava,.av-peek:has(.char3d){background:transparent !important; box-shadow:none !important; border:none !important; border-radius:0 !important; overflow:visible !important;}
+.status-inline-ava:has(.char3d){background:transparent !important; box-shadow:none !important; border-radius:0; overflow:visible;}
+.chat-agent-head.is-busy .ca-ava:has(.char3d){animation:charFocus 2.2s cubic-bezier(.45,0,.35,1) infinite !important;}
+/* Small copies (grids, strips, lists, peeks) stay still and crisp,
+   like every other avatar — only the hero stages move. */
+.av-pick .av-svg.char3d,.av-grid .av-svg.char3d,.av-emotes .av-svg.char3d,.mini-ava .av-svg.char3d,.sb-agent-ava .av-svg.char3d,.agent-list-row .av-svg.char3d,.av-peek .av-svg.char3d,.sb-chat-ava .av-svg.char3d{animation:none !important;}
+@media (prefers-reduced-motion:reduce){.av-svg.char3d,.av-svg.char3d *{animation:none !important;}}
+
+/* ---------- Premium shapes (Aura Orb · Prism Gem · Nova
+   Squircle · Pebble Duo · Comet Drop · Halo Blob) ----------
+   The six premium 3D shapes, approved and added to the Shape
+   picker exactly as previewed: multi-stop clay gradient, the
+   clipped volume stack and their own details, drawn by
+   avShapeSVG. Their signature pieces MOVE — the Aura Orb's halo
+   slowly orbits, the Halo Blob's halo hovers, the Prism Gem and
+   Nova Squircle carry a living sparkle — transform/opacity only,
+   smooth easings, and small grid copies stay still like every
+   other avatar. */
+.av-svg .pp-halo{transform-box:fill-box; transform-origin:center; animation:ppOrbit 11s linear infinite;}
+@keyframes ppOrbit{to{transform:rotate(360deg);}}
+.av-svg .pp-halo-hover{transform-box:fill-box; transform-origin:center; animation:ppHover 3.8s ease-in-out infinite;}
+@keyframes ppHover{0%,100%{transform:translateY(0);}50%{transform:translateY(-7%);}}
+.av-svg .pp-spark{transform-box:fill-box; transform-origin:center; animation:charSpark 2.6s ease-in-out infinite;}
+.av-pick .av-svg .pp-halo,.av-pick .av-svg .pp-halo-hover,.av-pick .av-svg .pp-spark,
+.av-grid .av-svg .pp-halo,.av-grid .av-svg .pp-halo-hover,.av-grid .av-svg .pp-spark,
+.av-emotes .av-svg .pp-halo,.av-emotes .av-svg .pp-halo-hover,.av-emotes .av-svg .pp-spark,
+.mini-ava .av-svg .pp-halo,.mini-ava .av-svg .pp-halo-hover,.mini-ava .av-svg .pp-spark,
+.sb-chat-ava .av-svg .pp-halo,.sb-chat-ava .av-svg .pp-halo-hover,.sb-chat-ava .av-svg .pp-spark,
+.sb-agent-ava .av-svg .pp-halo,.sb-agent-ava .av-svg .pp-halo-hover,.sb-agent-ava .av-svg .pp-spark{animation:none !important;}
+@media (prefers-reduced-motion:reduce){.av-svg .pp-halo,.av-svg .pp-halo-hover,.av-svg .pp-spark{animation:none !important;}}
+
+/* ---------- Header buttons — FINAL hit-test pass ----------
+   The chats / Temporary / New chat / dots buttons must answer the
+   FIRST tap, inside an open chat too. Two compounding causes are
+   closed here for good: the agent-head bar is pulled up over the
+   header by its negative margin and sat at the SAME z-index as
+   the header, so its (transparent) box could win the tap on some
+   phones; and the buttons had no touch-action, so some WebViews
+   treated the tap as the start of a scroll/zoom gesture and the
+   activation landed late or never. The header now sits strictly
+   above the head bar, the head bar itself can never take a tap
+   (only its avatar button can, as before), and every header
+   button takes taps immediately with no gesture delay. */
+header.chat-head{position:relative; z-index:30;}
+#agentHeadBar{pointer-events:none !important;}
+#agentHeadBar .ca-ava{pointer-events:auto !important;}
+.circle-btn,.head-pill button,.sb-foot-btn,.sb-icon-btn{touch-action:manipulation;}
+
+/* ---------- Premium Apple-style type (final pass) ----------
+   On Apple devices the stacks in --font / --font-display resolve
+   to the real SF Pro. Everywhere else they used to fall through
+   to Roboto / Segoe — which is why the app never looked Apple on
+   Android. The Inter / Inter Tight webfonts loaded in <head> now
+   fill exactly that role: same SF-like proportions, tight display
+   tracking, optical sizing, and full variable weights so the
+   app's 550/650 semibolds render as true weights, not fakes. */
+h1,h2,h3,.sb-title,.search-title,.goals-title,.ag-name,.sph-name,.intro-create-title,.intro-agent-name,.asp-name,.sheet h3,.set-head h2{font-family:var(--font-display); letter-spacing:-.022em;}
+.intro-h{font-family:var(--font-display); letter-spacing:-.03em;}
+.intro-primary{font-weight:600; letter-spacing:-.01em;}
+/* The Create button is never disabled now (see maybeShowIntro) —
+   an empty name field only dims it, and feedback lives in this
+   hint INSIDE the intro, where it can actually be seen. */
+#introCreate{touch-action:manipulation;}
+.intro-primary.is-dim{opacity:.38;}
+.intro-create-hint{margin:10px 0 0; min-height:1.3em; max-width:400px; font-size:14px; font-weight:500; line-height:1.35; color:var(--danger); text-align:center;}
+/* Sidebar flicker fix, layer half: while the menu is OPEN the
+   stage keeps its compositor promotion (sb-live, managed by
+   setSidebar). Removing will-change the moment the open run
+   ended used to force a full re-raster of the scaled, curved
+   stage — one visible shimmer/flash across the chat screen
+   right after every open. It is only released once the menu is
+   fully closed and the stage is back at identity. */
+#app.sb-live #sidebar,#app.sb-live #stage{will-change:transform;}
+
+/* ---------- Your own API — a top feature, presented like one --
+   The featured card that leads the model picker sheet and the
+   APIs & Providers page: key icon chip, one-line promise, the
+   paste box and the primary action INSIDE the card, "Top pick"
+   badge. Same liquid-glass language as the intro agent card —
+   the app no longer treats your own key as a footnote or tells
+   you that you don't need one. */
+.ownapi-card{background:var(--glass); backdrop-filter:blur(22px) saturate(1.4); -webkit-backdrop-filter:blur(22px) saturate(1.4); border:1px solid var(--border2); border-radius:24px; padding:16px; box-shadow:inset 0 1px 0 rgba(255,255,255,.08), 0 16px 38px rgba(0,0,0,.22); margin-bottom:14px;}
+.ownapi-head{display:flex; align-items:center; gap:12px; margin-bottom:12px;}
+.ownapi-ic{width:40px; height:40px; flex:none; border-radius:50%; background:var(--surface2); display:grid; place-items:center; color:var(--text);}
+.ownapi-meta{flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;}
+.ownapi-title{font-family:var(--font-display); font-size:17.5px; font-weight:650; letter-spacing:-.02em;}
+.ownapi-sub{font-size:13px; color:var(--muted); line-height:1.35;}
+.ownapi-badge{flex:none; background:var(--accent); color:var(--accent-ink); font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:5px 9px; border-radius:999px;}
+.ownapi-card .btn-primary{margin-top:10px;}
+.ownapi-card .btn-ghost{margin-top:8px;}
+.api-or{display:flex; align-items:center; gap:12px; margin:16px 0 12px; color:var(--muted); font-size:12.5px; font-weight:600; letter-spacing:.02em;}
+.api-or span{flex:1; height:1px; background:var(--border2);}
+
+/* ---------- Avatar transparency + agent head gestures — FINAL ----------
+   The remaining black behind the avatar was NOT the top blur (long
+   transparent): it was paint INSIDE and AROUND the avatar that the
+   earlier passes never touched — (1) literal black floor-shadow
+   ellipses baked into two avatar SVGs (removed at the source in
+   avatarSVG / avShapeSVG), (2) wrapper layers that sit outside the
+   old pass's selector list (hero, status, intro, sidebar head,
+   chat-row, picker and editor wrappers below), and (3) photo <img>
+   avatars, which had no transparency rule at all and painted as a
+   solid rectangle in the hero / status / editor slots. This block
+   is LAST in the stylesheet and zeroes every one of them: no
+   background, no shadow, no backdrop, no disc — the mascot (or a
+   photo, round-cropped by its own slot) sits directly on whatever
+   is behind it, everywhere it appears. */
+header.chat-head{background:transparent !important; background-color:transparent !important; backdrop-filter:none !important; -webkit-backdrop-filter:none !important; box-shadow:none !important;}
+#agentHeadBar,#agentHeadBar .chat-agent-head,#agentHeadBar .ca-stack,
+.chat-agent-head,.ca-stack,.ca-ava,button.ca-ava,
+.agent-ava-slot,.agent-ava-slot svg,.agent-ava-slot img,
+.av-svg,.av-svg.char3d,
+.ag-avatar,.ag-avatar-wrap,.ag-avatar .agent-ava-slot,
+.mini-ava,.mini-ava svg,.mini-ava img,
+.sb-agent-ava,.sb-agent-ava svg,.sb-agent-ava img,
+.sb-chat-ava,.sb-chat-ava svg,.sb-chat-ava img,
+.home-hero,.home-hero-ava,.home-hero-ava svg,.home-hero-ava img,
+.status-inline-ava,.status-inline-ava svg,.status-inline-ava img,
+.intro-ava,.intro-ava .mini-ava,.intro-agent-ava,.intro-agent-ava .mini-ava,
+.aprev-ava,.tcircle.av,.av-peek,.av-peek svg,.av-peek img,
+.av-prev,.av-prev svg,.av-prev img,
+.avedit-preview,.avedit-previewback,.avedit-previewback svg,.avedit-previewback img,
+.avpro-prev,.avpro-prev svg,
+.av-stage,.avp-slide .av-prev{
+  background:transparent !important; background-color:transparent !important;
+  box-shadow:none !important; backdrop-filter:none !important; -webkit-backdrop-filter:none !important;
+}
+.ag-avatar,.avedit-previewback,.home-hero-ava,.status-inline-ava{border:none !important;}
+.av-svg,.av-svg.char3d{filter:none !important;}
+/* Agent head gestures: the top avatar owns its touches — no native
+   pan/zoom gesture may steal or cancel a horizontal swipe mid-drag
+   (the head is not inside a scroller, so nothing is lost), taps
+   land with no gesture delay, and the empty-chat hero avatar is a
+   real button that opens the agent page like the pinned head. */
+#agentHeadBar .ca-ava{touch-action:none !important; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; touch-action:none;}
+#agentHeadBar .chat-agent-head{will-change:transform,opacity;}
+button.home-hero-ava{border:0; padding:0; cursor:pointer; font:inherit; color:inherit; -webkit-tap-highlight-color:transparent;}
+.sb-agent-ava{cursor:pointer;}
+/* Cross-slide (switchTopAgent, WAAPI): the outgoing ghost floats
+   over the same space while the incoming head slides in — both
+   move in the same 380ms window, neither waits for the other. */
+.chat-agent-head.is-ghost{position:absolute; left:0; right:0; top:0; z-index:3; pointer-events:none !important; margin:0 auto;}
+.chat-agent-head.is-incoming{position:relative; z-index:2;}
+
+/* ---------- Avatar transparency — CLOSING pass ----------
+   The surfaces the passes above never listed, closed for good:
+   the Settings profile hero disc (.sph-ava — a solid --surface2
+   fill plus a border ring), the generic .avatar disc, the intro
+   family-picker slot (.intro-fam-ava) and the intro group slots
+   (.g-ava). The intro avatars also carried a dark drop-shadow
+   FILTER on their containers (.intro-ava / .g-ava) — a soft black
+   layer painted behind the character itself — now removed at the
+   source rules and zeroed here as well. After this block, no
+   element that hosts the character art paints any background,
+   border, shadow, backdrop or filter behind it, in either theme:
+   the art sits directly on the page, everywhere it shows. */
+.sph-ava,.sph-ava-wrap,.sph-ava svg,.sph-ava img,
+.avatar,.profile-card .avatar,
+.intro-fam-ava,.intro-group .g-ava,.g-ava,
+.intro-ava{
+  background:transparent !important; background-color:transparent !important;
+  box-shadow:none !important; backdrop-filter:none !important; -webkit-backdrop-filter:none !important;
+}
+.sph-ava,.avatar{border:none !important;}
+.intro-ava,.intro-group .g-ava,.g-ava{filter:none !important;}

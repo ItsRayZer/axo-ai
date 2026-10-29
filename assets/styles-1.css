@@ -1656,19 +1656,31 @@ header.chat-head,#agentHeadBar,#agentHeadBar .chat-agent-head,
    The Agent page header is a carousel: the current agent stays
    centred (avatar + name + status, exactly as before) and the
    previous / next ALREADY-CREATED agents peek in from the left
-   and right edges. Swipe or tap a peek to move to that agent —
-   the incoming header slides in while the outgoing ghost is
-   still sliding out (the same overlap cross-slide as the top
-   chat head's agent switch). The carousel only ever moves
-   between agents that already exist — it never creates one;
-   "New sub-agent" stays the only creation entry. With a single
-   agent there are no peeks and no swipe. */
+   and right edges. Tapping a peek SELECTS that agent: it becomes
+   the agent you are chatting with and its chat opens. Swiping
+   browses the carousel instead — the incoming header slides in
+   while the outgoing ghost is still sliding out (the same
+   overlap cross-slide as the top chat head's agent switch).
+   At the END of the created-agents list the next slot is a
+   "create new agent" tile in the same peek style: on the last
+   agent (and in the single-agent case, where there are no agent
+   peeks) it peeks in from the right, swiping past the last agent
+   centres it as a full tile in the same carousel UI, and tapping
+   it — peek or centred tile — opens the New sub-agent flow. */
 .ag-carousel{position:relative; overflow:hidden;}
 .ag-carousel-main{position:relative;}
 .ag-peek{position:absolute; top:6px; width:58px; height:58px; z-index:2; display:grid; place-items:center; background:transparent !important; border:none !important; box-shadow:none !important; padding:0; cursor:pointer; opacity:.55; transform:scale(.86); transition:opacity .2s ease, transform .2s ease;}
 .ag-peek.prev{left:-16px;}
 .ag-peek.next{right:-16px;}
 .ag-peek:active{opacity:.9; transform:scale(.94);}
+.ag-peek-create{opacity:.8;}
+.ag-create-vis{width:58px; height:58px; border-radius:50%; border:1.5px dashed var(--border2); background:var(--surface); color:var(--text); display:grid; place-items:center; pointer-events:none;}
+.ag-create-vis svg{width:24px; height:24px;}
+.ag-create-vis.lg{width:104px; height:104px; border-width:2px;}
+.ag-create-vis.lg svg{width:38px; height:38px;}
+.ag-create-center{width:104px; height:104px; border-radius:50%; background:transparent !important; border:none !important; box-shadow:none !important; display:grid; place-items:center; cursor:pointer; padding:0;}
+.ag-create-center:active .ag-create-vis{transform:scale(.94);}
+.ag-create-vis{transition:transform .2s ease;}
 .ag-peek .agent-ava-slot{width:58px; height:58px; display:block; pointer-events:none;}
 .ag-peek .agent-ava-slot svg,.ag-peek .agent-ava-slot img{width:58px !important; height:58px !important; display:block; object-fit:cover;}
 .ag-peek .agent-ava-slot img{border-radius:50%;}
@@ -1718,3 +1730,32 @@ header.chat-head,#agentHeadBar,#agentHeadBar .chat-agent-head,
   .home-hero.is-temp .char-eyes,.home-hero.is-temp .av-eyes,.home-hero.is-temp .emo-blinkeyes,
   .chat-agent-head.is-temp .ca-stack,.home-hero.is-temp .home-hero-ava{animation:none !important;}
 }
+/* ---------- Header avatar viewport fit ----------
+   The pinned top avatar used to be centred inside .head-center,
+   an absolutely-positioned slot exactly as tall as the header —
+   but the header's height came only from its in-flow buttons
+   (~60px), while the avatar stack is 68px at the default size
+   (92 / 108px at Large / XL, plus the busy name line under it).
+   The oversized stack overflowed the slot equally above and
+   below, so its top rose past the header's top edge and off the
+   top of the phone screen — only the lower part of the character
+   showed. Fix: the header becomes a one-cell grid stack, so its
+   height is driven by its TALLEST child — the avatar stack
+   itself — and .head-center sits in normal flow in that cell,
+   still exactly centred horizontally. The avatar's top now
+   starts at the header's own top padding (below the safe-area
+   inset) and the header grows downward instead of the avatar
+   spilling upward: the full avatar, float animation included,
+   always stays inside the visible header area, at every avatar
+   size, with or without the name under it, at phone widths. The
+   chats button and the top-right pill keep the top row, pinned
+   to the start of the cell. Backgrounds stay fully transparent
+   and the busy name still sits under the avatar — only the
+   sizing and positioning changed. */
+header.chat-head{display:grid; grid-template-columns:minmax(0,1fr); align-items:start;}
+header.chat-head>*{grid-area:1/1; min-width:0;}
+header.chat-head .circle-btn{justify-self:start; align-self:start;}
+header.chat-head .head-pill{justify-self:end; align-self:start; margin-left:0;}
+.head-center{position:relative; inset:auto; width:100%; align-items:flex-start;}
+#agentHeadBar{max-width:100%;}
+#agentHeadBar .ca-ava{max-width:56vw;}

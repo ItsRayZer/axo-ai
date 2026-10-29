@@ -2992,4 +2992,50 @@ function pickReaction(text){
   if(/(haha|lol\b|lmao|rofl|funny|hilarious)/.test(low) || t.indexOf('😂')>=0) pick='😂';
   else if(/(good night|sleepy|so tired|going to sleep|gn\b)/.test(low)) pick='😴';
   else if(/(fever|sick|vomit|headache|not well|unwell|in pain)/.test(low)) pick='🤕';
-  else if(/(i am sad|i'm<script src="assets/app.js"></script>
+  else if(/(i am sad|i'm sad|feeling sad|crying|lonely|heartbroken|miss you|miss u\b)/.test(low)) pick='🥹';
+  else if(/(love you|love u\b|my love|darling|cute|beautiful|gorgeous)/.test(low)) pick='🥰';
+  else if(/(thank|thanks|thx)/.test(low)) pick='🫶';
+  else if(/(passed|cleared the|won\b|success|selected|got the job|finished|completed|birthday|anniversary|placed first)/.test(low)) pick='🎉';
+  else if(/(wow|amazing|awesome|incredible|damn|🔥)/.test(low)) pick='🔥';
+  else if(/(confused|idk|don't understand|dont understand|hmm+\b)/.test(low)) pick='🤔';
+  else if(/(hehe|silly|goofy|crazy me|🫠)/.test(low)) pick='🫠';
+  else if(/(great|nice one|cool|good job|well done|perfect)/.test(low)) pick='✨';
+  else if(/^(hi+|hello|hey+|good morning|good evening)\b/.test(low) && t.length<26) pick='🤍';
+  if(!pick || !REACTION_SET[pick]) return '';
+  /* Sparingly: even a fitting reaction lands only about half the time. */
+  if(Math.random()>0.55) return '';
+  return pick;
+}
+function scheduleReaction(chat, m){
+  if(!m || m.role!=='user' || m.reaction) return;
+  var pick=pickReaction(m.text);
+  if(!pick) return;
+  /* Never twice in a row in the same chat. */
+  var idx=chat.messages.indexOf(m), prevUser=null;
+  for(var i=idx-1;i>=0;i--){ if(chat.messages[i].role==='user'){ prevUser=chat.messages[i]; break; } }
+  if(prevUser && prevUser.reaction) return;
+  setTimeout(function(){ if(!m.reaction){ m.reaction=pick; if(state.view==='chat') renderAll(); } }, 650+Math.random()*700);
+}
+/* =============== Memory system ===============
+   Automatic, local to this app, and unlimited: everything you say in
+   ANY chat is saved to memory (no cap on entries), and before every
+   reply the saved memory is searched by the incoming message's
+   keywords — the reply is then built using the related memories
+   found. Memory NEVER holds keys, secrets, emails or phone numbers:
+   every note passes the sanitiser below before it is stored, and
+   anything that looks like a credential value is removed, not kept. */
+var MEM=[];
+/* Detailed local memory log + summary (saved locally, always):
+   MEM_LOG is the chronological, time-stamped detail — every saved
+   message with its date, time, chat, agent and role, assistant
+   replies kept as short summaries — and MEM_SUMMARY is the rolling
+   personal summary rebuilt from MEM (span, main topics, stated
+   preferences, latest entries). Both live in the same local store
+   as MEM, are restored on every open, and the summary plus the
+   time-stamped hits are what the agent reads before replying, so
+   answers stay personal. Nothing here leaves the device. */
+var MEM_LOG=[], MEM_SUMMARY='';
+function memStamp(ts){
+  var d=new Date(ts||Date.now()); function p(n){ return (n<10?'0':'')+n; }
+  var date=d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+ <script src="assets/app.js"></script>

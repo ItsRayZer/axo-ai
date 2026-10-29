@@ -5478,6 +5478,9 @@ function setChatAgent(id){
    Avatar page (avatar changing stays on the pencil / Edit page). */
 var headSwipedAt=0;
 var profileAgentId=null, agentPageId=null, agentEditReturn=null, profileReturn='chat', agentPageFromChat=false;
+/* True while the Agent page carousel is centred on the
+   create-new-agent tile that sits after the last created agent. */
+var agentShowCreate=false;
 function openAgentPage(id){
   /* Tapping an agent opens its PAGE, never the edit page — and
      EVERY agent, main or sub, opens the SAME Agent page UI
@@ -5488,7 +5491,7 @@ function openAgentPage(id){
      page (the Edit row / pencil). Opened from the chat, so Back
      returns straight to the chat. */
   var a=agentById(id)||chatAgent(); if(!a) return;
-  profileAgentId=a.id; agentPageId=a.id; editingAgentId=a.id; headSwapInDir=0;
+  profileAgentId=a.id; agentPageId=a.id; editingAgentId=a.id; headSwapInDir=0; agentShowCreate=false;
   /* EVERY agent — main or sub — opens the SAME Agent page UI
      (settingsAgent), showing that agent. Opened from the chat,
      so Back returns straight to the chat. */
@@ -5500,7 +5503,7 @@ function openAgentProfileFromList(a){
      same Agent page UI for that agent — main or sub alike —
      never the editor and never a menu sheet. */
   if(!a) return;
-  profileAgentId=a.id; agentPageId=a.id; editingAgentId=a.id;
+  profileAgentId=a.id; agentPageId=a.id; editingAgentId=a.id; agentShowCreate=false;
   agentPageFromChat=false;
   profileReturn=(typeof lastSetView!=='undefined' && lastSetView && lastSetView!=='agentpage' && lastSetView!=='agentprofile')? lastSetView : 'subagents';
   renderSettings('agentpage');
@@ -7148,7 +7151,12 @@ function agentRowHTML(a){
 }
 function wireAgentRows(){
   setView.querySelectorAll('[data-setmain]').forEach(function(b){ b.addEventListener('click',function(e){ e.stopPropagation(); var a=agentById(b.getAttribute('data-setmain')); if(a && makeMainAgent(a)){ toast(a.name+' is now the main agent'); renderSettings(lastSetView||'agentpage'); } }); });
-  setView.querySelectorAll('[data-agentrow]').forEach(function(r){ r.addEventListener('click',function(){ var a=agentById(r.getAttribute('data-agentrow')); if(a) openAgentProfileFromList(a); }); });
+  /* Tapping a row SELECTS that agent: it becomes the agent you
+     are chatting with and its chat opens straight away. The
+     "Set as main" badge inside the row keeps its own job
+     (stopPropagation above), and an agent's page / editor stay
+     one tap away from the chat head once you are chatting. */
+  setView.querySelectorAll('[data-agentrow]').forEach(function(r){ r.addEventListener('click',function(){ var a=agentById(r.getAttribute('data-agentrow')); if(a){ setChatAgent(a.id); closeSettings(); toast('Chatting with '+a.name); } }); });
 }
 function askDeleteAgent(a){
   openSheet('<h3>Delete '+esc(a.name)+'</h3><p class="sub">This agent, its custom instructions and its own memory are removed. Shared chats and shared memory stay.</p><button class="btn-danger" id="agDelYes">Delete agent</button><button class="btn-ghost" id="agDelNo">Cancel</button>');
@@ -7527,14 +7535,27 @@ function settingsAgent(){
   var m=agentById(agentPageId)||mainAgent(); agentPageId=m.id; profileAgentId=m.id;
   var ca=chatAgent();
   /* Preview carousel neighbours: the agents before / after this
-     one in the created-agents list (AGENTS order). Ends of the
-     list — and the single-agent case — simply have no peek on
-     that side; the carousel never creates an agent. */
+     one in the created-agents list (AGENTS order). The slot after
+     the LAST created agent — and the only slot in the
+     single-agent case — is the create-new-agent tile, rendered
+     as a peek in the same carousel UI; swiping past the last
+     agent centres that tile, and tapping it (peek or centred)
+     opens the New sub-agent flow. Tapping an agent peek selects
+     that agent for chatting and opens its chat. */
   var agIdx=AGENTS.indexOf(m);
   var prevA=(AGENTS.length>1 && agIdx>0)? AGENTS[agIdx-1] : null;
   var nextA=(AGENTS.length>1 && agIdx>=0 && agIdx<AGENTS.length-1)? AGENTS[agIdx+1] : null;
   function peekHTML(a, side){
-    return '<button class="ag-peek '+side+'" data-agpeek="'+a.id+'" data-dir="'+(side==='prev'?-1:1)+'" aria-label="Open '+escA(a.name)+'\u2019s page"><span class="agent-ava-slot">'+avatarHTMLFor(a,'idle')+'</span></button>';
+    return '<button class="ag-peek '+side+'" data-agpeek="'+a.id+'" data-dir="'+(side==='prev'?-1:1)+'" aria-label="Chat with '+escA(a.name)+'"><span class="agent-ava-slot">'+avatarHTMLFor(a,'idle')+'</span></button>';
+  }
+  function createPeekHTML(){
+    return '<button class="ag-peek next ag-peek-create" data-agcreate="1" data-dir="1" aria-label="Create new agent"><span class="ag-create-vis">'+I.plus+'</span></button>';
+  }
+  /* Selecting an agent — from a carousel peek or tile — switches
+     the chatting agent to it and opens its chat. */
+  function chatWithAgent(t){
+    if(!t) return;
+    setChatAgent(t.id); closeSettings(); toast('Chatting with '+t.name);
   }
   /* Move the Agent page to another created agent with the
      overlap cross-slide: the outgoing header is kept as a ghost
@@ -7544,11 +7565,11 @@ function settingsAgent(){
      a sub-agent reached this way shows the same Make it MAIN
      agent row (makeMainAgent) as everywhere else. */
   function goAgentPage(target, dir){
-    if(!target || target.id===m.id) return;
+    if(!target || (target.id===m.id && !agentShowCreate)) return;
     var oldC=$('#agCarousel');
     var oldMain=oldC? oldC.querySelector('.ag-carousel-main') : null;
     var ghostHTML=oldMain? oldMain.innerHTML : null;
-    agentPageId=target.id;
+    agentPageId=target.id; agentShowCreate=false;
     renderSettings('agentpage');
     if(!ghostHTML) return;
     if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -7563,6 +7584,72 @@ function settingsAgent(){
       ga.onfinish=function(){ if(g.parentNode) g.remove(); };
     }catch(e){ if(g.parentNode) g.remove(); }
     setTimeout(function(){ if(g.parentNode) g.remove(); }, 480);
+  }
+  /* Swipe past the last created agent: the create-new-agent tile
+     becomes the centred carousel card, with the same overlap
+     cross-slide as moving between agents. */
+  function goCreatePage(dir){
+    if(agentShowCreate) return;
+    var oldC=$('#agCarousel');
+    var oldMain=oldC? oldC.querySelector('.ag-carousel-main') : null;
+    var ghostHTML=oldMain? oldMain.innerHTML : null;
+    agentShowCreate=true;
+    renderSettings('agentpage');
+    if(!ghostHTML) return;
+    if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var nc=$('#agCarousel'); if(!nc) return;
+    var main=nc.querySelector('.ag-carousel-main'); if(!main) return;
+    var g=document.createElement('div');
+    g.className='ag-carousel-ghost'; g.setAttribute('aria-hidden','true'); g.innerHTML=ghostHTML;
+    nc.appendChild(g);
+    try{
+      main.animate([{transform:'translateX('+(dir*72)+'px)', opacity:.15},{transform:'translateX(0)', opacity:1}],{duration:380, easing:'cubic-bezier(.22,1,.36,1)'});
+      var ga=g.animate([{transform:'translateX(0)', opacity:1},{transform:'translateX('+(-dir*72)+'px)', opacity:0}],{duration:380, easing:'cubic-bezier(.22,1,.36,1)'});
+      ga.onfinish=function(){ if(g.parentNode) g.remove(); };
+    }catch(e){ if(g.parentNode) g.remove(); }
+    setTimeout(function(){ if(g.parentNode) g.remove(); }, 480);
+  }
+  /* The create-new-agent tile, centred at the end of the
+     carousel: the same carousel UI — a peek of the last created
+     agent on the left, the big round tile centred, name and
+     status lines under it. Tapping the tile (or the New
+     sub-agent row under it) opens the existing New sub-agent
+     creation flow. Tapping the peek selects that agent and opens
+     its chat; swiping right browses back to that agent's page. */
+  if(agentShowCreate){
+    var lastA=AGENTS[AGENTS.length-1];
+    setView.innerHTML=setHead('Agent','agent')+'<div class="set-scroll"><div class="set-inner agent-flow">'
+      +'<div style="--i:0"><div class="ag-carousel" id="agCarousel"><div class="ag-carousel-main">'
+      +(lastA? peekHTML(lastA,'prev') : '')
+      +'<div class="ag-avatar-wrap"><button class="ag-create-center" id="agCreateCenter" aria-label="Create new agent"><span class="ag-create-vis lg">'+I.plus+'</span></button></div>'
+      +'<div class="ag-name">New agent</div>'
+      +'<p class="ag-status">Create a new agent — name, avatar, vibe, instructions &amp; memory</p>'
+      +'</div></div></div>'
+      +'<div class="set-group" style="--i:1"><button class="set-row" id="agCreateTileBtn"><span class="ric">'+I.plus+'</span><span style="flex:1">New sub-agent<span class="sub2">Full options — name, avatar, vibe, instructions, memory &amp; more</span></span>'+I.chevR+'</button></div>'
+      +(lastA? '<p class="set-note" style="--i:2">Swipe right to go back to '+esc(lastA.name)+', or tap their picture to chat with them.</p>' : '')
+      +'</div></div>';
+    wireBack(function(){ agentShowCreate=false; if(lastA) agentPageId=lastA.id; renderSettings('agentpage'); });
+    function openCreateFlow(){ renderSettings('agentcreate'); }
+    $('#agCreateCenter').addEventListener('click',openCreateFlow);
+    $('#agCreateTileBtn').addEventListener('click',openCreateFlow);
+    var carc2=$('#agCarousel');
+    if(carc2){
+      carc2.querySelectorAll('[data-agpeek]').forEach(function(b){ b.addEventListener('click',function(){ var t=agentById(b.getAttribute('data-agpeek')); if(t) chatWithAgent(t); }); });
+      var swX2=null;
+      carc2.addEventListener('pointerdown',function(e){ swX2=e.clientX; });
+      carc2.addEventListener('pointerup',function(e){
+        if(swX2===null) return;
+        var dx=e.clientX-swX2; swX2=null;
+        if(Math.abs(dx)<48) return;
+        window.__agSwipeAt=Date.now();
+        if(dx>0 && lastA) goAgentPage(lastA,-1);
+      });
+      carc2.addEventListener('pointercancel',function(){ swX2=null; });
+      carc2.addEventListener('click',function(e){
+        if(window.__agSwipeAt && Date.now()-window.__agSwipeAt<350){ e.stopPropagation(); e.preventDefault(); window.__agSwipeAt=0; }
+      }, true);
+    }
+    return;
   }
   var isMain=m.id===mainAgentId;
   var subs=AGENTS.filter(function(a){ return a.id!==mainAgentId; });
@@ -7610,7 +7697,7 @@ function settingsAgent(){
     var cme=$('#agCardMem'); if(cme) cme.addEventListener('click',function(){ agOpenFile('MEMORY.md'); });
   }
   setView.innerHTML=setHead('Agent','agent')+'<div class="set-scroll"><div class="set-inner agent-flow">'
-    +'<div style="--i:0"><div class="ag-carousel" id="agCarousel"><div class="ag-carousel-main">'+(prevA? peekHTML(prevA,'prev') : '')+(nextA? peekHTML(nextA,'next') : '')+'<div class="ag-avatar-wrap"><button class="ag-avatar" data-avtap="'+m.id+'" aria-label="Change avatar for '+escA(m.name)+'"><span class="agent-ava-slot">'+avatarHTMLFor(m,'idle')+'</span></button><button class="ag-pencil" id="agPencil" aria-label="Avatar and name options">'+I.edit+'</button></div>'
+    +'<div style="--i:0"><div class="ag-carousel" id="agCarousel"><div class="ag-carousel-main">'+(prevA? peekHTML(prevA,'prev') : '')+(nextA? peekHTML(nextA,'next') : createPeekHTML())+'<div class="ag-avatar-wrap"><button class="ag-avatar" data-avtap="'+m.id+'" aria-label="Change avatar for '+escA(m.name)+'"><span class="agent-ava-slot">'+avatarHTMLFor(m,'idle')+'</span></button><button class="ag-pencil" id="agPencil" aria-label="Avatar and name options">'+I.edit+'</button></div>'
     +'<div class="ag-name">'+esc(m.name)+'</div>'
     +'<p class="ag-status">'+esc(agStatusLine())+'</p>'
     +(isMain? '' : '<div style="text-align:center;margin:-8px 0 4px"><span class="badge">Sub-agent</span>'+(ca.id===m.id? '<span class="badge" style="margin-left:6px">Chatting now</span>' : '')+'</div>')
@@ -7654,14 +7741,20 @@ function settingsAgent(){
   var mmk=$('#agMakeMain'); if(mmk) mmk.addEventListener('click',function(){ if(makeMainAgent(m)){ toast(m.name+' is now the main agent'); agentPageId=m.id; renderSettings('agentpage'); } });
   var cm=$('#agChatMain'); if(cm) cm.addEventListener('click',function(){ setChatAgent(m.id); closeSettings(); toast('Chatting with '+m.name); });
   wireTabBody();
-  /* Carousel wiring — only when another created agent exists:
-     tap a peek to open that agent, or swipe the header left /
-     right to move along the created-agents list. A swipe's
-     trailing click is swallowed so it never lands on the
+  /* Carousel wiring: tapping an agent peek SELECTS that agent —
+     the chat switches to it and opens. Tapping the create peek
+     at the end of the list opens the New sub-agent flow. Swiping
+     the header left / right BROWSES the carousel: between the
+     created agents' pages, and past the last agent onto the
+     centred create-new-agent tile (and back). The create tile
+     always sits after the last agent, so the wiring also runs in
+     the single-agent case, where it is the only other slot. A
+     swipe's trailing click is swallowed so it never lands on the
      centred avatar / pencil underneath the finger. */
   var carc=$('#agCarousel');
-  if(carc && AGENTS.length>1 && (prevA || nextA)){
-    carc.querySelectorAll('[data-agpeek]').forEach(function(b){ b.addEventListener('click',function(){ var t=agentById(b.getAttribute('data-agpeek')); if(t) goAgentPage(t, parseInt(b.getAttribute('data-dir'),10)||1); }); });
+  if(carc){
+    carc.querySelectorAll('[data-agpeek]').forEach(function(b){ b.addEventListener('click',function(){ var t=agentById(b.getAttribute('data-agpeek')); if(t) chatWithAgent(t); }); });
+    var crp=carc.querySelector('[data-agcreate]'); if(crp) crp.addEventListener('click',function(){ renderSettings('agentcreate'); });
     var swX=null;
     carc.addEventListener('pointerdown',function(e){ swX=e.clientX; });
     carc.addEventListener('pointerup',function(e){
@@ -7669,7 +7762,7 @@ function settingsAgent(){
       var dx=e.clientX-swX; swX=null;
       if(Math.abs(dx)<48) return;
       window.__agSwipeAt=Date.now();
-      if(dx<0 && nextA) goAgentPage(nextA,1);
+      if(dx<0){ if(nextA) goAgentPage(nextA,1); else goCreatePage(1); }
       else if(dx>0 && prevA) goAgentPage(prevA,-1);
     });
     carc.addEventListener('pointercancel',function(){ swX=null; });
@@ -7704,7 +7797,7 @@ function settingsAgentHub(asSub){
     +(asSub? '' : '<div class="set-group" style="--i:2"><button class="set-row" id="hubSubBtn"><span class="ric">'+I.layers+'</span><span style="flex:1">Sub-agents<span class="sub2">List, edit, create and set the main agent</span></span><span class="val">'+subs.length+'</span>'+I.chevR+'</button></div>')
     +'<div class="sec-head-row" style="--i:3"><b>All agents</b><button class="add-round" id="hubCreate" aria-label="Create agent">'+I.plus+'</button></div>'
     +'<div class="set-group" style="--i:4">'+AGENTS.map(agentRowHTML).join('')+'</div>'
-    +'<p class="set-note" style="--i:5">Tap any agent to open its page — chat, make main and Edit live inside it, one tap deeper. History and memory are shared by all agents by default — turn on individual history or memory for one agent in its Edit page. Or just say it in chat: "make Nova the main agent", "chat with Nova", or "create agent Nova".</p>'
+    +'<p class="set-note" style="--i:5">Tap any agent to chat with it — the chat switches to that agent and opens. "Set as main" promotes an agent without leaving this page, and tapping the agent at the top of its chat opens its page to edit it. History and memory are shared by all agents by default — turn on individual history or memory for one agent in its Edit page. Or just say it in chat: "make Nova the main agent", "chat with Nova", or "create agent Nova".</p>'
     +'</div></div>';
   wireBack(function(){ renderSettings(asSub?'agentpage':'list'); });
   $('#hubChatMain').addEventListener('click',function(){ setChatAgent(m.id); closeSettings(); toast('Chatting with '+m.name); });

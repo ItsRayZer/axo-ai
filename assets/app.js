@@ -715,7 +715,7 @@ var API_PROVIDERS={
   groq:{name:'Groq', type:'openai', base:'https://api.groq.com/openai/v1', defModel:'openai/gpt-oss-120b'},
   xai:{name:'xAI', type:'openai', base:'https://api.x.ai/v1', defModel:'grok-4'},
   deepseek:{name:'DeepSeek', type:'openai', base:'https://api.deepseek.com/v1', defModel:'deepseek-chat'},
-  nvidia:{name:'NVIDIA', type:'openai', base:'https://integrate.api.nvidia.com/v1', defModel:'meta/llama-3.1-70b-instruct'},
+  nvidia:{name:'NVIDIA', type:'openai', base:'https://integrate.api.nvidia.com/v1', defModel:'nvidia/nemotron-3-super-120b-a12b'},
   mistral:{name:'Mistral', type:'openai', base:'https://api.mistral.ai/v1', defModel:'mistral-large-latest', agents:true},
   together:{name:'Together', type:'openai', base:'https://api.together.xyz/v1', defModel:'meta-llama/Llama-3.3-70B-Instruct-Turbo'},
   huggingface:{name:'Hugging Face', type:'openai', base:'https://router.huggingface.co/v1', defModel:'meta-llama/Llama-3.3-70B-Instruct'},
@@ -886,7 +886,7 @@ function syncLegacyApi(){
   else if(e.provider){ state.provider='custom'; state.providerBase=e.base||''; }
   else { state.provider=''; state.providerBase=''; }
 }
-function apiEntryLabel(e){ if(!e) return 'Not set'; if(!e.provider) return e.status==='unknown'? 'Unrecognised key' : 'Detecting…'; var p=API_PROVIDERS[e.provider]; if(e.provider==='mistral' && mistralAgentOn()) return 'Mistral Agent · ag_…'+state.mistralAgentId.slice(-4); if(e.provider==='mistral' && e.relay) return 'Mistral (relay — Agent auto if server set)'; return (p? p.name : 'API'); }
+function apiEntryLabel(e){ if(!e) return 'Not set'; if(!e.provider) return e.status==='unknown'? 'Unrecognised key' : 'Detecting…'; var p=API_PROVIDERS[e.provider]; if(e.provider==='mistral' && mistralAgentOn()) return 'Mistral Agent · ag_…'+state.mistralAgentId.slice(-4); return (p? p.name : 'API'); }
 function apiKeyMask(e){ return '•••• •••• '+(((e&&e.last4)||'')||String((e&&e.key)||'').slice(-4)); }
 function apiDetectProviderLocal(key){
   /* LOCAL detection only: the key's own prefix / format names its
@@ -982,8 +982,7 @@ function apiDetectEntry(key){
    A Mistral agent id (ag_…) is NOT a key: it names a saved agent
    in the user's Mistral console (its own instructions + tools).
    The moment an ag_… id is present — pasted in the Agent ID
-   field, pasted into the key box by mistake, or supplied by the
-   server relay's MISTRAL_AGENT_ID variable — Mistral chats
+   field, or pasted into the key box by mistake — Mistral chats
    automatically go through the Agents endpoint
    (/v1/agents/completions) instead of plain chat completions.
    No switch to find, nothing else to set: id present = agent
@@ -1200,8 +1199,11 @@ function isModelFailure(status, payload){
   if(t.indexOf('model_not_found')>=0 || t.indexOf('model not found')>=0 || t.indexOf('decommissioned')>=0 || t.indexOf('does not exist')>=0 || t.indexOf('no endpoints found')>=0 || t.indexOf('unavailable')>=0 && t.indexOf('model')>=0) return true;
   if(status===404 && (t.indexOf('model')>=0 || t.indexOf('not found')>=0)) return true;
   if((status===400 || status===422) && t.indexOf('model')>=0 && (t.indexOf('not')>=0 || t.indexOf('invalid')>=0 || t.indexOf('deprecat')>=0)) return true;
+  if(status===410) return true;
+  if(t.indexOf('end of life')>=0 || t.indexOf('no longer available')>=0) return true;
   return false;
 }
+function isNvidiaEntitlementError(status, payload){ var t=''; try{ t=(typeof payload==='string'? payload : JSON.stringify(payload||'')).toLowerCase(); }catch(e){} return status===404 && t.indexOf('function')>=0 && t.indexOf('not found for account')>=0; }
 /* The provider's own error message, plainly — never re-labelled. */
 function providerErrorMessage(status, payload){
   var em='';
@@ -1404,8 +1406,11 @@ function pingApi(entry, modelOverride){
       var em='';
       try{ var ej=res.j&&res.j.error; em=(ej&&(ej.message||ej))||(res.j&&res.j.message)||''; if(typeof em!=='string') em=JSON.stringify(em); }catch(e){}
       var kind=apiFailureKind(res.status, res.j);
+      var pingMsg=(kind==='quota'? 'Quota / rate limit reached (HTTP '+res.status+')' : providerErrorMessage(res.status, res.j));
+      if(entry.provider==='nvidia' && isNvidiaEntitlementError(res.status, res.j)) pingMsg="NVIDIA 'not found for account', the key's account needs the 'Public API Endpoints' permission (build.nvidia.com), then test again.";
+      if(entry.provider==='mistral' && mistralAgentOn() && res.status===404) pingMsg="GptOpen couldn't reach your saved agent — check the agent id (ag_…) in your Mistral console and try again.";
       return {ok:false, kind:kind, status:res.status, j:res.j, modelError:isModelFailure(res.status, res.j),
-        msg:(kind==='quota'? 'Quota / rate limit reached (HTTP '+res.status+')' : providerErrorMessage(res.status, res.j))};
+        msg:pingMsg};
     })
     .catch(function(){ return {ok:false, kind:'error', msg:'Network or CORS — the provider could not be reached from this page'}; });
 }
@@ -3626,10 +3631,9 @@ function callProvider(chat, memHits, opts){
       /* App relay FIRST: same-origin call, no key in the request
          at all — the server adds its env-var key (see relayEntries)
          and converts formats server-side for Gemini / Anthropic.
-         For Mistral, this device's agent id travels if it has
-         one; if not, the relay uses its own MISTRAL_AGENT_ID
-         automatically, so everyone on the relay gets the agent
-         with nothing to set on their device. */
+         The relay serves Groq and OpenRouter only; Mistral is
+         never served by it, so a saved Mistral agent id only
+         applies to the user's own Mistral key (direct path below). */
       /* 4096, not 2048: both default models are reasoning models
          whose thinking tokens come out of the same budget — at
          2048 a long think could eat the whole budget and return
@@ -3638,7 +3642,6 @@ function callProvider(chat, memHits, opts){
       /* The final 'auto' sweep sends NO model: the server picks
          per provider (its own default + fallbacks) as it goes. */
       if(entry.provider==='auto') rBody.model='';
-      if(entry.provider==='mistral' && mistralAgentOn()) rBody.agent_id=state.mistralAgentId;
       return {url:'/api/relay', headers:{'Content-Type':'application/json'}, body:rBody};
     }
     if(p.type==='gemini'){
@@ -3777,6 +3780,7 @@ function callProvider(chat, memHits, opts){
     }
   }
   var lastFailKind='error';
+  var nvidiaEntitlementHit=false;
   var lastFailDetail='';
   var totalTried=0;
   function sendModelsFor(entry){
@@ -3816,6 +3820,12 @@ function callProvider(chat, memHits, opts){
            instead of blaming the user's keys, with the same two
            working actions as the limit message. */
         chat.messages.push({id:mid(), role:'ai', apiCta:true, text:'The Gptopen Model didn\u2019t answer this time — the connection dropped before a reply came back. It is not your keys. Tap Retry to try again, or use your own API key.'});
+      } else if(nvidiaEntitlementHit){
+        /* NVIDIA answered 404 "not found for account" for every
+           model: the key's account lacks the Public API Endpoints
+           permission, so no model advance can fix it — say that
+           instead of the generic failure. */
+        chat.messages.push({id:mid(), role:'ai', apiCta:true, text:"GptOpen couldn't use NVIDIA here: NVIDIA answers 'not found' for every model, which means the account behind the key is missing the 'Public API Endpoints' permission. Enable it for your account at build.nvidia.com (it can need a support request), then tap Retry."});
       } else {
         chat.messages.push({id:mid(), role:'ai', apiCta:true, text:'GptOpen didn’t answer this time — every route was tried automatically before showing this. Tap Retry to try again, or check your keys in Settings → APIs & Providers.'});
       }
@@ -3909,6 +3919,7 @@ function callProvider(chat, memHits, opts){
            provider 404 is recorded as exactly that, never as
            "no relay". */
         lastFailDetail=junkReply? 'Non-chat answer · '+model : providerErrorMessage(res.status, res.j)+' · '+providerDisplayName(entry.provider)+' · '+model;
+        if(entry.provider==='nvidia' && isNvidiaEntitlementError(res.status, res.j)) nvidiaEntitlementHit=true;
         if(kind==='quota'){ state.usage.quota++; if(entry.relay) relayQuotaHit=true; } else state.usage.failed++;
         /* Explicit user pick: NEVER auto-advance past it — move
            to the next route and let the final message surface
@@ -4998,7 +5009,7 @@ function settingsApis(){
     +'<p class="set-note">Status: <b>'+esc(apiStatusText())+'</b></p>'
     +(state.relayOn? '<p class="set-note">The <b>Gptopen Model</b> is the shared built-in — everyone chatting shares its limit, so it can run out at busy times. Your own key above is yours alone: your models, your limits, nothing shared.</p>' : '<p class="set-note">The Gptopen Model is off on this device — turn it on under Gptopen Model below.</p>')
     +'<div class="field"><label>Mistral Agent ID — optional, auto-on when filled</label><input id="mistralAgentIn" type="text" placeholder="ag_… (from Mistral console → Agents)" autocomplete="off" value="'+escA(state.mistralAgentId||'')+'"></div>'
-    +'<p class="set-note" id="mistralAgentNote">'+(mistralAgentOn()? 'Agent on — Mistral chats use your saved agent (Agents API) automatically.' : 'No agent id — Mistral uses normal chat. Paste an ag_… id and the Agent API turns on by itself; clear it to turn off.')+'</p>'
+    +'<p class="set-note" id="mistralAgentNote">'+(mistralAgentOn()? (apiEntries().some(function(e){return e.provider==='mistral';})? 'Agent on — Mistral chats use your saved agent (Agents API) automatically.' : 'Agent id saved, but no Mistral API key is added — the id alone can’t connect. Paste your key above; the id stays.') : 'No agent id — Mistral uses normal chat. Paste an ag_… id and the Agent API turns on by itself; clear it to turn off.')+'</p>'
     +'<button class="btn-ghost" id="apiFreeBtn">Free API keys — where to get your own</button>'
     +'<button class="btn-ghost" id="apiRelayBtn">Gptopen Model — built in</button>'
     +'</div></div>';

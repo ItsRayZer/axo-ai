@@ -465,8 +465,17 @@ function renderAgentHead(){
    only its own chats instead. */
 function chatVisibleForAgent(c){
   var a=(typeof chatAgent==='function')? chatAgent() : null;
-  if(a && a.individualHistory) return c.agentId===a.id;
-  return !c.agentId;
+  var ca=(c.agentId && typeof agentById==='function')? agentById(c.agentId) : null;
+  /* Per-chat agent: a chat assigned to an individual-history agent
+     is that agent's private chat and shows only while chatting
+     with it; while chatting with an individual-history agent the
+     shared chats stay hidden, exactly as before. Every other
+     chat — assigned to any shared agent, or not yet assigned —
+     is visible to all shared agents, whatever the current chat's
+     agent is. */
+  if(ca && ca.individualHistory) return !!a && a.id===ca.id;
+  if(a && a.individualHistory) return false;
+  return true;
 }
 function renderSplit(){
   var on=!!state.splitId && !!chatById(state.splitId);
@@ -1989,7 +1998,12 @@ function openChat(id){
   if(!chatById(id)) return;
   state.replyTo=null; if(typeof renderReplyBar==='function') renderReplyBar(); closeMsgMenu();
   if(typeof setTabSel==='function') setTabSel('main');
-  state.currentId=id; setSidebar(false,true); closeSettings(true); renderAll();
+  state.currentId=id;
+  /* Per-chat agent: opening a chat restores THAT chat's own agent
+     (syncing the legacy global to it) — never the agent some other
+     chat was last switched to. */
+  if(typeof syncChatAgentToCurrentChat==='function') syncChatAgentToCurrentChat();
+  setSidebar(false,true); closeSettings(true); renderAll();
 }
 function newChat(){
   /* Starting a new chat NEVER turns Temporary chat on — it clears
@@ -2000,7 +2014,10 @@ function newChat(){
   var tb=$('#tempBtn'); if(tb) tb.classList.remove('temp-on');
   var c={id:'c'+(++uid), title:'New chat', messages:[]};
   var nca=(typeof chatAgent==='function')? chatAgent() : null;
-  if(nca && nca.individualHistory) c.agentId=nca.id;
+  /* A new chat starts with the agent of the chat it was created
+     from, recorded on the chat itself — from then on it keeps its
+     own agent, independent of every other chat. */
+  if(nca) c.agentId=nca.id;
   chats.splice(1,0,c); state.currentId=c.id; state.splitId=null;
   setSidebar(false,true); closeSettings(true); renderAll();
   $('#chatInput').focus();
@@ -2025,7 +2042,7 @@ function askDelete(id){
   $('#delYes').addEventListener('click',function(){
     chats=chats.filter(function(x){return x.id!==id;});
     if(state.splitId===id) state.splitId=null;
-    if(state.currentId===id) state.currentId='main';
+    if(state.currentId===id){ state.currentId='main'; if(typeof syncChatAgentToCurrentChat==='function') syncChatAgentToCurrentChat(); }
     closeSheet(); renderAll(); toast('Chat deleted');
   });
   $('#delNo').addEventListener('click',closeSheet);
@@ -3260,7 +3277,7 @@ function avatarChatCommand(text, atts){
     agentPreset=preset; agentAvatar=''; var caPre=chatAgent(); if(caPre){ caPre.preset=preset; caPre.avatar=''; if(caPre.id===mainAgentId) syncMainGlobals(); autoGenerateEmotes(caPre); }
     return 'Done — my avatar is now the '+preset+' preset, animated and moving at the top of the chat. Open Settings → Agent → Change Avatar any time to build your own shape, face and colour.';
   }
-  avatarTargetAgentId=chatAgentId; applyCustomAvatar(shape||avatarShape, face||avatarFace, color||avatarColor, acc||avatarAcc); avatarTargetAgentId=null;
+  avatarTargetAgentId=(chatAgent()? chatAgent().id : chatAgentId); applyCustomAvatar(shape||avatarShape, face||avatarFace, color||avatarColor, acc||avatarAcc); avatarTargetAgentId=null;
   return 'Done — I built your prompted avatar: a '+(colorName?colorName+' ':'')+avatarShape+' with a '+avatarFace+' face. It is live at the top of the chat, circular, with my name below it, and always animated. Say another description, upload an image, or open Change Avatar to tweak the shape, face and colour.';
 }
 function sendText(raw){
@@ -5423,7 +5440,37 @@ var avReturn='agentpage';
 var agentsAnimSpeed=1;
 function agentById(id){ for(var i=0;i<AGENTS.length;i++) if(AGENTS[i].id===id) return AGENTS[i]; return null; }
 function mainAgent(){ return agentById(mainAgentId)||AGENTS[0]; }
-function chatAgent(){ return agentById(chatAgentId)||mainAgent(); }
+/* =============== Per-chat agent ===============
+   Every chat remembers its OWN agent in chat.agentId, persisted
+   with the chats themselves (LOCAL_KEYS.chats). chatAgentId is
+   only a legacy fallback / cache of the CURRENT chat's agent —
+   it is re-derived from the current chat on every read and on
+   every chat open, so switching agents in one chat can never
+   leak into another. */
+function fallbackChatAgentId(){
+  var a=agentById(chatAgentId);
+  if(a && !a.individualHistory) return a.id;
+  return mainAgentId;
+}
+function agentForChat(c){
+  if(c && c.agentId){ var a=agentById(c.agentId); if(a) return a; }
+  return agentById(chatAgentId)||mainAgent();
+}
+function syncChatAgentToCurrentChat(){
+  var c=(typeof currentChat==='function')? currentChat() : null;
+  if(!c) return agentById(chatAgentId)||mainAgent();
+  if(!c.agentId || !agentById(c.agentId)) c.agentId=fallbackChatAgentId();
+  chatAgentId=c.agentId;
+  return agentById(chatAgentId)||mainAgent();
+}
+function chatAgent(){
+  var c=(typeof currentChat==='function')? currentChat() : null;
+  if(c && c.agentId){
+    var a=agentById(c.agentId);
+    if(a){ if(chatAgentId!==a.id) chatAgentId=a.id; return a; }
+  }
+  return agentById(chatAgentId)||mainAgent();
+}
 function targetAgent(){ return agentById(avatarTargetAgentId)||agentById(editingAgentId)||mainAgent(); }
 function syncMainGlobals(){ var m=mainAgent(); if(!m) return; agentName=m.name; agentAvatar=m.avatar||''; agentPreset=m.preset||'mia'; avatarShape=m.shape||avatarShape; avatarFace=m.face||avatarFace; avatarColor=m.color||avatarColor; avatarAcc=m.acc||avatarAcc; if(m.vibe) agentVibe=m.vibe; syncSidebarAgent(); }
 /* The sidebar head carries the MAIN agent — the exact same name
@@ -5464,9 +5511,31 @@ function ensureAgentChat(a){
 }
 function setChatAgent(id){
   var a=agentById(id); if(!a) return;
+  /* PER-CHAT: every switch path lands here — the top-avatar swipe,
+     the Agent page carousel select, a sub-agent tap-to-chat, the
+     agents list, the chat commands — and it assigns the agent to
+     the CURRENT chat only (chat.agentId, saved with the chats).
+     No other chat's agent is touched. */
+  if(a.individualHistory){
+    /* An individual-history agent chats in its own dedicated chat
+       (already tagged with its id); the chat being left keeps
+       whatever agent it had. */
+    chatAgentId=id;
+    var c=ensureAgentChat(a); if(c){ c.agentId=a.id; state.currentId=c.id; }
+    return;
+  }
+  var cur=chatById(state.currentId);
+  var owner=cur? agentById(cur.agentId) : null;
+  if(cur && owner && owner.individualHistory && owner.id!==id){
+    /* The current chat is another agent's private chat — never
+       reassign it. Land on the Main chat and assign the new agent
+       to the Main chat only. */
+    var mc=chatById('main')||chats[0];
+    if(mc){ mc.agentId=id; state.currentId=mc.id; }
+  } else if(cur){
+    cur.agentId=id;
+  }
   chatAgentId=id;
-  if(a.individualHistory){ var c=ensureAgentChat(a); if(c) state.currentId=c.id; }
-  else { var cur=chatById(state.currentId); if(cur && cur.agentId && cur.agentId!==id) state.currentId='main'; }
 }
 /* =============== Top agent: swipe to switch, tap for its page ===============
    Swiping the pinned top agent left / right changes the agent you
@@ -5539,7 +5608,7 @@ function switchTopAgent(dir){
     } else done();
   }
   if(AGENTS.length<2){ slideOutAlone(function(){ openSettings('agentcreate'); }); return; }
-  var idx=0; AGENTS.forEach(function(a,i){ if(a.id===chatAgentId) idx=i; });
+  var idx=0; var curAg=chatAgent(); AGENTS.forEach(function(a,i){ if(curAg && a.id===curAg.id) idx=i; });
   var next=AGENTS[(idx+dir+AGENTS.length)%AGENTS.length];
   if(!head || reduced || !head.animate){ setChatAgent(next.id); renderAll(); toast('Chatting with '+next.name); return; }
   /* Where the outgoing head is right now (it may be mid-drag,
@@ -7002,11 +7071,20 @@ function renameAgentRecord(a, nn){
   return 'Done — "'+old+'" is now "'+nn+'".';
 }
 function deleteAgentRecord(a){
+  var repl=AGENTS.filter(function(x){ return x.id!==a.id; })[0];
+  var replId=(mainAgentId!==a.id)? mainAgentId : (repl? repl.id : mainAgentId);
   AGENTS=AGENTS.filter(function(x){ return x.id!==a.id; });
-  chats=chats.filter(function(c){ return c.agentId!==a.id; });
+  if(mainAgentId===a.id && repl) mainAgentId=repl.id;
+  /* Per-chat agent: only an individual-history agent's own private
+     chats go with it. Shared chats that were chatting with this
+     agent keep their history — that chat alone falls back to the
+     replacement agent; every other chat keeps its own agent. */
+  chats=chats.filter(function(c){ return !(c.agentId===a.id && a.individualHistory); });
+  chats.forEach(function(c){ if(c.agentId===a.id) c.agentId=replId; });
   var f=afFind('agents/'+agentSlug(a.name)+'.md'); if(f) AGENT_FILES.splice(AGENT_FILES.indexOf(f),1);
-  if(chatAgentId===a.id) chatAgentId=mainAgentId;
+  if(chatAgentId===a.id) chatAgentId=replId;
   if(state.currentId && !chatById(state.currentId)) state.currentId='main';
+  syncChatAgentToCurrentChat();
 }
 function applyAvatarLook(a, o){
   /* Same fields the Avatar editor writes: a preset character takes
@@ -7101,7 +7179,7 @@ function agentPowerCommand(text){
     var shid=m[1].toLowerCase(), shOk=false;
     (typeof AVATAR_SHAPES!=='undefined'? AVATAR_SHAPES : []).forEach(function(s){ if(s===shid) shOk=true; });
     if(!shOk) return 'I don\u2019t have a "'+shid+'" shape — open the Avatar editor to see every shape, or name one you have seen there.';
-    avatarTargetAgentId=chatAgentId; applyCustomAvatar(shid, avatarFace, avatarColor, avatarAcc); avatarTargetAgentId=null; renderAll();
+    avatarTargetAgentId=(chatAgent()? chatAgent().id : chatAgentId); applyCustomAvatar(shid, avatarFace, avatarColor, avatarAcc); avatarTargetAgentId=null; renderAll();
     return 'Done — my shape is now '+shid+', live at the top of the chat.';
   }
   /* --- Avatar: colour / tint --- */
@@ -7143,9 +7221,10 @@ function agentAutoLearn(text){
   if(changed) syncAgentFile(a);
 }
 function agentRowHTML(a){
+  var caNow=(typeof chatAgent==='function')? chatAgent() : null;
   var sub=(a.id===mainAgentId?'Main agent':'Sub-agent')+' · '+(a.individualHistory?'Own history':'Shared history')+' · '+(a.individualMemory?'Own memory':'Shared memory')+(a.autoLearn?' · Learning from chat':'');
   return '<div class="agent-list-row" data-agentrow="'+a.id+'" role="button" tabindex="0"><span class="mini-ava" style="width:46px;height:46px">'+avatarHTMLFor(a,'idle')+'</span><span style="flex:1;min-width:0"><span style="display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(a.name)+'</span><span style="display:block;color:var(--muted);font-size:13px;margin-top:2px">'+sub+'</span></span>'
-    +(a.id===chatAgentId? '<span class="badge">Chatting</span>' : '')
+    +(caNow && a.id===caNow.id? '<span class="badge">Chatting</span>' : '')
     +(a.id===mainAgentId? '<span class="badge main">Main</span>' : '<button class="badge" data-setmain="'+a.id+'" style="cursor:pointer">Set as main</button>')
     +I.chevR+'</div>';
 }
@@ -7162,11 +7241,7 @@ function askDeleteAgent(a){
   openSheet('<h3>Delete '+esc(a.name)+'</h3><p class="sub">This agent, its custom instructions and its own memory are removed. Shared chats and shared memory stay.</p><button class="btn-danger" id="agDelYes">Delete agent</button><button class="btn-ghost" id="agDelNo">Cancel</button>');
   $('#agDelNo').addEventListener('click',closeSheet);
   $('#agDelYes').addEventListener('click',function(){
-    AGENTS=AGENTS.filter(function(x){ return x.id!==a.id; });
-    chats=chats.filter(function(c){ return c.agentId!==a.id; });
-    var f=afFind('agents/'+agentSlug(a.name)+'.md'); if(f) AGENT_FILES.splice(AGENT_FILES.indexOf(f),1);
-    if(chatAgentId===a.id) chatAgentId=mainAgentId;
-    if(state.currentId && !chatById(state.currentId)) state.currentId='main';
+    deleteAgentRecord(a);
     closeSheet(); toast('Agent deleted'); renderSettings(lastSetView==='subagents'?'subagents':'agentpage');
   });
 }
@@ -7494,7 +7569,8 @@ function agStatusLine(){
    leaves Settings entirely and lands back on the chat. */
 function settingsAgentProfile(){
   var a=agentById(profileAgentId)||chatAgent(); profileAgentId=a.id; editingAgentId=a.id;
-  var isMain=a.id===mainAgentId, isChat=a.id===chatAgentId;
+  var caProf=chatAgent();
+  var isMain=a.id===mainAgentId, isChat=!!caProf && a.id===caProf.id;
   setView.innerHTML=setHead('Agent','agent')+'<div class="set-scroll"><div class="set-inner agent-flow">'
     +'<div style="--i:0"><div class="ag-avatar-wrap"><button class="ag-avatar" data-avtap="'+a.id+'" aria-label="Change avatar for '+escA(a.name)+'"><span class="agent-ava-slot">'+avatarHTMLFor(a,'idle')+'</span></button><button class="ag-pencil" id="apPencil" aria-label="Edit '+escA(a.name)+'">'+I.edit+'</button></div>'
     +'<div class="ag-name">'+esc(a.name)+'</div>'
@@ -8932,6 +9008,13 @@ function loadLocal(){
     }catch(e){}
     if(ag.mainId && agentById(ag.mainId)) mainAgentId=ag.mainId;
     if(ag.chatId && agentById(ag.chatId)) chatAgentId=ag.chatId;
+    /* Per-chat migration: chats saved before per-chat agents
+       existed carry no agentId of their own — give each one the
+       agent that was globally chatting at save time (ag.chatId,
+       just resolved into the fallback above), so from now on each
+       chat keeps its own agent independently. Chats already
+       carrying a valid agentId keep it untouched. */
+    chats.forEach(function(c){ if(c && (!c.agentId || !agentById(c.agentId))) c.agentId=fallbackChatAgentId(); });
     if(typeof ag.speed==='number' && ag.speed>0) agentsAnimSpeed=ag.speed;
     if(ag.avatar){
       avatarShape=ag.avatar.shape||avatarShape; avatarFace=ag.avatar.face||avatarFace;
@@ -8967,6 +9050,7 @@ function loadLocal(){
     if(typeof mt.savedAt==='number') localSavedAt=mt.savedAt;
   }
   try{ syncLegacyApi(); }catch(e){}
+  try{ syncChatAgentToCurrentChat(); }catch(e){}
   try{ syncMainGlobals(); }catch(e){}
   try{ setAgentsAnimSpeed(agentsAnimSpeed); }catch(e){}
   state.apiHealth=(apiEntries().length || state.relayOn)? 'changed' : 'unset';

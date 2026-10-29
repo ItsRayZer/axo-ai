@@ -493,13 +493,13 @@ function apiSaved(prev, pastedKey){
    agent head, usage page). */
 var API_PROVIDERS={
   gemini:{name:'Google Gemini', type:'gemini', base:'https://generativelanguage.googleapis.com/v1beta', defModel:'gemini-2.5-flash'},
-  openrouter:{name:'OpenRouter', type:'openai', base:'https://openrouter.ai/api/v1', defModel:'meta-llama/llama-3.3-70b-instruct:free'},
+  openrouter:{name:'OpenRouter', type:'openai', base:'https://openrouter.ai/api/v1', defModel:'openai/gpt-oss-120b'},
   openai:{name:'OpenAI', type:'openai', base:'https://api.openai.com/v1', defModel:'gpt-4o-mini'},
   anthropic:{name:'Anthropic', type:'anthropic', base:'https://api.anthropic.com/v1', defModel:'claude-sonnet-4-5'},
-  groq:{name:'Groq', type:'openai', base:'https://api.groq.com/openai/v1', defModel:'llama-3.3-70b-versatile'},
+  groq:{name:'Groq', type:'openai', base:'https://api.groq.com/openai/v1', defModel:'openai/gpt-oss-120b'},
   xai:{name:'xAI', type:'openai', base:'https://api.x.ai/v1', defModel:'grok-4'},
   deepseek:{name:'DeepSeek', type:'openai', base:'https://api.deepseek.com/v1', defModel:'deepseek-chat'},
-  nvidia:{name:'NVIDIA', type:'openai', base:'https://integrate.api.nvidia.com/v1', defModel:'meta/llama-3.1-70b-instruct'},
+  nvidia:{name:'NVIDIA', type:'openai', base:'https://integrate.api.nvidia.com/v1', defModel:'nvidia/llama-3.1-nemotron-70b-instruct'},
   mistral:{name:'Mistral', type:'openai', base:'https://api.mistral.ai/v1', defModel:'mistral-large-latest', agents:true},
   together:{name:'Together', type:'openai', base:'https://api.together.xyz/v1', defModel:'meta-llama/Llama-3.3-70B-Instruct-Turbo'},
   huggingface:{name:'Hugging Face', type:'openai', base:'https://router.huggingface.co/v1', defModel:'meta-llama/Llama-3.3-70B-Instruct'},

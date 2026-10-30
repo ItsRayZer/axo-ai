@@ -154,7 +154,18 @@ function msgHTML(m, chatId){
   var quote=m.replyToText? '<div class="reply-quote">'+esc(m.replyToText)+'</div>' : '';
   var att=msgAttHTML(m);
   if(m.role==='user'){ return '<div class="msg user" data-msg-id="'+m.id+'" data-chat-id="'+cid+'" tabindex="0" role="button" aria-label="Your message — open message menu">'+quote+att+(m.text?'<div class="bubble-user">'+esc(m.text)+'</div>':'')+(m.reaction?'<span class="msg-reaction" aria-label="AI reaction">'+esc(m.reaction)+'</span>':'')+(m.liked?'<span class="msg-like" aria-label="You liked this message">'+LIKE_HEART+'</span>':'')+'</div>'; }
-  var h='<div class="msg ai" data-msg-id="'+m.id+'" data-chat-id="'+cid+'" tabindex="0" role="button" aria-label="Assistant message — open message menu">'+quote+att+'<div class="body">'+renderMarkdown(noEmDash(m.text))+'</div>';
+  /* Group chats ONLY: each agent reply is headed by that agent's
+     avatar + name, so it is always clear who said what. 1:1 chats
+     keep the single GptOpen identity — no header is ever added. */
+  var grpHead='';
+  if(m.agentId && typeof agentById==='function'){
+    var gc=chatById(cid);
+    if(gc && gc.type==='group'){
+      var ga=agentById(m.agentId);
+      if(ga) grpHead='<div class="grp-head"><span class="grp-ava" aria-hidden="true">'+avatarHTMLFor(ga,'idle')+'</span><span class="grp-name">'+esc(ga.name)+'</span></div>';
+    }
+  }
+  var h='<div class="msg ai" data-msg-id="'+m.id+'" data-chat-id="'+cid+'" tabindex="0" role="button" aria-label="Assistant message — open message menu">'+quote+att+grpHead+'<div class="body">'+renderMarkdown(noEmDash(m.text))+'</div>';
   if(m.limitCta || m.apiCta){
     /* Failure / shared-limit message actions — every one works:
        Retry re-runs the last request (relay detection resets, so
@@ -568,7 +579,7 @@ function updateTargetLine(){
 var lastSbSig='';
 function sbSig(q){
   var s=q+'#'+state.currentId+'#'+(state.splitId||'')+'#'+(state.showArchived?1:0)+'#'+chatAgentId+'#'+((typeof agentStatus!=='undefined'&&agentStatus)?(agentStatus.kind||''):'');
-  for(var i=0;i<chats.length;i++) s+='|'+chats[i].id+':'+chats[i].title+':'+(chats[i].agentId||'');
+  for(var i=0;i<chats.length;i++) s+='|'+chats[i].id+':'+chats[i].title+':'+(chats[i].agentId||'')+':'+(chats[i].type||'')+':'+(chats[i].members? chats[i].members.join(',') : '');
   for(var j=0;j<AGENTS.length;j++){ var a2=AGENTS[j]; s+='@'+a2.id+':'+(a2.preset||'')+':'+(a2.avatar?'p':'')+':'+(a2.shape||'')+':'+(a2.face||'')+':'+(a2.color||'')+':'+(a2.acc||'')+':'+(a2.cw||'')+':'+(a2.frame||'')+':'+(a2.cface||'')+':'+(a2.cacc||'')+':'+(a2.ctint||''); }
   return s;
 }
@@ -603,9 +614,19 @@ function renderSidebar(){
     var dot=(idx===0 && !sel && !sp);
     var agc=agentById(c.agentId)||chatAgent();
     var liveA=!!(sel && agc && chatAgent() && agc.id===chatAgent().id);
+    /* Group chats carry a group mark instead of one agent's
+       avatar: the members' avatars stacked in the same cell.
+       The title is the member names (set at creation, renamable
+       like any chat). */
+    var rowAva;
+    if(c.type==='group' && c.members && c.members.length){
+      rowAva='<span class="sb-grp-avas" aria-hidden="true">'+c.members.slice(0,3).map(function(gid){ var gm=agentById(gid); return gm? '<span class="sb-grp-ava">'+avatarHTMLFor(gm,'idle')+'</span>' : ''; }).join('')+'</span>';
+    } else {
+      rowAva='<span class="sb-chat-ava" aria-hidden="true">'+avatarHTMLFor(agc,(liveA && typeof agentStatus!=='undefined' && agentStatus && agentStatus.kind)? agentStatus.kind : 'idle')+'</span>';
+    }
     html+='<div class="chat-row'+(sel?' sel':'')+(sp?' splitp':'')+(liveA?' live-agent':'')+'" data-id="'+c.id+'">'
       +'<div class="chat-row-under"><span class="u-open">Open</span><span class="u-del">Delete</span></div>'
-      +'<div class="chat-row-main" role="button" tabindex="0" aria-label="'+esc(c.title)+'"><span class="sb-chat-ava" aria-hidden="true">'+avatarHTMLFor(agc,(liveA && typeof agentStatus!=='undefined' && agentStatus && agentStatus.kind)? agentStatus.kind : 'idle')+'</span><span class="chat-row-title">'+esc(c.title)+'</span>'
+      +'<div class="chat-row-main" role="button" tabindex="0" aria-label="'+esc(c.title)+'">'+rowAva+'<span class="chat-row-title">'+esc(c.title)+'</span>'
       +(sp?'<span class="split-badge">Split</span>':'')
       +(dot?'<span class="row-dot"></span>':'')
       +'<button class="row-menu-btn" data-menu="'+c.id+'" aria-label="Chat options">'+I.dotsH+'</button></div></div>';
@@ -3170,11 +3191,15 @@ function pushTyping(kind){
      coding / writing / searching / fixing. The top head shows
      only the agent's small name while busy (setAgentStatus). */
   if(typeof setAgentStatus==='function') setAgentStatus(kind||'thinking');
-  var a=(typeof chatAgent==='function')? chatAgent() : null;
+  /* Group chat: while a member is replying, the indicator carries
+     THAT member's avatar and small name only — and drops the
+     data-asp hooks, so the head status cycler (which speaks for
+     the chat's own agent) never rewrites this row's name. */
+  var a=(typingAgentOverride && typeof agentById==='function' && agentById(typingAgentOverride))? agentById(typingAgentOverride) : ((typeof chatAgent==='function')? chatAgent() : null);
   var nm=a? a.name : 'Axo';
   var verb=(typeof agentStatusVerb==='function')? agentStatusVerb(kind||'thinking') : 'is thinking';
   var ty=document.createElement('div'); ty.className='msg ai msg-status';
-  ty.innerHTML='<div class="status-inline"><span class="status-inline-ava" aria-hidden="true">'+(a? avatarHTMLFor(a, kind||'thinking') : '')+'</span><span class="status-inline-pill"><b data-asp-name>'+esc(nm)+'</b><span class="asp-verb" data-asp-verb>'+esc(verb)+'<span class="asp-dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span></span><span class="typing" aria-hidden="true"><i></i><i></i><i></i></span></span></div>';
+  ty.innerHTML='<div class="status-inline"><span class="status-inline-ava" aria-hidden="true">'+(a? avatarHTMLFor(a, kind||'thinking') : '')+'</span><span class="status-inline-pill"><b'+(typingAgentOverride?'':' data-asp-name')+'>'+esc(nm)+'</b><span class="asp-verb"'+(typingAgentOverride?'':' data-asp-verb')+'>'+esc(verb)+'<span class="asp-dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span></span><span class="typing" aria-hidden="true"><i></i><i></i><i></i></span></span></div>';
   activeWrap().appendChild(ty);
   var sc=ty.closest('.pane-scroll')||$('#chatScroll'); if(sc) sc.scrollTop=sc.scrollHeight;
   var origRemove=ty.remove.bind(ty);
@@ -3428,6 +3453,12 @@ function sendText(raw){
     else pushCanvas(chat, text);
     return;
   }
+  /* Group chat: every member agent replies in turn, then ONE
+     bounded reaction round — never the single-agent reply. All
+     the command layers above still ran first, so chat powers
+     (rename this chat, set a face, and the rest) work in a group
+     exactly as in a 1:1 chat. */
+  if(chat.type==='group' && chat.members && chat.members.length>1){ sendGroupReplies(chat, memHits); return; }
   if(providerRouteOn()){ callProvider(chat, memHits); return; }
   pushAI(chat, localReply(text || (sentLinks.length? 'Shared link: '+sentLinks[0].url : 'Shared: '+(sentAtts[0]? (sentAtts[0].name||'a file') : 'a file')), memHits));
 }
@@ -3444,6 +3475,116 @@ function doSearch(chat, q){
       chat.messages.push({id:mid(), role:'ai', text:out}); renderAll();
     })
     .catch(function(){ ty.remove(); chat.messages.push({id:mid(), role:'ai', text:'Search could not reach the network from this preview. Check the connection and try again.'}); renderAll(); });
+}
+/* =============== Group chat: reply engine ===============
+   One user message in a group chat runs a fixed, bounded queue:
+   round 1 — every member replies in member order; round 2 — ONE
+   reaction round, every member may briefly react to what the
+   others said. That is the whole loop: 2 rounds maximum, built
+   as two explicit passes over the member list, so it always
+   terminates. Each reply goes through the normal send path
+   (callProvider) with that member's own persona, so the user's
+   own keys and the shared default path behave exactly as in a
+   1:1 chat — and every completed reply on the shared path counts
+   as one free-tier message, counted inside callProvider itself. */
+var groupBusyById={}, groupPendingById={};
+function groupPersonaLine(a){
+  var v=String((a && (a.vibe || a.instructions))||'').replace(/\s+/g,' ').trim();
+  var cut=v.search(/[.!?]\s/);
+  if(cut>0) v=v.slice(0,cut+1);
+  if(v.length>120) v=v.slice(0,117).trim()+'...';
+  return v || 'A helpful AI agent in this app.';
+}
+function groupContextText(chat, self, round){
+  var un=knownUserName();
+  var others=(chat.members||[]).map(function(id){ return agentById(id); }).filter(function(a){ return a && a.id!==self.id; });
+  var list=others.map(function(a){ return '- '+a.name+': '+groupPersonaLine(a); }).join('\n');
+  var t='GROUP CHAT CONTEXT: You are '+self.name+'. You are in a group chat with '+(un? un+' (the user)' : 'the user')+' and these other agents:\n'+list+'\n'
+    +'The user just sent a message to the whole group. Every agent in the group replies in turn, and each reply is labelled with that agent\u2019s name and avatar, so everyone can tell who said what. In the conversation above, messages labelled with another agent\u2019s name are that agent\u2019s words, not yours and not the user\u2019s.\n'
+    +'Reply as yourself, in your own voice and persona. You may agree, disagree, build on, question, or playfully roast what the other agents said. You and the other agents can plan and do things together, and research and find things together, right here in the conversation. Do not speak for the other agents, and do not label your reply with your own name.';
+  if(round===2){
+    t+='\n\nREACTION ROUND: Everyone has now replied once. Give ONE brief reaction to what the other agents said: agree, disagree, build on it, question it, or playfully roast it. Keep it short, one to three sentences, and add something new instead of repeating your first reply. If you genuinely have nothing to add, reply with only the word SKIP and nothing else.';
+  }
+  return t;
+}
+function sendGroupReplies(chat, memHits){
+  /* A second send while a round is still running is not dropped:
+     it is queued and answered by a fresh bounded round as soon
+     as the current one finishes. */
+  if(groupBusyById[chat.id]){ groupPendingById[chat.id]=memHits||null; return; }
+  var members=(chat.members||[]).map(function(id){ return agentById(id); }).filter(Boolean);
+  if(members.length<2) return;
+  if(!providerRouteOn()){ groupLocalReplies(chat, members); return; }
+  groupBusyById[chat.id]=true;
+  var queue=[];
+  members.forEach(function(a){ queue.push({agent:a, round:1}); });
+  members.forEach(function(a){ queue.push({agent:a, round:2}); });
+  var i=0;
+  var failedIds={};
+  function lastMsgFrom(id){
+    for(var k=chat.messages.length-1;k>=0;k--){ var m=chat.messages[k]; if(m.role==='ai' && m.agentId===id) return m; }
+    return null;
+  }
+  function finish(){
+    groupBusyById[chat.id]=false;
+    if(groupPendingById[chat.id]){ var mh=groupPendingById[chat.id]; groupPendingById[chat.id]=null; sendGroupReplies(chat, mh); }
+  }
+  function step(){
+    if(i>=queue.length){ finish(); return; }
+    var item=queue[i++];
+    /* A member whose first reply never arrived (a failure
+       notice, not a reply) sits the reaction round out too:
+       there is nothing of theirs to react with, and calling
+       them again would only repeat the same failure notice. */
+    if(item.round===2 && failedIds[item.agent.id]){ step(); return; }
+    /* Free-tier gate between members, mirroring the 1:1 gate in
+       callProvider: with the free messages over and no own key,
+       the round stops with ONE limit message, not one per agent.
+       Own keys (and invite-unlimited) are never gated. */
+    if(freeTierOver() && !apiEntries().length){
+      chat.messages.push({id:mid(), role:'ai', limitCta:true, freeOver:true, text:FREE_OVER_TEXT});
+      renderAll(); finish(); return;
+    }
+    /* The overrides are read synchronously while callProvider
+       builds this member's request (its persona core and its
+       typing row), then cleared — the async delivery is tagged
+       through opts instead, so nothing leaks into other chats. */
+    coreAgentOverride=item.agent.id; typingAgentOverride=item.agent.id;
+    callProvider(chat, memHits, {
+      groupFor:item.agent.id,
+      agentTag:item.agent.id,
+      reactionRound:item.round===2,
+      systemExtra:groupContextText(chat, item.agent, item.round),
+      onSettled:function(){
+        if(item.round===1){ var lm=lastMsgFrom(item.agent.id); if(lm && (lm.apiCta || lm.limitCta)) failedIds[item.agent.id]=true; }
+        step();
+      }
+    });
+    coreAgentOverride=null; typingAgentOverride=null;
+  }
+  step();
+}
+/* No provider route at all (no key, no relay): each member still
+   answers in turn from the local reply engine, labelled the
+   same way, so a group chat never sits silent. */
+function groupLocalReplies(chat, members){
+  var text=lastUserText(chat);
+  var i=0;
+  function step(){
+    if(i>=members.length) return;
+    var a=members[i++];
+    typingAgentOverride=a.id;
+    var ty=pushTyping('thinking');
+    typingAgentOverride=null;
+    setTimeout(function(){
+      ty.remove();
+      var r=localReply(text, null);
+      if(typeof r==='string') chat.messages.push({id:mid(), role:'ai', agentId:a.id, text:r});
+      else chat.messages.push({id:mid(), role:'ai', agentId:a.id, text:r.text, code:r.code});
+      renderAll(); step();
+    }, 550);
+  }
+  step();
 }
 /* =============== Agent-grade coding pipeline ===============
    When a provider is connected, coding work is no longer routed to
@@ -3579,6 +3720,15 @@ function inspectHtmlCode(body){
 }
 function callProvider(chat, memHits, opts){
   var canvasMsg=(opts && opts.canvasMsg) || null;
+  /* Group chats chain one member's call into the next through
+     opts.onSettled: fired exactly once, when this call has fully
+     finished — a reply delivered, or the final error shown. */
+  function settle(){ if(opts && opts.onSettled){ var f=opts.onSettled; opts.onSettled=null; setTimeout(function(){ try{ f(); }catch(e){} },0); } }
+  /* Group calls tag EVERY message this call leaves behind —
+     failure notices included — with the replying member, so its
+     avatar + name header renders in the group exactly as it does
+     for a delivered reply. 1:1 calls pass no agentTag. */
+  function pushAiMsg(o){ if(opts && opts.agentTag) o.agentId=opts.agentTag; chat.messages.push(o); }
   var requestText=lastUserText(chat);
   var codeMode=!!(state.codeOnce || (opts && opts.codeMode) || (opts && opts.contextCode) || canvasMsg || isCodeRequestText(requestText, chat));
   state.codeOnce=false;
@@ -3586,7 +3736,19 @@ function callProvider(chat, memHits, opts){
      it does not need a second typing bubble while the provider works. */
   var ty=canvasMsg? {remove:function(){ if(typeof clearAgentStatus==='function') clearAgentStatus(); }} : pushTyping(codeMode? 'coding' : (state.deepThink? 'thinking' : 'thinking'));
   var history=chat.messages.filter(function(m){ return m!==canvasMsg; }).slice(codeMode? -24 : -10);
-  var msgs=history.map(function(m){ return {role:m.role==='user'?'user':'assistant', content:providerContentForMessage(m)}; });
+  var msgs=history.map(function(m){
+    var content=providerContentForMessage(m);
+    /* Group chat, building for ONE member (opts.groupFor): that
+       member's own past replies stay assistant turns; every OTHER
+       member's replies arrive as user turns labelled with their
+       name, so the member can tell who said what and answer the
+       group, not itself. */
+    if(opts && opts.groupFor && m.role==='ai' && m.agentId && m.agentId!==opts.groupFor){
+      var oa=agentById(m.agentId);
+      return {role:'user', content:(oa? oa.name : 'Another agent')+': '+content};
+    }
+    return {role:m.role==='user'?'user':'assistant', content:content};
+  });
   if(opts && opts.contextCode && opts.contextCode.body){
     var contextMsg={role:'assistant', content:'Previous generated version — use it as the base for this fix, change or regeneration:\n```'+(opts.contextCode.lang||'')+'\n'+opts.contextCode.body+'\n```'};
     var contextAt=msgs.length;
@@ -3608,6 +3770,10 @@ function callProvider(chat, memHits, opts){
      apply at once. */
   var coreMsg=agentCoreMessage();
   if(coreMsg) msgs.unshift({role:'system', content:coreMsg});
+  /* Group chat: the group-context injection travels with the
+     member's own persona (the core message above was built for
+     that member via coreAgentOverride). */
+  if(opts && opts.systemExtra) msgs.unshift({role:'system', content:opts.systemExtra});
   /* A skill chosen with /skill <name>, or invoked directly with its
      own slash command, travels as a system message carrying its FULL
      instructions, so a connected model follows the same skill the
@@ -3706,20 +3872,20 @@ function callProvider(chat, memHits, opts){
     attemptEntries=attemptEntries.filter(function(e){ return !e.relay; });
     if(!attemptEntries.length){
       ty.remove(); discardCanvasPending(chat, canvasMsg);
-      chat.messages.push({id:mid(), role:'ai', limitCta:true, freeOver:true, text:FREE_OVER_TEXT});
-      renderAll(); return;
+      pushAiMsg({id:mid(), role:'ai', limitCta:true, freeOver:true, text:FREE_OVER_TEXT});
+      renderAll(); settle(); return;
     }
   }
   if(!attemptEntries.length){
     ty.remove(); discardCanvasPending(chat, canvasMsg);
     if(apiEntries().length){
       setApiHealth('error','Unrecognised key');
-      chat.messages.push({id:mid(), role:'ai', text:'The added key\u2019s provider could not be detected from its format, so it was not sent anywhere. Add a key from a supported provider — OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, xAI, DeepSeek, NVIDIA, Mistral, Together, Hugging Face, Cohere or GitHub Models. Free keys: Settings → APIs & Providers → Free API keys.'});
+      pushAiMsg({id:mid(), role:'ai', text:'The added key\u2019s provider could not be detected from its format, so it was not sent anywhere. Add a key from a supported provider — OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, xAI, DeepSeek, NVIDIA, Mistral, Together, Hugging Face, Cohere or GitHub Models. Free keys: Settings → APIs & Providers → Free API keys.'});
     } else {
       setApiHealth('unset');
-      chat.messages.push({id:mid(), role:'ai', text:'Add an API key first — paste one in APIs & Providers and everything else is selected automatically.'});
+      pushAiMsg({id:mid(), role:'ai', text:'Add an API key first — paste one in APIs & Providers and everything else is selected automatically.'});
     }
-    renderAll(); return;
+    renderAll(); settle(); return;
   }
   function postToProvider(requestMsgs, entry, modelOverride){
     var req=buildProviderRequest(requestMsgs, entry, modelOverride);
@@ -3738,6 +3904,13 @@ function callProvider(chat, memHits, opts){
        NOT touched — parsed.code keeps its exact bytes. */
     finalOut=noEmDash(finalOut);
     if(parsed && parsed.text) parsed.text=noEmDash(parsed.text);
+    /* Group reaction round: a member with nothing to add answers
+       SKIP (or nothing) — that reply is swallowed, never shown,
+       so the reaction round stays a real conversation, not filler. */
+    if(opts && opts.reactionRound && !canvasMsg && !(parsed && parsed.code)){
+      var rt=String(finalOut||'').trim();
+      if(!rt || /^skip[.!]?$/i.test(rt)) return;
+    }
     var limitNote='The model hit its output limit before finishing. Say “continue” and Gptopen will continue from the code and context already in this chat.';
     if(canvasMsg){
       if(parsed && parsed.code && parsed.code.lang==='html'){
@@ -3765,6 +3938,7 @@ function callProvider(chat, memHits, opts){
     }
     if(parsed && parsed.code){
       var codedMsg={id:mid(), role:'ai', text:parsed.text || 'Here is the complete code.', code:parsed.code};
+      if(opts && opts.agentTag) codedMsg.agentId=opts.agentTag;
       codedMsg.truncated=!!(truncated || parsed.incomplete);
       if(codedMsg.truncated) codedMsg.text+='\n\n'+limitNote;
       if(parsed.code.lang==='html'){
@@ -3774,6 +3948,7 @@ function callProvider(chat, memHits, opts){
       chat.messages.push(codedMsg);
     } else if(finalOut){
       var plainMsg={id:mid(), role:'ai', text:finalOut};
+      if(opts && opts.agentTag) plainMsg.agentId=opts.agentTag;
       plainMsg.truncated=!!truncated;
       if(truncated) plainMsg.text+='\n\n'+limitNote;
       chat.messages.push(plainMsg);
@@ -3812,24 +3987,24 @@ function callProvider(chat, memHits, opts){
            own API key" opens the API key box, and "Get a free
            API key" opens the Free API keys page, whose rows open
            each provider's own site. */
-        chat.messages.push({id:mid(), role:'ai', limitCta:true, text:'The Gptopen Model is at its limit right now — lots of people are chatting. Use your own API key to keep chatting without waiting: it takes a minute and free keys work. Tap “Use my own API key” to open the key box, or “Get a free API key” for the list of sites that give one free.'});
+        pushAiMsg({id:mid(), role:'ai', limitCta:true, text:'The Gptopen Model is at its limit right now — lots of people are chatting. Use your own API key to keep chatting without waiting: it takes a minute and free keys work. Tap “Use my own API key” to open the key box, or “Get a free API key” for the list of sites that give one free.'});
       } else if(relayGoneHit && !keyTried){
         /* Nothing but the relay was tried and the relay is not
            running on this origin at all (a static preview has no
            /api/relay — the deployed site does): say exactly that
            instead of blaming the user's keys, with the same two
            working actions as the limit message. */
-        chat.messages.push({id:mid(), role:'ai', apiCta:true, text:'The Gptopen Model didn\u2019t answer this time — the connection dropped before a reply came back. It is not your keys. Tap Retry to try again, or use your own API key.'});
+        pushAiMsg({id:mid(), role:'ai', apiCta:true, text:'The Gptopen Model didn\u2019t answer this time — the connection dropped before a reply came back. It is not your keys. Tap Retry to try again, or use your own API key.'});
       } else if(nvidiaEntitlementHit){
         /* NVIDIA answered 404 "not found for account" for every
            model: the key's account lacks the Public API Endpoints
            permission, so no model advance can fix it — say that
            instead of the generic failure. */
-        chat.messages.push({id:mid(), role:'ai', apiCta:true, text:"GptOpen couldn't use NVIDIA here: NVIDIA answers 'not found' for every model, which means the account behind the key is missing the 'Public API Endpoints' permission. Enable it for your account at build.nvidia.com (it can need a support request), then tap Retry."});
+        pushAiMsg({id:mid(), role:'ai', apiCta:true, text:"GptOpen couldn't use NVIDIA here: NVIDIA answers 'not found' for every model, which means the account behind the key is missing the 'Public API Endpoints' permission. Enable it for your account at build.nvidia.com (it can need a support request), then tap Retry."});
       } else {
-        chat.messages.push({id:mid(), role:'ai', apiCta:true, text:'GptOpen didn’t answer this time — every route was tried automatically before showing this. Tap Retry to try again, or check your keys in Settings → APIs & Providers.'});
+        pushAiMsg({id:mid(), role:'ai', apiCta:true, text:'GptOpen didn’t answer this time — every route was tried automatically before showing this. Tap Retry to try again, or check your keys in Settings → APIs & Providers.'});
       }
-      renderAll(); return;
+      renderAll(); settle(); return;
     }
     var entry=attemptEntries[idx];
     /* Always-on auto model selection for this send: the ordered
@@ -3998,12 +4173,12 @@ function callProvider(chat, memHits, opts){
               }
               if(typeof clearAgentStatus==='function') clearAgentStatus();
               deliverProviderReply(out, parsed, finishTruncated);
-              renderAll();
+              renderAll(); settle();
             })
-            .catch(function(){ if(typeof clearAgentStatus==='function') clearAgentStatus(); deliverProviderReply(out, parsed, finishTruncated); renderAll(); });
+            .catch(function(){ if(typeof clearAgentStatus==='function') clearAgentStatus(); deliverProviderReply(out, parsed, finishTruncated); renderAll(); settle(); });
         }
         deliverProviderReply(out, parsed, finishTruncated);
-        renderAll();
+        renderAll(); settle();
       }
     })
     .catch(function(){
@@ -4694,6 +4869,9 @@ function openPlusSheet(view){
     /* ---- Full list — every section closed / collapsed ---- */
     v='list';
     html='<h3>Add</h3>'
+    +'<button class="sheet-row" data-pact="agent">'+I.bot+'<span>Agent</span><span class="val">New agent</span></button>'
+    +'<button class="sheet-row" data-pact="scan">'+I.scan+'<span>Scan &amp; create</span><span class="val">From a photo</span></button>'
+    +'<button class="sheet-row" data-pact="group">'+I.hash+'<span>Group Chat</span><span class="val">Agents together</span></button>'
     +'<button class="sheet-row" data-pact="upload">'+I.upload+'<span>Send anything</span><span class="val">Images · video · files — no limit</span></button>'
     +'<button class="sheet-row" data-pact="link">'+I.link+'<span>Add link</span><span class="val">Auto preview</span></button>'
     + navRow('project', I.folder, 'Add to project', 'Split workspace')
@@ -4718,7 +4896,10 @@ function openPlusSheet(view){
     b.addEventListener('click',function(){
       var id=b.getAttribute('data-pact');
       closeSheet();
-      if(id==='upload'){ openFileSheet(); }
+      if(id==='agent'){ ncActive=false; openSettings('agentcreate'); }
+      else if(id==='scan'){ openScanCreateSheet(); }
+      else if(id==='group'){ openGroupCreateSheet(); }
+      else if(id==='upload'){ openFileSheet(); }
       else if(id==='link'){ openLinkSheet(); }
       else if(id==='coder'){ state.route='code'; updateTargetLine(); input.focus(); toast('Next message: code mode'); }
       else if(id==='quiz'){ sendText('Quiz me with one quick question'); }
@@ -4766,6 +4947,89 @@ function openPlusSheet(view){
     applyAccent();
     sheet.querySelectorAll('[data-pacc]').forEach(function(x){x.classList.remove('sel');}); b.classList.add('sel');
   }); });
+}
+
+/* =============== Group chat: create sheet ===============
+   Opened from the + sheet's Group Chat row. Layout matches the
+   reference: X top-left closes, "Create Group Chat" centred,
+   Create top-right — enabled only at 2+ selected. "Search Agent"
+   filters the rows live. Rows are the already-created agents
+   only (the family agents plus the user's own sub-agents):
+   avatar + name + a one-line persona, and a circular selector.
+   Members are fixed at creation — no adding or removing later
+   in this version. */
+function openGroupCreateSheet(){
+  var sel=[];
+  function rowsHTML(q){
+    var list=AGENTS.filter(function(a){ return !q || a.name.toLowerCase().indexOf(q)>-1; });
+    if(!list.length) return '<p class="sub" style="margin:10px 0">No agents match that search.</p>';
+    return list.map(function(a){
+      var on=sel.indexOf(a.id)>-1;
+      return '<button class="gc-row'+(on?' sel':'')+'" data-gcrow="'+a.id+'" aria-pressed="'+on+'"><span class="gc-ava" aria-hidden="true">'+avatarHTMLFor(a,'idle')+'</span><span class="gc-meta"><span class="gc-name">'+esc(a.name)+'</span><span class="gc-sub">'+esc(groupPersonaLine(a))+'</span></span><span class="gc-sel" aria-hidden="true">'+I.check+'</span></button>';
+    }).join('');
+  }
+  openSheet('<div class="gc-head"><button class="circle-btn" id="gcClose" aria-label="Close">'+I.x+'</button><h3>Create Group Chat</h3><button class="nc-create-top" id="gcCreate" disabled>Create</button></div>'
+    +'<div class="field gc-search"><input id="gcSearchIn" type="text" placeholder="Search Agent" autocomplete="off" aria-label="Search Agent"></div>'
+    +'<div id="gcList">'+rowsHTML('')+'</div>');
+  function syncCreate(){ var b=$('#gcCreate'); if(b) b.disabled=sel.length<2; }
+  function wireRows(){
+    sheet.querySelectorAll('[data-gcrow]').forEach(function(b){
+      b.addEventListener('click',function(){
+        var id=b.getAttribute('data-gcrow');
+        var ix=sel.indexOf(id);
+        if(ix>-1) sel.splice(ix,1); else sel.push(id);
+        var on=sel.indexOf(id)>-1;
+        b.classList.toggle('sel', on);
+        b.setAttribute('aria-pressed', String(on));
+        syncCreate();
+      });
+    });
+  }
+  wireRows(); syncCreate();
+  $('#gcClose').addEventListener('click',closeSheet);
+  $('#gcSearchIn').addEventListener('input',function(){
+    $('#gcList').innerHTML=rowsHTML(this.value.trim().toLowerCase());
+    wireRows();
+  });
+  $('#gcCreate').addEventListener('click',function(){
+    if(sel.length<2) return;
+    createGroupChat(sel.slice());
+  });
+  setTimeout(function(){ var si=$('#gcSearchIn'); if(si) si.focus(); },80);
+}
+function createGroupChat(ids){
+  /* Member order is the agents' own order, so replies always run
+     in that order. The chat is a normal chat in every other way:
+     it renames, clears and deletes through the existing flows. */
+  var members=AGENTS.filter(function(a){ return ids.indexOf(a.id)>-1; });
+  if(members.length<2){ toast('Pick at least two agents'); return; }
+  var c={id:'c'+(++uid), type:'group', members:members.map(function(a){ return a.id; }), title:members.map(function(a){ return a.name; }).join(', '), messages:[]};
+  chats.splice(1,0,c);
+  state.currentId=c.id; state.splitId=null;
+  closeSheet(); setSidebar(false,true); closeSettings(true); renderAll();
+  toast('Group chat created');
+}
+/* =============== Scan & create ===============
+   Pick a photo of a face or character and it becomes a new
+   agent's face — the flow then lands on the simple Create Agent
+   screen with that photo already set, where only a name is
+   needed to finish. */
+function openScanCreateSheet(){
+  openSheet('<h3>Scan &amp; create</h3>'
+    +'<p class="sub">Pick a photo of a face or character and it becomes a new agent&rsquo;s face. Then just give the agent a name.</p>'
+    +'<button class="btn-primary" id="scanPick">Choose a photo</button>'
+    +'<button class="btn-ghost" id="scanCancel">Cancel</button>');
+  $('#scanCancel').addEventListener('click',closeSheet);
+  $('#scanPick').addEventListener('click',function(){
+    avPickPhotoFile(function(url){
+      if(!url) return;
+      ncInitDraft();
+      ncAv.mode='photo'; ncAv.photo=url;
+      closeSheet();
+      openSettings('agentcreate');
+      toast("Photo set as the new agent's face. Now name it");
+    });
+  });
 }
 
 $('#plusBtn').addEventListener('click',function(){ openPlusSheet(false); });
@@ -8187,43 +8451,81 @@ function ae2TabsHTML(sel){
 function wireAe2Tabs(fn){
   setView.querySelectorAll('[data-ae2tab]').forEach(function(b){ b.addEventListener('click',function(){ fn(b.getAttribute('data-ae2tab')); }); });
 }
-/* =============== New sub-agent page (under Agents) ===============
-   MINIMAL. No window card, no swipe-carousel avatar picker, no
-   bottom action bar and no Next button. The page opens on the
-   Avatar tab — the exact Avatar editing page UI (stage, peeks,
-   Shape/Face/Colour, colourways, frames, presets, emotes,
-   personality) editing a draft. Below, the small "Instructions
-   & memory" tab replaces the page with the vibe, custom
-   instructions and custom memory in a clean minimal layout; the
-   Avatar tab stays below there too. The agent's NAME is typed
-   in one minimal place: a small chat bubble at the very top of
-   the page, above the avatar stage, where the new agent
-   introduces itself - "My name is ..." with the name inside the
-   quotes as the typing box, updating live as it is typed. Left
-   empty, the name falls back to the picked character's own
-   name (Axo, Muse, Fox or Lumi), numbered if already taken;
-   a typed name is numbered the same way if it collides. The one
-   action is a small Create pill at the top of the header, in
-   the place the ? button used to sit (that icon is gone). What
-   is filled in on either tab is kept while switching, and
-   Create writes everything into the agent. Creating always
-   lands in a chat with the new agent, and the agent speaks
-   first — a greeting if settings were filled in, the
-   setup-by-asking onboarding if vibe, instructions and memory
-   were all left blank. Back just goes back: it drops the draft
-   and returns straight to the chat, nowhere else. */
-var ncState=null, ncAv=null, ncTab='avatar', ncActive=false;
+/* =============== New sub-agent: simple screen first ===============
+   Creating an agent is SIMPLE. The entry screen (ncView 'simple')
+   shows only three things: the agent character preview with a
+   small pencil button on it, one "Agent name" typing pill below
+   it, and the header — X top-left (drops the draft, back to the
+   chat) and Create top-right, enabled once a name is typed.
+   Nothing else. Tapping the pencil opens the FULL editor
+   (ncView 'full': the avatar stage, character peeks,
+   Shape/Face/Colour tiles and the Instructions & memory tab,
+   editing the same draft); its Back returns to the simple screen
+   with the customised avatar kept. Create — from either screen —
+   uses the typed name + the current avatar draft, and lands in a
+   chat with the new agent, which speaks first: a greeting if
+   settings were filled in, the setup-by-asking onboarding if
+   vibe, instructions and memory were all left blank. A typed
+   name is numbered (Nova 2, Nova 3...) only if another agent
+   already carries it. */
+var ncState=null, ncAv=null, ncTab='avatar', ncActive=false, ncView='simple';
+function ncInitDraft(){
+  ncState={name:'', vibe:'', ins:'', mem:'', hist:false, memTog:false, main:false};
+  ncAv={mode:'preset', preset:'mia', shape:'circle', face:'open', color:'#3d9bff', acc:'none', emote:'idle', attr:'shape', cw:'original', frame:'none', cface:'natural', cacc:'none', ctint:'', personaApply:false, photo:''};
+  ncTab='avatar'; ncView='simple'; ncActive=true;
+}
 function settingsAgentCreate(){
-  if(!ncActive){
-    ncState={name:'', vibe:'', ins:'', mem:'', hist:false, memTog:false, main:false};
-    ncAv={mode:'preset', preset:'mia', shape:'circle', face:'open', color:'#3d9bff', acc:'none', emote:'idle', attr:'shape', cw:'original', frame:'none', cface:'natural', cacc:'none', ctint:'', personaApply:false, photo:''};
-    ncTab='avatar'; ncActive=true;
+  if(!ncActive) ncInitDraft();
+  if(ncView==='full') renderAgentCreate();
+  else renderAgentCreateSimple();
+}
+/* The draft's big preview, drawn the same way the full editor's
+   stage draws it: photo, family character, preset, or the custom
+   shape + face + colour build. */
+function avDraftPreviewHTML(d){
+  if(d.mode==='photo' && d.photo) return '<img src="'+d.photo+'" alt="">';
+  if(d.mode==='preset'){
+    var cid=charIdForPreset(d.preset);
+    if(cid) return charAvatarHTML(cid, 'idle', {cw:d.cw, frame:d.frame, cface:d.cface, cacc:d.cacc, ctint:d.ctint});
+    return avatarSVG(d.preset, 'idle');
   }
-  renderAgentCreate();
+  return customAvatarSVG(d.shape, d.face, d.color, d.acc);
+}
+function renderAgentCreateSimple(){
+  var s=ncState;
+  var head='<div class="set-head"><button class="circle-btn" id="ncSimpleX" aria-label="Close">'+I.x+'</button><h2>Create Agent</h2><button class="nc-create-top" id="ncSimpleGo"'+((s.name||'').trim()? '' : ' disabled')+'>Create</button></div>';
+  var body='<div class="nc-simple">'
+    +'<div class="nc-simple-stage"><div class="nc-simple-ava">'+avDraftPreviewHTML(ncAv)+'</div>'
+    +'<button class="nc-pencil" id="ncSimpleEdit" aria-label="Edit avatar">'+I.edit+'</button></div>'
+    +'<input id="ncSimpleName" class="nc-name-pill" type="text" placeholder="Agent name" value="'+escA(s.name||'')+'" autocomplete="off" autocapitalize="words" maxlength="40" aria-label="Agent name">'
+    +'</div>';
+  setView.innerHTML=head+'<div class="set-scroll"><div class="set-inner">'+body+'</div></div>';
+  /* X drops the draft and returns straight to the chat. */
+  $('#ncSimpleX').addEventListener('click',function(){ ncActive=false; ncState=null; ncAv=null; ncView='simple'; closeSettings(); });
+  var nameIn=$('#ncSimpleName');
+  nameIn.addEventListener('pointerdown',function(e){ e.stopPropagation(); });
+  nameIn.addEventListener('touchstart',function(e){ e.stopPropagation(); },{passive:true});
+  nameIn.addEventListener('input',function(){
+    ncState.name=nameIn.value;
+    $('#ncSimpleGo').disabled=!nameIn.value.trim();
+  });
+  /* The pencil opens the FULL editor on the same draft; its Back
+     lands back here with the avatar kept. */
+  $('#ncSimpleEdit').addEventListener('click',function(){
+    ncState.name=nameIn.value;
+    ncView='full'; ncTab='avatar';
+    renderAgentCreate();
+  });
+  $('#ncSimpleGo').addEventListener('click',function(){
+    ncState.name=nameIn.value;
+    if(!ncState.name.trim()){ toast('Give the agent a name first'); return; }
+    ncCreateGo();
+  });
+  setTimeout(function(){ if(nameIn) nameIn.focus(); },80);
 }
 function ncCapture(){
   if(!ncState) return;
-  var nm=$('#ncNameIn'); if(nm) ncState.name=nm.value;
+  var nm=$('#ncNameField'); if(nm) ncState.name=nm.value;
   var v=$('#ncVibe'); if(v) ncState.vibe=v.value;
   var i2=$('#ncIns'); if(i2) ncState.ins=i2.value;
   var m2=$('#ncMem'); if(m2) ncState.mem=m2.value;
@@ -8239,36 +8541,26 @@ function ncResolveName(base){
 }
 /* The preset name for the agent being created: the picked
    character's own name (Axo / Muse / Fox / Lumi), used when
-   the name bubble is left empty. */
+   the name field is left empty. */
 function ncPresetName(){
   var cid=ncAv? charIdForPreset(ncAv.preset) : null;
   var base=(cid && CHARACTERS[cid])? CHARACTERS[cid].label : 'Axo';
   return ncResolveName(base);
 }
-/* The name bubble at the top of the create screen: the new
-   agent introduces itself, "My name is ..." - the quoted part
-   is the typing box itself, so the bubble reads live as the
-   user types. Shown on both create tabs, above everything. */
-function ncNameBubbleHTML(s){
-  return '<div class="nc-name-bubble-wrap"><label class="nc-name-bubble"><span>My name is</span><span class="nc-q">&ldquo;</span><input id="ncNameIn" type="text" value="'+escA(s.name||'')+'" placeholder="'+escA(ncPresetName())+'" autocomplete="off" autocapitalize="words" maxlength="40" aria-label="New agent name"><span class="nc-q">&rdquo;</span></label></div>';
-}
-function wireNcName(){
-  var f=document.getElementById('ncNameIn'); if(!f) return;
-  function fit(){ f.style.width=Math.max(3, (f.value||f.placeholder||'').length+1)+'ch'; }
-  fit();
-  f.addEventListener('pointerdown',function(e){ e.stopPropagation(); });
-  f.addEventListener('touchstart',function(e){ e.stopPropagation(); },{passive:true});
-  f.addEventListener('input',function(){ if(ncState) ncState.name=f.value; fit(); });
-}
+/* The FULL editor (behind the simple screen's pencil): the
+   avatar stage on one tab, the clean fields on the other. The
+   name is NOT edited here with any bubble — it lives on the
+   simple screen's "Agent name" pill, and as a plain field at
+   the top of the details tab. */
 function renderAgentCreate(){
   var s=ncState;
   var head='<div class="set-head"><button class="circle-btn" id="setBack" aria-label="Back">'+I.back+'</button><h2>New sub-agent</h2><button class="nc-create-top" id="ncGoTop">Create</button></div>';
   var body='';
   if(ncTab==='avatar'){
-    body='<div class="ae2-page">'+ncNameBubbleHTML(s)+'<div id="ncAvMount"></div></div>';
+    body='<div class="ae2-page"><div id="ncAvMount"></div></div>';
   } else {
     body='<div class="ae2-page ae2-clean">'
-      +ncNameBubbleHTML(s)
+      +'<div class="field"><label for="ncNameField">Name</label><input id="ncNameField" type="text" value="'+escA(s.name||'')+'" placeholder="Agent name" autocomplete="off" autocapitalize="words" maxlength="40"></div>'
       +'<div class="field"><label for="ncVibe">Vibe</label><textarea id="ncVibe" rows="2" style="'+TA_STYLE+'" placeholder="e.g. Calm, precise, research-minded">'+esc(s.vibe)+'</textarea></div>'
       +'<div class="field"><label for="ncIns">Custom instructions</label><textarea id="ncIns" rows="4" style="'+TA_STYLE+'" placeholder="How this agent should behave, its job, its rules">'+esc(s.ins)+'</textarea></div>'
       +'<div class="field"><label for="ncMem">Custom memory</label><textarea id="ncMem" rows="4" style="'+TA_STYLE+'" placeholder="What this agent should always remember">'+esc(s.mem)+'</textarea></div>'
@@ -8287,17 +8579,17 @@ function renderAgentCreate(){
      Creating always lands in a chat with the new agent, and the
      agent speaks first. */
   setView.innerHTML=head+'<div class="set-scroll"><div class="set-inner">'+body+'</div></div>'+ae2TabsHTML(ncTab);
-  /* Back just goes back: out of the create page, straight to the
-     chat the user was in — never to the Sub-agents list, the Agent
-     page or anywhere else. The half-filled draft is dropped. */
-  wireBack(function(){ ncActive=false; ncState=null; ncAv=null; closeSettings(); });
+  /* Back returns to the SIMPLE create screen, draft kept — the
+     full editor is only ever entered from there (its pencil),
+     so back always lands on it with the customised avatar and
+     every field exactly as left. */
+  wireBack(function(){ ncCapture(); ncView='simple'; settingsAgentCreate(); });
   $('#ncGoTop').addEventListener('click',ncCreateGo);
-  wireNcName();
   wireAe2Tabs(function(t){ if(t===ncTab) return; ncCapture(); ncTab=t; renderAgentCreate(); });
   if(ncTab==='avatar'){
     mountAvatarEditor($('#ncAvMount'), ncAv, { onUpload:function(done){ avPickPhotoFile(function(url){ ncAv.photo=url; ncAv.mode='photo'; ncAv.emote='idle'; done(); }); } });
   } else {
-    ['ncVibe','ncIns','ncMem'].forEach(function(fid){
+    ['ncNameField','ncVibe','ncIns','ncMem'].forEach(function(fid){
       var f=document.getElementById(fid); if(!f) return;
       f.addEventListener('pointerdown',function(e){ e.stopPropagation(); });
       f.addEventListener('touchstart',function(e){ e.stopPropagation(); },{passive:true});
@@ -8322,10 +8614,12 @@ function agentFirstChat(a, withSettings){
 }
 function ncCreateGo(){
   ncCapture();
-  /* The name comes from the top bubble: what was typed there is
+  /* The name comes from the simple screen's "Agent name" pill
+     (or the full editor's Name field): what was typed there is
      the agent's name, exactly as typed (auto-numbered only if
-     another agent already carries it). Left empty, it falls
-     back to the picked character's preset name. */
+     another agent already carries it). Left empty — only
+     reachable from the full editor — it falls back to the
+     picked character's preset name. */
   var typed=(ncState.name||'').trim();
   var nm=typed? ncResolveName(typed) : ncPresetName();
   var vibe=ncState.vibe.trim();

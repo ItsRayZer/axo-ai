@@ -1446,6 +1446,56 @@ button.ca-ava{border:0; padding:0; cursor:pointer; background:transparent;}
 .sb-chat-ava img,.sb-chat-ava svg{width:100%; height:100%; display:block; object-fit:cover;}
 .sb-chat-ava .av-svg{animation:none !important;}
 
+/* ---------- Group chats ----------
+   Sidebar mark: the member avatars stacked in one 34px cell.
+   In-chat: every group reply carries its agent's avatar + name
+   header, so it is always clear who said what. The Create Group
+   Chat sheet mirrors the reference: X top-left, title centred,
+   Create top-right (live only at 2+ selected), a Search Agent
+   box filtering live, and rows with a circular multi-select. */
+.sb-grp-avas{position:relative; width:34px; height:34px; flex:none; display:block;}
+.sb-grp-ava{position:absolute; width:21px; height:21px; border-radius:50%; overflow:hidden; display:block; background:var(--surface);}
+.sb-grp-ava img,.sb-grp-ava svg{width:100%; height:100%; display:block; object-fit:cover;}
+.sb-grp-ava .av-svg{animation:none !important;}
+.sb-grp-ava:nth-child(1){left:0; top:0; z-index:2;}
+.sb-grp-ava:nth-child(2){right:0; bottom:0; z-index:3;}
+.sb-grp-ava:nth-child(3){left:0; bottom:0; z-index:1;}
+.grp-head{display:flex; align-items:center; gap:7px; margin:2px 0 5px;}
+.grp-ava{width:22px; height:22px; border-radius:50%; overflow:hidden; flex:none; display:block;}
+.grp-ava img,.grp-ava svg{width:100%; height:100%; display:block; object-fit:cover;}
+.grp-name{font-size:12.5px; font-weight:650; color:var(--muted); letter-spacing:-.01em;}
+.gc-head{display:flex; align-items:center; gap:10px; margin-bottom:8px;}
+.gc-head h3{flex:1; text-align:center; margin:0;}
+.gc-head .circle-btn{width:40px; height:40px;}
+.gc-search{margin-bottom:4px;}
+.gc-row{display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:11px 4px; border-bottom:1px solid var(--border);}
+.gc-ava{width:42px; height:42px; border-radius:50%; overflow:hidden; flex:none; display:block;}
+.gc-ava img,.gc-ava svg{width:100%; height:100%; display:block; object-fit:cover;}
+.gc-meta{flex:1; min-width:0; display:block;}
+.gc-name{display:block; font-size:15.5px; font-weight:600;}
+.gc-sub{display:block; font-size:12.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px;}
+.gc-sel{width:26px; height:26px; border-radius:50%; border:2px solid var(--muted); flex:none; display:grid; place-items:center; color:var(--accent-ink); transition:background .18s var(--ease), border-color .18s var(--ease);}
+.gc-sel .ic{width:14px; height:14px; opacity:0; transition:opacity .18s var(--ease);}
+.gc-row.sel .gc-sel{background:var(--accent); border-color:var(--accent);}
+.gc-row.sel .gc-sel .ic{opacity:1;}
+.nc-create-top[disabled]{opacity:.35;}
+
+/* ---------- Simple Create Agent screen ----------
+   The plus menu's Agent entry opens ONLY this: the character
+   preview with a small pencil on it, and one "Agent name" pill
+   below. X closes (top-left), Create sits top-right and wakes
+   once a name is typed. The full editor lives behind the
+   pencil and nowhere else. */
+.nc-simple{display:flex; flex-direction:column; align-items:center; padding-top:7vh;}
+.nc-simple-stage{position:relative; width:200px; height:200px; display:grid; place-items:center;}
+.nc-simple-ava{width:188px; height:188px; display:block;}
+.nc-simple-ava svg{width:100%; height:100%; display:block;}
+.nc-simple-ava img{width:100%; height:100%; display:block; object-fit:cover; border-radius:26px;}
+.nc-pencil{position:absolute; right:0; bottom:0; width:46px; height:46px; border-radius:50%; background:var(--surface2); border:1px solid var(--border2); display:grid; place-items:center; color:var(--text); box-shadow:0 8px 20px rgba(0,0,0,.25);}
+.nc-pencil:active{transform:scale(.94);}
+.nc-name-pill{margin-top:36px; width:min(430px,92%); background:var(--input); border:1px solid var(--border); border-radius:999px; padding:15px 20px; font:inherit; font-size:16.5px; text-align:center; color:var(--text); outline:none;}
+.nc-name-pill::placeholder{color:var(--muted);}
+
 
 /* ---------- 3D-like characters (Axo · Muse · Fox · Lumi) ----------
    The main characters are drawn IN CODE as soft-3D mascots —

@@ -338,7 +338,10 @@ var I = {
   heart: ic('<path d="M19.8 5.1a5 5 0 0 0-7.1 0L12 5.8l-.7-.7a5 5 0 1 0-7.1 7.1l.7.7L12 20l7.1-7.1.7-.7a5 5 0 0 0 0-7.1z"/>'),
   thought: ic('<path d="M20 11.5a7.5 7.5 0 1 0-4.6 6.9L20 19.5l-.7-3.4c.45-1 .7-2.1.7-3.1z"/><circle cx="8.5" cy="20.8" r=".6"/><circle cx="6" cy="22.4" r=".4"/>'),
   select: ic('<path d="M4 7V5a2 2 0 0 1 2-2h2"/><path d="M16 3h2a2 2 0 0 1 2 2v2"/><path d="M20 16v2a2 2 0 0 1-2 2h-2"/><path d="M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M9 9h6"/><path d="M9 13h6"/>'),
-  check: ic('<path d="M20 6 9 17l-5-5"/>','sm')
+  check: ic('<path d="M20 6 9 17l-5-5"/>','sm'),
+  bot: ic('<rect x="4" y="9" width="16" height="10" rx="2.5"/><path d="M12 9V5"/><circle cx="12" cy="3.8" r="1.1"/><circle cx="9.2" cy="14" r="1.15" fill="currentColor" stroke="none"/><circle cx="14.8" cy="14" r="1.15" fill="currentColor" stroke="none"/><path d="M2.5 13v3M21.5 13v3"/>'),
+  hash: ic('<path d="M5 9h14M5 15h14"/><path d="M11 4 9.2 20M15 4l-1.8 16"/>'),
+  scan: ic('<path d="M4 8V6a2 2 0 0 1 2-2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v2"/><path d="M20 16v2a2 2 0 0 1-2 2h-2"/><path d="M8 20H6a2 2 0 0 1-2-2v-2"/><rect x="9.6" y="9.6" width="4.8" height="4.8" rx="1"/>')
 };
 function $(s){ return document.querySelector(s); }
 function el(html){ var d=document.createElement('div'); d.innerHTML=html; return d.firstElementChild; }
@@ -496,6 +499,13 @@ var AGENT_POWERS_TEXT='# Your powers in this app — you can DO all of these fro
 +'- Agents: create agents, switch who the user is chatting with, set the main agent, and delete agents — all from chat.\n'
 +'- Memory and files: remember facts, update your own instructions and memory, and keep the shared system files updated as you learn.\n'
 +'When the user asks for any of these, the app applies the change directly — confirm briefly what changed, never claim a change you did not make, and never say it can only be done in Settings.';
+/* Group chat overrides: while ONE member's reply is being built,
+   these point the persona core and the typing indicator at THAT
+   member instead of the chat's own agent. They are only ever set
+   for the synchronous build inside callProvider (which reads both
+   before its first await) and cleared immediately after, so 1:1
+   chats never see them. */
+var coreAgentOverride=null, typingAgentOverride=null;
 function agentCoreMessage(){
   function f(p){ var x=afFind(p); return x?x.content:''; }
   var parts=[]; var idn=f('IDENTITY.md'); if(idn) parts.push(idn);
@@ -510,7 +520,7 @@ function agentCoreMessage(){
      whichever one is chatting, so all agents read the same memory
      and any of them can update it. */
   AGENT_FILES.forEach(function(x){ if(x.path.indexOf('memory/')===0 && x.content) parts.push(x.content); });
-  var ca=(typeof chatAgent==='function')? chatAgent() : null;
+  var ca=(coreAgentOverride && typeof agentById==='function' && agentById(coreAgentOverride))? agentById(coreAgentOverride) : ((typeof chatAgent==='function')? chatAgent() : null);
   if(ca){
     if(ca.vibe) parts.push('# Vibe for '+ca.name+'\n'+ca.vibe);
     if(ca.instructions) parts.push('# Custom instructions for '+ca.name+'\n'+ca.instructions);

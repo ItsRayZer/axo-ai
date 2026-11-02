@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://gptopen.vercel.app/sitemap.xml

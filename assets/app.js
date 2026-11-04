@@ -9506,9 +9506,16 @@ function menuKeyNow(){
   return 'chat';
 }
 function goMenu(k){
+  /* Always route through openSettings / closeSettings — never
+     renderSettings directly. On a fresh page load (e.g. swiping
+     back from codeR) state.view can already be 'settings' while
+     the settings screen itself was never opened in this DOM;
+     only openSettings applies the show/hide, so a direct
+     renderSettings would paint into a hidden container and leave
+     the user staring at the main chat. */
   if(k==='chat'){ closeSettings(); }
-  else if(k==='goals'){ if(state.view==='settings') renderSettings('goals'); else openSettings('goals'); }
-  else if(k==='library'){ libReturn=(state.view==='settings')? 'list' : 'chat'; libMenuOpen=false; if(state.view==='settings') renderSettings('memorylib'); else openSettings('memorylib'); }
+  else if(k==='goals'){ openSettings('goals'); }
+  else if(k==='library'){ libReturn=(state.view==='settings')? 'list' : 'chat'; libMenuOpen=false; openSettings('memorylib'); }
   else if(k==='coder'){ try{ window.location.href='coder.html'; }catch(e){} }
 }
 (function(){

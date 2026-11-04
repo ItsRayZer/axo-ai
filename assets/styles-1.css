@@ -1480,6 +1480,36 @@ button.ca-ava{border:0; padding:0; cursor:pointer; background:transparent;}
 .gc-row.sel .gc-sel .ic{opacity:1;}
 .nc-create-top[disabled]{opacity:.35;}
 
+/* ---------- Group info page ----------
+   The reference's group page rebuilt in the app's own theme:
+   stacked member avatars, group name, member count, member rows,
+   file rows, and a small pin badge for pinned chats. */
+.gi-top{display:flex; flex-direction:column; align-items:center; padding:20px 0 4px; text-align:center;}
+.gi-avas{position:relative; width:124px; height:92px; margin-bottom:12px;}
+.gi-ava{position:absolute; width:58px; height:58px; border-radius:50%; overflow:hidden; border:3px solid var(--bg); background:var(--surface2); box-shadow:0 4px 14px rgba(0,0,0,.25);}
+.gi-ava svg,.gi-ava img{width:100%; height:100%; display:block;}
+.gi-ava:nth-child(1){left:6px; top:0; z-index:2;}
+.gi-ava:nth-child(2){right:6px; top:0; z-index:3;}
+.gi-ava:nth-child(3){left:33px; bottom:0; z-index:1;}
+.gi-ava:nth-child(4){right:33px; bottom:0; z-index:4;}
+.gi-name{font-size:21px; font-weight:700; letter-spacing:-.01em; color:var(--text);}
+.gi-sub{font-size:13.5px; color:var(--muted); margin-top:4px;}
+.gi-sec{font-size:14px; font-weight:650; color:var(--muted); margin:22px 4px 4px;}
+.gi-row{display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:10px 4px; border:none; border-bottom:1px solid var(--border); background:none; font:inherit; color:var(--text); cursor:pointer;}
+.gi-row:active{opacity:.6;}
+.gi-name2{flex:1; min-width:0; font-size:15.5px; font-weight:550; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.gi-more{color:var(--muted); font-size:14.5px; font-weight:550;}
+.gi-dots{width:42px; flex:none; display:grid; place-items:center; color:var(--muted);}
+.gi-note{font-size:13px; color:var(--muted); margin:8px 4px 0;}
+.gi-file-ic{width:42px; height:42px; border-radius:12px; background:var(--surface2); display:grid; place-items:center; color:var(--muted); flex:none;}
+.gi-file-meta{flex:1; min-width:0; display:block;}
+.gi-file-name{display:block; font-size:14.5px; font-weight:550; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.gi-file-sub{display:block; font-size:12px; color:var(--muted); margin-top:2px;}
+.gi-preview img{max-width:100%; border-radius:14px; display:block; margin:0 auto 12px;}
+.gi-textfile{max-height:52vh; overflow:auto; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:12px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; line-height:1.5; white-space:pre-wrap; word-break:break-word; color:var(--text);}
+.row-pin{display:inline-grid; place-items:center; color:var(--muted); margin-left:6px; flex:none;}
+.row-pin svg{width:13px; height:13px; display:block;}
+
 /* ---------- Simple Create Agent screen ----------
    The plus menu's Agent entry opens ONLY this: the character
    preview with a small pencil on it, and one "Agent name" pill

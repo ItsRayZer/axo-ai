@@ -579,7 +579,7 @@ function updateTargetLine(){
 var lastSbSig='';
 function sbSig(q){
   var s=q+'#'+state.currentId+'#'+(state.splitId||'')+'#'+(state.showArchived?1:0)+'#'+chatAgentId+'#'+((typeof agentStatus!=='undefined'&&agentStatus)?(agentStatus.kind||''):'');
-  for(var i=0;i<chats.length;i++) s+='|'+chats[i].id+':'+chats[i].title+':'+(chats[i].agentId||'')+':'+(chats[i].type||'')+':'+(chats[i].members? chats[i].members.join(',') : '');
+  for(var i=0;i<chats.length;i++) s+='|'+chats[i].id+':'+chats[i].title+':'+(chats[i].agentId||'')+':'+(chats[i].type||'')+':'+(chats[i].members? chats[i].members.join(',') : '')+':'+(chats[i].pinned?1:0);
   for(var j=0;j<AGENTS.length;j++){ var a2=AGENTS[j]; s+='@'+a2.id+':'+(a2.preset||'')+':'+(a2.avatar?'p':'')+':'+(a2.shape||'')+':'+(a2.face||'')+':'+(a2.color||'')+':'+(a2.acc||'')+':'+(a2.cw||'')+':'+(a2.frame||'')+':'+(a2.cface||'')+':'+(a2.cacc||'')+':'+(a2.ctint||''); }
   return s;
 }
@@ -603,7 +603,10 @@ function renderSidebar(){
     if(sbScrollEl) sbScrollEl.scrollTop=keepTop;
     return;
   }
-  chats.forEach(function(c, idx){
+  /* Pinned chats (group chats pinned from their info page) float to
+     the top of the side chats, everything else keeps its order. */
+  var ordered=chats.slice().sort(function(a,b){ return ((b.pinned?1:0)-(a.pinned?1:0)); });
+  ordered.forEach(function(c, idx){
     /* The Main chat is universal and separate — it lives only on its
        Main chat tab and never appears as a side chat row. */
     if(c.main) return;
@@ -627,6 +630,7 @@ function renderSidebar(){
     html+='<div class="chat-row'+(sel?' sel':'')+(sp?' splitp':'')+(liveA?' live-agent':'')+'" data-id="'+c.id+'">'
       +'<div class="chat-row-under"><span class="u-open">Open</span><span class="u-del">Delete</span></div>'
       +'<div class="chat-row-main" role="button" tabindex="0" aria-label="'+escA(c.title)+'">'+rowAva+'<span class="chat-row-title">'+esc(c.title)+'</span>'
+      +(c.pinned?'<span class="row-pin" aria-label="Pinned">'+GI_PIN_SVG+'</span>':'')
       +(sp?'<span class="split-badge">Split</span>':'')
       +(dot?'<span class="row-dot"></span>':'')
       +'<button class="row-menu-btn" data-menu="'+c.id+'" aria-label="Chat options">'+I.dotsH+'</button></div></div>';
@@ -2013,6 +2017,11 @@ function handlePop(id){
   else if(id==='delete'){ askDelete(ctx.chatId); }
   else if(id==='clear'){ var c=chatById(ctx.chatId||state.currentId); if(c){ c.messages=[]; renderAll(); toast('Chat cleared'); } }
   else if(id==='share'){ toast('Nothing to share from a static preview'); }
+  else if(id==='newagent'){ sbCreateAgent(); }
+  else if(id==='newgroup'){ setSidebar(false,true); openGroupCreateSheet(); }
+  else if(id==='giedit'){ var gec=chatById(ctx.groupId); if(gec) giRename(gec); }
+  else if(id==='gipin'){ var gpc=chatById(ctx.groupId); if(gpc){ gpc.pinned=!gpc.pinned; toast(gpc.pinned?'Group chat pinned to the top':'Group chat unpinned'); renderSettings('groupinfo'); renderAll(); } }
+  else if(id==='gidelete'){ var gdc=chatById(ctx.groupId); if(gdc) giDelete(gdc); }
 }
 var sheet=$('#sheet'), sheetScrim=$('#sheetScrim');
 var sheetCloseTimer=null;
@@ -4468,7 +4477,18 @@ $('#apiBoxRetry').addEventListener('click',function(){
    picker (no trip to Settings). */
 updateModelLabel();
 $('#sbNew').addEventListener('click',newChat);
-$('#sbNewTop').addEventListener('click',function(){ sbCreateAgent(); });
+/* Sidebar top + : a small popup menu - Agent or Group Chat -
+   instead of jumping straight to agent creation. */
+function sbNewTopAction(){
+  var btn=$('#sbNewTop'); if(!btn) return;
+  if(pop.classList.contains('show') && popAnchor===btn){ closePop(); popCtx=null; return; }
+  popCtx={};
+  openPop(btn.getBoundingClientRect(),[
+    {id:'newagent', icon:I.bot, label:'Agent'},
+    {id:'newgroup', icon:I.hash, label:'Group Chat'}
+  ], btn);
+}
+$('#sbNewTop').addEventListener('click',function(){ sbNewTopAction(); });
 $('#sbSettings').addEventListener('click',function(){ setSidebar(false,true); openSettings('list'); });
 $('#sbSearch').addEventListener('input',renderSidebar);
 /* Selecting Search in the side menu opens the full-screen Search
@@ -5013,6 +5033,129 @@ function createGroupChat(ids){
   closeSheet(); setSidebar(false,true); closeSettings(true); renderAll();
   toast('Group chat created');
 }
+/* =============== Group info page ===============
+   Tapping a group chat's avatar opens this: the members' avatars
+   stacked like the reference, the group name, the member count,
+   the members list (tap one to open its agent page), the files
+   shared in the chat, and a ... menu with Edit name, Pin and
+   Delete. Rendered as a settings view, in the app's own theme. */
+var GI_PIN_SVG='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 3h6l1 7 3 3H5l3-3z"/></svg>';
+var giShowAll=false, giFileList=[];
+function isGroupChat(c){ c=c||((typeof currentChat==='function')? currentChat() : null); return !!(c && c.type==='group'); }
+function openGroupInfo(){ giShowAll=false; openSettings('groupinfo'); }
+/* The pinned head (and the empty-chat hero) open the group info
+   page when the current chat is a group; otherwise the agent page. */
+function openHeadAvatar(){
+  if(isGroupChat()){ openGroupInfo(); return; }
+  var cur=(typeof chatAgent==='function')? chatAgent() : null;
+  if(cur) openAgentPage(cur.id);
+}
+function giFiles(c){
+  var seen={}, out=[];
+  (c.messages||[]).forEach(function(m){
+    (m.attachments||[]).forEach(function(a){
+      if(!a || !a.name) return;
+      var k=a.name+'|'+(a.size||0);
+      if(seen[k]) return; seen[k]=1; out.push(a);
+    });
+  });
+  return out;
+}
+function giFileIcon(kind){
+  if(kind==='image') return I.image;
+  if(kind==='video') return I.video;
+  return I.file;
+}
+function giKindLabel(a){
+  if(a.kind==='image') return 'Image';
+  if(a.kind==='video') return 'Video';
+  if(a.kind==='audio') return 'Audio';
+  var n=String(a.name||''); var d=n.lastIndexOf('.');
+  return d>0? n.slice(d+1).toUpperCase()+' file' : 'File';
+}
+function settingsGroupInfo(){
+  var c=currentChat();
+  if(!isGroupChat(c)){ closeSettings(); return; }
+  var members=(c.members||[]).map(function(id){ return agentById(id); }).filter(Boolean);
+  var avas=members.slice(0,4).map(function(a){ return '<span class="gi-ava">'+avatarHTMLFor(a,'idle')+'</span>'; }).join('');
+  var vis=giShowAll? members : members.slice(0,4);
+  var rows=vis.map(function(a){
+    return '<button class="gi-row" data-gi-member="'+a.id+'"><span class="gc-ava">'+avatarHTMLFor(a,'idle')+'</span><span class="gi-name2">'+esc(a.name)+'</span></button>';
+  }).join('');
+  if(!giShowAll && members.length>4){
+    rows+='<button class="gi-row gi-more" id="giMore"><span class="gi-dots">'+I.dotsH+'</span><span>View all '+members.length+' members</span></button>';
+  }
+  if(!rows) rows='<p class="gi-note">No members left in this group.</p>';
+  giFileList=giFiles(c);
+  var frows=giFileList.map(function(a,i){
+    return '<button class="gi-row" data-gi-file="'+i+'"><span class="gi-file-ic">'+giFileIcon(a.kind)+'</span><span class="gi-file-meta"><span class="gi-file-name">'+esc(a.name)+'</span><span class="gi-file-sub">'+esc(giKindLabel(a))+'</span></span></button>';
+  }).join('') || '<p class="gi-note">No files shared yet.</p>';
+  setView.innerHTML='<div class="set-head"><button class="circle-btn" id="setBack" aria-label="Back">'+I.back+'</button><span style="flex:1"></span><button class="circle-btn" id="giMenu" aria-label="Group options">'+I.dotsH+'</button></div>'
+    +'<div class="set-scroll"><div class="set-inner">'
+    +'<div class="gi-top"><div class="gi-avas">'+avas+'</div><div class="gi-name">'+esc(c.title)+'</div><div class="gi-sub">'+members.length+' member'+(members.length===1?'':'s')+'</div></div>'
+    +'<div class="gi-sec">Members</div>'+rows
+    +'<div class="gi-sec">Files</div>'+frows
+    +'</div></div>';
+  wireBack(function(){ closeSettings(); });
+  var menuBtn=$('#giMenu');
+  menuBtn.addEventListener('click',function(){
+    if(pop.classList.contains('show') && popAnchor===menuBtn){ closePop(); popCtx=null; return; }
+    popCtx={groupId:c.id};
+    openPop(menuBtn.getBoundingClientRect(),[
+      {id:'giedit', icon:I.edit, label:'Edit name'},
+      {id:'gipin', icon:GI_PIN_SVG, label: c.pinned? 'Unpin this group chat' : 'Pin this group chat'},
+      {id:'gidelete', icon:I.trash, label:'Delete group chat', danger:true}
+    ], menuBtn);
+  });
+  var more=$('#giMore');
+  if(more) more.addEventListener('click',function(){ giShowAll=true; renderSettings('groupinfo'); });
+  setView.querySelectorAll('[data-gi-member]').forEach(function(b){
+    b.addEventListener('click',function(){ openAgentPage(b.getAttribute('data-gi-member')); });
+  });
+  setView.querySelectorAll('[data-gi-file]').forEach(function(b){
+    b.addEventListener('click',function(){ giPreviewFile(giFileList[+b.getAttribute('data-gi-file')]); });
+  });
+}
+function giPreviewFile(a){
+  if(!a) return;
+  function sheetWith(body){
+    openSheet(body+'<button class="btn-ghost" id="giPvClose">Close</button>');
+    $('#giPvClose').addEventListener('click',closeSheet);
+  }
+  if(a.kind==='image' && a.url){
+    /* Blob URLs only live for this session; after a reload the
+       saved copy is stripped, so a broken image falls back to a
+       toast instead of a dead frame. */
+    sheetWith('<div class="gi-preview"><img src="'+escA(a.url)+'" alt="'+escA(a.name)+'" onerror="this.style.display=\'none\';"></div>');
+    return;
+  }
+  if(a.textContent){
+    sheetWith('<h3>'+esc(a.name)+'</h3><div class="gi-textfile">'+esc(String(a.textContent).slice(0,8000))+'</div>');
+    return;
+  }
+  toast('Preview is not available for this file');
+}
+function giRename(c){
+  openSheet('<h3>Edit name</h3><div class="field"><label>Group name</label><input id="giNameIn" type="text" value="'+escA(c.title)+'"></div>'
+    +'<button class="btn-primary" id="giNameSave">Save</button><button class="btn-ghost" id="giNameCancel">Cancel</button>');
+  $('#giNameCancel').addEventListener('click',closeSheet);
+  $('#giNameSave').addEventListener('click',function(){
+    var v=$('#giNameIn').value.trim();
+    if(v){ c.title=v; renderAll(); }
+    closeSheet(); renderSettings('groupinfo');
+  });
+}
+function giDelete(c){
+  openSheet('<h3>Delete group chat?</h3><p class="sub">'+esc(c.title)+' will be removed. This cannot be undone.</p>'
+    +'<button class="btn-danger" id="giDelYes">Delete group chat</button><button class="btn-ghost" id="giDelNo">Cancel</button>');
+  $('#giDelNo').addEventListener('click',closeSheet);
+  $('#giDelYes').addEventListener('click',function(){
+    chats=chats.filter(function(x){ return x.id!==c.id; });
+    if(state.splitId===c.id) state.splitId=null;
+    if(state.currentId===c.id){ state.currentId='main'; if(typeof syncChatAgentToCurrentChat==='function') syncChatAgentToCurrentChat(); }
+    closeSheet(); closeSettings(); renderAll(); toast('Group chat deleted');
+  });
+}
 /* =============== Scan & create ===============
    Pick a photo of a face or character and it becomes a new
    agent's face — the flow then lands on the simple Create Agent
@@ -5186,6 +5329,7 @@ function renderSettingsInner(view){
   if(view==='agentfile') return settingsAgentFile();
   if(view==='memorylib') return settingsLibrary();
   if(view==='goals') return settingsGoals();
+  if(view==='groupinfo') return settingsGroupInfo();
   if(view==='terminal') return settingsSimple('Terminal','commands',[['Commands run','0'],['Runs in','Play preview pane']], '<p class="set-note">Terminal-style commands from chats are listed here. Code previews run in the Play pane.</p>', null);
   if(view==='history') return settingsHistory();
   if(view==='reset') return settingsReset();
@@ -6131,7 +6275,7 @@ var headTapAt=0;
       /* A TAP on the pinned head: open the agent's page on release,
          not on the later synthetic click. */
       var cur=chatAgent();
-      if(cur){ headTapAt=Date.now(); openAgentPage(cur.id); return; }
+      if(cur){ headTapAt=Date.now(); openHeadAvatar(); return; }
     }
     springBack();
   }
@@ -6154,7 +6298,7 @@ var headTapAt=0;
     if(Date.now()-headSwipedAt<450) return; /* a swipe is not a tap */
     if(Date.now()-headTapAt<800) return;    /* the release already opened it */
     headTapAt=Date.now();
-    openAgentPage(b.getAttribute('data-agenthead'));
+    openHeadAvatar();
   });
   /* The same tap on every OTHER agent avatar that carries
      data-agenthead — above all the big hero on an empty chat,
@@ -6170,7 +6314,7 @@ var headTapAt=0;
     if(e.target.closest('#agentHeadBar')) return; /* handled above */
     var b=e.target.closest('[data-agenthead]');
     var sb=e.target.closest('#sbAgentAva,#sbAgentName');
-    if(b) altDown={x:e.clientX, y:e.clientY, id:b.getAttribute('data-agenthead'), sb:false};
+    if(b) altDown={x:e.clientX, y:e.clientY, id:b.getAttribute('data-agenthead'), sb:false, hero:b.classList.contains('home-hero-ava')};
     else if(sb) altDown={x:e.clientX, y:e.clientY, id:null, sb:true};
   },{passive:true});
   document.addEventListener('pointerup',function(e){
@@ -6180,6 +6324,7 @@ var headTapAt=0;
     if(Math.abs(e.clientX-a.x)>=10 || Math.abs(e.clientY-a.y)>=10) return; /* a scroll / swipe, not a tap */
     headTapAt=Date.now();
     if(a.sb){ setSidebar(false,true); openAgentPage(mainAgentId); }
+    else if(a.hero && isGroupChat()) openGroupInfo();
     else if(a.id) openAgentPage(a.id);
   },{passive:true});
   document.addEventListener('click',function(e){
@@ -6191,6 +6336,9 @@ var headTapAt=0;
     var b=e.target.closest('[data-agenthead]');
     if(!b || e.target.closest('#agentHeadBar')) return; /* the bar has its own fallback */
     headTapAt=Date.now();
+    /* The empty-chat hero on a group chat opens the group info page,
+       like the pinned head does; every other avatar opens its agent. */
+    if(b.classList.contains('home-hero-ava') && isGroupChat()){ openGroupInfo(); return; }
     openAgentPage(b.getAttribute('data-agenthead'));
   });
 })();

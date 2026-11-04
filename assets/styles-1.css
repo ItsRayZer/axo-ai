@@ -1807,6 +1807,12 @@ header.chat-head,#agentHeadBar,#agentHeadBar .chat-agent-head,
 .ag-peek .agent-ava-slot img{border-radius:50%;}
 .ag-peek .av-svg{animation:none !important;}
 .ag-carousel-ghost{position:absolute; inset:0; z-index:4; pointer-events:none; background:transparent; will-change:transform,opacity; transform-origin:50% 30%;}
+/* While the carousel glides between agents, the avatars' own idle
+   loops (bob + blink) are frozen: SVG repaints run on the CPU
+   every frame, and freezing them is what keeps the 480ms glide
+   at a full 60fps on phones. The ghost lives inside #agCarousel
+   too, so one selector covers both sides. Loops resume on land. */
+#agCarousel.gliding .av-svg, #agCarousel.gliding .av-svg *{animation:none !important;}
 @media (prefers-reduced-motion:reduce){.ag-peek{transition:none;}}
 
 /* ---------- Temporary chat — eyes closed & peeking ----------

@@ -8331,42 +8331,62 @@ function settingsAgent(){
   /* One continuous glide for every carousel switch, shared by
      agent-to-agent moves and the centred create tile. The
      re-render swaps the page underneath, and this animates BOTH
-     sides in the same unbroken 560ms Apple-eased window: the
-     outgoing header is kept as a ghost that shrinks and slides
-     away while fading out late, and the incoming header starts
-     as the small side peek (offset toward the side it came
-     from, scaled down) and grows big as it glides into the
+     sides in the same unbroken Apple-eased window: the outgoing
+     header is kept as a ghost that shrinks and slides away while
+     the incoming header grows from the small side peek into the
      middle and lands centred. They overlap the whole time, so
      there is never an empty black gap or a flash between
      agents. The page's own entrance stagger is silenced for
      this render (inline animation:none on the rebuilt blocks),
      so nothing fades in from zero mid-switch either. */
+  var glideToken=0;
   function carouselGlide(dir, ghostHTML){
     setView.querySelectorAll('.agent-flow>*').forEach(function(el){ el.style.animation='none'; });
+    /* A newer glide supersedes an older one: drop any stale ghost
+       and let only the latest glide own the frozen-avatars class. */
+    var tok=++glideToken;
     if(!ghostHTML) return;
     if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     var nc=$('#agCarousel'); if(!nc) return;
+    nc.querySelectorAll('.ag-carousel-ghost').forEach(function(x){ x.remove(); });
     var main=nc.querySelector('.ag-carousel-main'); if(!main) return;
+    /* Freeze the avatars' own idle loops for the glide: the SVGs
+       repaint on the CPU every frame while they bob and blink,
+       which is what dropped frames on phones. The glide itself
+       is the only motion for these 480ms; the idle loops resume
+       the moment it lands, so the freeze is invisible. */
+    nc.classList.add('gliding');
     var g=document.createElement('div');
     g.className='ag-carousel-ghost'; g.setAttribute('aria-hidden','true'); g.innerHTML=ghostHTML;
     nc.appendChild(g);
-    var EASE='cubic-bezier(.32,.72,0,1)', DUR=560;
+    var EASE='cubic-bezier(.32,.72,0,1)', DUR=480;
+    function done(){
+      if(g.parentNode) g.remove();
+      if(tok!==glideToken) return;
+      nc.classList.remove('gliding');
+    }
     try{
-      main.animate([
-        {transform:'translateX('+(dir*104)+'px) scale(.78)', opacity:.35},
-        {transform:'translateX('+(dir*30)+'px) scale(.93)', opacity:.85, offset:.55},
+      /* fill:'backwards' is the core of the smoothness: the
+         from-state applies the instant the animation is created,
+         inside the same synchronous task as the re-render, so the
+         first paint after the swap never flashes the new agent
+         sitting at full size in the middle before it jumps aside.
+         One clean two-stop crossfade-glide per side, same
+         duration and easing, so they stay locked together - no
+         mid keyframe, no bounce pop on the avatar. */
+      var ma=main.animate([
+        {transform:'translateX('+(dir*120)+'px) scale(.8)', opacity:0},
         {transform:'translateX(0) scale(1)', opacity:1}
-      ],{duration:DUR, easing:EASE});
-      var wrap=main.querySelector('.ag-avatar-wrap');
-      if(wrap) wrap.animate([{transform:'scale(.6)'},{transform:'scale(1.04)', offset:.72},{transform:'scale(1)'}],{duration:DUR, easing:EASE});
+      ],{duration:DUR, easing:EASE, fill:'backwards'});
       var ga=g.animate([
         {transform:'translateX(0) scale(1)', opacity:1},
-        {transform:'translateX('+(-dir*44)+'px) scale(.92)', opacity:.92, offset:.45},
-        {transform:'translateX('+(-dir*104)+'px) scale(.78)', opacity:0}
-      ],{duration:DUR, easing:EASE});
-      ga.onfinish=function(){ if(g.parentNode) g.remove(); };
-    }catch(e){ if(g.parentNode) g.remove(); }
-    setTimeout(function(){ if(g.parentNode) g.remove(); }, DUR+140);
+        {transform:'translateX('+(-dir*120)+'px) scale(.8)', opacity:0}
+      ],{duration:DUR, easing:EASE, fill:'backwards'});
+      var finished=false;
+      function fin(){ if(finished) return; finished=true; done(); }
+      ma.onfinish=fin; ga.onfinish=fin;
+    }catch(e){ done(); }
+    setTimeout(done, DUR+160);
   }
   function carouselGhostHTML(){
     var oldC=$('#agCarousel');

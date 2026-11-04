@@ -729,5 +729,27 @@ function sendPrompt(){
   $('prompt').value=''; $('prompt').style.height='auto';
   runAgent(v);
 }
+/* Swipe between menus from codeR. Order: Chat, codeR, Goals, Library.
+   Swipe right goes back to Chat, swipe left goes to Goals (deep link,
+   the main app jumps to the view on load). Same cheap detector as the
+   main app: one passive touchstart/touchend pair, quick horizontal
+   swipes only, never from inputs, the nav, the composer or drawers. */
+(function(){
+  var sx=0, sy=0, st=0, ok=false;
+  document.addEventListener('touchstart',function(e){
+    ok=false;
+    if(!e.touches||e.touches.length!==1) return;
+    var t=e.target;
+    if(t.closest && t.closest('input,textarea,select,[contenteditable],.cr-nav,.cr-compose,.drawer,.modal,.sheet')) return;
+    var tc=e.touches[0]; sx=tc.clientX; sy=tc.clientY; st=Date.now(); ok=true;
+  },{passive:true});
+  document.addEventListener('touchend',function(e){
+    if(!ok){ok=false;return;} ok=false;
+    if(!e.changedTouches||e.changedTouches.length!==1) return;
+    var tc=e.changedTouches[0], dx=tc.clientX-sx, dy=tc.clientY-sy, dt=Date.now()-st;
+    if(dt>700 || Math.abs(dx)<80 || Math.abs(dx)<Math.abs(dy)*1.6) return;
+    try{ window.location.href = dx<0 ? 'index.html#goals' : 'index.html'; }catch(e2){}
+  },{passive:true});
+})();
 document.addEventListener('DOMContentLoaded',init);
 })();

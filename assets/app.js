@@ -9346,6 +9346,61 @@ document.querySelectorAll('#bottomNav [data-bnav]').forEach(function(b){
     }
   });
 });
+/* =============== Swipe between menus: Chat, codeR, Goals, Library ===============
+   A quick horizontal swipe on the main stage switches menus in nav order.
+   Fast and cheap by design: one passive touchstart/touchend pair, no move
+   tracking, no layout work. Fires only on a fast, mostly-horizontal swipe
+   that did not start on an input, the nav, the composer, the sidebar, an
+   open sheet, or a popup menu. */
+var MENU_ORDER=['chat','coder','goals','library'];
+function menuKeyNow(){
+  if(state.view==='settings'){ return lastSetView==='goals' ? 'goals' : (lastSetView==='memorylib' ? 'library' : 'chat'); }
+  return 'chat';
+}
+function goMenu(k){
+  if(k==='chat'){ closeSettings(); }
+  else if(k==='goals'){ if(state.view==='settings') renderSettings('goals'); else openSettings('goals'); }
+  else if(k==='library'){ libReturn=(state.view==='settings')? 'list' : 'chat'; libMenuOpen=false; if(state.view==='settings') renderSettings('memorylib'); else openSettings('memorylib'); }
+  else if(k==='coder'){ try{ window.location.href='coder.html'; }catch(e){} }
+}
+(function(){
+  var sx=0, sy=0, st=0, ok=false;
+  function swStart(e){
+    ok=false;
+    if(!e.touches || e.touches.length!==1) return;
+    var t=e.target;
+    if(t.closest && t.closest('input,textarea,select,[contenteditable],#bottomNav,#composerZone,.cv-composer,#sidebar,.sheet,.msg-menu,.menu-pop')) return;
+    if(typeof sbOpen==='function' && sbOpen()) return;
+    try{ if(typeof sheet!=='undefined' && sheet && sheet.classList.contains('show')) return; }catch(e2){}
+    var tc=e.touches[0]; sx=tc.clientX; sy=tc.clientY; st=Date.now(); ok=true;
+  }
+  function swEnd(e){
+    if(!ok){ ok=false; return; } ok=false;
+    if(!e.changedTouches || e.changedTouches.length!==1) return;
+    var tc=e.changedTouches[0], dx=tc.clientX-sx, dy=tc.clientY-sy, dt=Date.now()-st;
+    if(dt>700 || Math.abs(dx)<80 || Math.abs(dx)<Math.abs(dy)*1.6) return;
+    var order=MENU_ORDER, i=order.indexOf(menuKeyNow());
+    if(i<0) i=0;
+    var n=dx<0 ? i+1 : i-1;
+    if(n<0 || n>=order.length) return;
+    try{ goMenu(order[n]); }catch(e3){}
+  }
+  document.addEventListener('touchstart',swStart,{passive:true});
+  document.addEventListener('touchend',swEnd,{passive:true});
+})();
+/* Deep link from codeR's menu: index.html#goals / #library / #chat.
+   Called at boot after the first render; the hash is cleared so a
+   later refresh does not re-jump. */
+function handleMenuHash(){
+  var h=''; try{ h=String(window.location.hash||'').toLowerCase(); }catch(e){}
+  if(h!=='#goals' && h!=='#library' && h!=='#chat') return;
+  try{
+    if(h==='#goals') goMenu('goals');
+    else if(h==='#library') goMenu('library');
+    else goMenu('chat');
+    history.replaceState(null,'',window.location.pathname+window.location.search);
+  }catch(e2){}
+}
 /* While the user is typing, the bottom menu slides away smoothly;
    it returns as soon as the composer is empty again. */
 $('#chatInput').addEventListener('input',function(){
@@ -10083,4 +10138,5 @@ else { sidebar.style.display='none'; sbWarm(); }
 updateApiPill();
 renderAll(); updateTargetLine(); autoGrow(); updateSend(); syncBnav();
 maybeShowIntro();
+try{ if(state.introDone) handleMenuHash(); }catch(e){}
 

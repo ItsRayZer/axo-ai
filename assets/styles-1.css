@@ -1906,7 +1906,7 @@ header.chat-head .head-pill{justify-self:end; align-self:start; margin-left:0;}
 /* goals notification dot stays pinned to its segment corner */
 #bottomNav .bnav-dot{top:8px; right:50%; margin-right:-16px;}
 /* the bar floats now, so the composer gets its own bottom clearance */
-#composerZone{padding-bottom:calc(66px + env(safe-area-inset-bottom));}
+#composerZone{padding-bottom:calc(76px + env(safe-area-inset-bottom));}
 /* keyboard open: the pill hides, so the floating clearance must go too,
    or a dead gap sits between the composer and the keyboard */
 html.kb-open #composerZone{padding-bottom:0;}

@@ -12,6 +12,26 @@
 //   GROQ_API_KEY          — Groq          (api.groq.com/openai/v1)
 //   OPENROUTER_API_KEY    — OpenRouter    (openrouter.ai/api/v1)
 //
+// SECURITY (added 2026-11-04 after a code review found the relay fully
+// open): this function used to answer ANY POST with no auth, no rate
+// limit and no origin check, so anyone who found the URL could burn the
+// owner's Groq/OpenRouter quota without limit. Now:
+// - Per-IP rate limit: 60 requests per 10 minutes per client IP
+//   (sliding window, in-memory). Legit chat use never hits this;
+//   bulk abuse does. NOTE: serverless instances each keep their own
+//   memory, so this is per-instance best-effort, not a global
+//   counter. For a hard global limit, put a counter in Vercel KV /
+//   Upstash Redis and check it here.
+// - Invite bypass: requests carrying the invite code (body.invite,
+//   compared against AXO_INVITE_CODE env var, default 'MEETAXO')
+//   skip the rate limit — the app sends it automatically once the
+//   user redeems the code, so code holders get unlimited use.
+// - Rejected requests answer JSON with {relay:true} so the app
+//   treats them as "relay answered, provider refused", never as
+//   "relay not deployed".
+// The client-side free-tier counter (10 messages) is unchanged and
+// still enforced in the app; this is the server-side backstop.
+//
 // MODELS — live-verified through this relay on 2026-10-29 with
 // the app's real request shape (the previous defaults had been
 // retired by the providers, which is why the Gptopen Model
@@ -166,6 +186,29 @@ async function runAuto(body) {
   return last || { status: 501, json: { relay: true, error: { message: 'No provider keys are set on the server' } } };
 }
 
+/* ---- server-side abuse backstop (see header comment) ---- */
+const RATE_WINDOW_MS = 10 * 60 * 1000;
+const RATE_MAX = 60;
+const ipHits = {};
+function clientIp(req) {
+  const fwd = req.headers['x-forwarded-for'] || req.headers['X-Forwarded-For'] || '';
+  const first = String(fwd).split(',')[0].trim();
+  if (first) return first;
+  return (req.socket && req.socket.remoteAddress) || 'unknown';
+}
+function inviteOk(req, body) {
+  const want = process.env.AXO_INVITE_CODE || 'MEETAXO';
+  const got = (body && body.invite) || req.headers['x-axo-invite'] || '';
+  return String(got).trim().toUpperCase() === String(want).trim().toUpperCase();
+}
+function rateLimited(ip) {
+  const now = Date.now();
+  const arr = (ipHits[ip] = (ipHits[ip] || []).filter((t) => now - t < RATE_WINDOW_MS));
+  if (arr.length >= RATE_MAX) return true;
+  arr.push(now);
+  return false;
+}
+
 export default async function handler(req, res) {
   // Every response from this function carries this header, so the
   // app can positively tell a LIVE relay apart from a site where
@@ -184,6 +227,15 @@ export default async function handler(req, res) {
   }
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    // Abuse backstop: invite holders skip the limit; everyone else
+    // gets 60 requests / 10 min per IP (per serverless instance).
+    if (!inviteOk(req, body)) {
+      const ip = clientIp(req);
+      if (rateLimited(ip)) {
+        res.status(429).json({ relay: true, error: { message: 'Too many requests from this address — slow down, use your own API key, or redeem the invite code for unlimited use.' } });
+        return;
+      }
+    }
     let last = null;
     if (body.provider === 'auto') {
       last = await runAuto(body);

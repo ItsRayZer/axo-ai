@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+<meta name="color-scheme" content="dark" />
+<link rel="icon" href="data:," />
+<title>codeR</title>
+<link rel="stylesheet" href="assets/coder.css">
+</head>
+<body>
+
+<header class="cr-head">
+  <a class="cr-back" href="index.html" aria-label="Back to Gptopen">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+  </a>
+  <div class="cr-title">code<span class="r">R</span></div>
+  <button class="cr-model-btn" id="modelBtn" aria-label="Model settings">Relay (free)</button>
+  <button class="cr-gear" id="gearBtn" aria-label="Settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
+</header>
+
+<div class="cr-bar">
+  <button class="chip plan" id="chipPlan" aria-label="Toggle plan mode">Plan</button>
+  <button class="chip auto" id="chipAuto" aria-label="Toggle auto mode">Auto</button>
+  <span class="sp"></span>
+  <button class="tbtn" id="btnWs">Workspace</button>
+  <button class="tbtn" id="btnPreview">Preview</button>
+  <button class="tbtn" id="btnSessions">Sessions</button>
+  <button class="tbtn" id="btnNewSession" aria-label="New session">+ New</button>
+</div>
+
+<main id="msgs" aria-label="Agent console"></main>
+
+<div class="cr-compose">
+  <div class="cr-row">
+    <textarea id="prompt" rows="1" placeholder="Describe the app or website to build..." aria-label="Prompt"></textarea>
+    <button id="send" aria-label="Send">&#8593;</button>
+  </div>
+  <div class="cr-hint">codeR builds production-ready apps. Run executes code free via the Piston sandbox.</div>
+</div>
+
+<!-- Workspace drawer -->
+<div class="drawer" id="drawerWs" role="dialog" aria-label="Workspace">
+  <div class="scrim"></div>
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2>Workspace</h2>
+      <button class="x" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="tabs">
+      <button class="tab on" id="wsTabTree">Files</button>
+      <button class="tab" id="wsTabEdit">Editor</button>
+      <button class="tab" id="wsTabPreview">Preview</button>
+    </div>
+    <div class="sheet-body">
+      <div id="wsPaneTree">
+        <div class="ws-actions">
+          <button class="tbtn" id="btnNewFile">+ New file</button>
+          <button class="tbtn" id="btnExportAll">Export all</button>
+        </div>
+        <div class="ftree" id="fileTree"></div>
+      </div>
+      <div id="wsPaneEdit" style="display:none">
+        <div class="fdir" id="editorName" style="margin-top:0">No file open</div>
+        <textarea id="editor" spellcheck="false" aria-label="Code editor"></textarea>
+        <div class="ed-bar">
+          <button class="tbtn" id="btnSaveFile">Save</button>
+          <button class="tbtn" id="btnCopyFile">Copy</button>
+          <button class="tbtn" id="btnDlFile">Download</button>
+        </div>
+      </div>
+      <div id="wsPanePreview" style="display:none">
+        <div class="ws-actions">
+          <select id="previewFile" class="tbtn" style="flex:1" aria-label="File to preview"></select>
+        </div>
+        <iframe id="previewFrame" sandbox="allow-scripts" title="Live preview"></iframe>
+        <div class="note" id="previewNote"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Sessions drawer -->
+<div class="drawer" id="drawerSessions" role="dialog" aria-label="Sessions">
+  <div class="scrim"></div>
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2>Sessions</h2>
+      <button class="x" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="sheet-body">
+      <div id="sessList"></div>
+      <div id="sessView"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div class="modal" id="modalSettings" role="dialog" aria-label="Settings">
+  <div class="scrim" id="setScrim"></div>
+  <div class="modal-card">
+    <h3>codeR settings</h3>
+    <div class="fld">
+      <label for="setMode">Model source</label>
+      <select id="setMode">
+        <option value="relay">Gptopen relay (free, no key)</option>
+        <option value="custom">My own key</option>
+      </select>
+    </div>
+    <div id="customBox">
+      <div class="presets">
+        <button class="tbtn" data-preset="groq">Groq</button>
+        <button class="tbtn" data-preset="openrouter">OpenRouter</button>
+        <button class="tbtn" data-preset="gemini">Gemini</button>
+        <button class="tbtn" data-preset="nvidia">NVIDIA NIM</button>
+      </div>
+      <div class="fld">
+        <label for="setBase">Base URL (OpenAI-compatible)</label>
+        <input id="setBase" type="url" placeholder="https://api.groq.com/openai/v1" autocomplete="off">
+      </div>
+      <div class="fld">
+        <label for="setKey">API key</label>
+        <input id="setKey" type="password" placeholder="paste key, stored only on this device" autocomplete="off">
+      </div>
+      <div class="fld">
+        <label for="setModel">Model</label>
+        <input id="setModel" type="text" placeholder="e.g. openai/gpt-oss-120b" autocomplete="off">
+      </div>
+    </div>
+    <div class="fld">
+      <label for="setExec">Custom exec endpoint (optional)</label>
+      <input id="setExec" type="url" placeholder="https://your-server/run  (leave empty for free Piston)" autocomplete="off">
+    </div>
+    <div class="note">Run executes code snippets free on the public Piston sandbox, no key needed. A custom endpoint is only needed for raw shell commands; it receives POST JSON {cmd} or {language, code}.</div>
+    <div class="mrow">
+      <button class="btn reject" id="setClose">Cancel</button>
+      <button class="btn approve" id="setSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/coder.js"></script>
+
+<!-- Floating liquid-glass bottom nav, icons only -->
+<nav class="cr-nav" aria-label="Main navigation">
+  <a href="index.html" aria-label="Chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></a>
+  <a href="index.html" aria-label="Goals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg></a>
+  <a href="index.html" aria-label="Library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></a>
+  <a href="coder.html" aria-label="codeR" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg></a>
+</nav>
+
+</body>
+</html>

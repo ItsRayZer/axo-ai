@@ -388,7 +388,7 @@ function homeHeroHTML(){
      hidden there so the agent never shows twice) — so it carries
      the same tap as the pinned head: tapping it opens this agent's
      page, via the delegated [data-agenthead] tap/click handlers. */
-  return '<div class="home-hero'+(state.temp?' is-temp':'')+'"><button class="home-hero-ava" data-agenthead="'+a.id+'" aria-label="Open '+esc(a.name)+'\u2019s page">'+avatarHTMLFor(a,'idle')+(state.temp? tempPeekEyesHTML() : '')+'</button></div>';
+  return '<div class="home-hero'+(state.temp?' is-temp':'')+'"><button class="home-hero-ava" data-agenthead="'+a.id+'" aria-label="Open '+escA(a.name)+'\u2019s page">'+avatarHTMLFor(a,'idle')+(state.temp? tempPeekEyesHTML() : '')+'</button></div>';
 }
 function hashStr(s){ var h=0; for(var i=0;i<s.length;i++){ h=(h*31 + s.charCodeAt(i))|0; } return h; }
 /* Per-message hash cache: renderMain re-signs the whole chat on
@@ -626,7 +626,7 @@ function renderSidebar(){
     }
     html+='<div class="chat-row'+(sel?' sel':'')+(sp?' splitp':'')+(liveA?' live-agent':'')+'" data-id="'+c.id+'">'
       +'<div class="chat-row-under"><span class="u-open">Open</span><span class="u-del">Delete</span></div>'
-      +'<div class="chat-row-main" role="button" tabindex="0" aria-label="'+esc(c.title)+'">'+rowAva+'<span class="chat-row-title">'+esc(c.title)+'</span>'
+      +'<div class="chat-row-main" role="button" tabindex="0" aria-label="'+escA(c.title)+'">'+rowAva+'<span class="chat-row-title">'+esc(c.title)+'</span>'
       +(sp?'<span class="split-badge">Split</span>':'')
       +(dot?'<span class="row-dot"></span>':'')
       +'<button class="row-menu-btn" data-menu="'+c.id+'" aria-label="Chat options">'+I.dotsH+'</button></div></div>';
@@ -1520,6 +1520,7 @@ function updateApiBoxLabel(){
 function pingRelay(entry, modelOverride){
   var p=API_PROVIDERS[entry.provider];
   var body={provider:entry.provider, model:(modelOverride || getExplicitModel(entry.provider) || getWorkingModel(entry.provider) || (p? p.defModel : entry.model)), messages:[{role:'user', content:'Reply with OK'}], temperature:0, max_tokens:8};
+  try{ if(typeof inviteUnlocked==='function' && inviteUnlocked() && typeof INVITE_CODE==='string') body.invite=INVITE_CODE; }catch(e){}
   if(entry.provider==='mistral' && mistralAgentOn()) body.agent_id=state.mistralAgentId;
   return fetchWithTimeout('/api/relay',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}, 30000)
     .then(function(r){ var hdr=r.headers.get('x-axo-relay'); return r.json().then(function(j){ return {ok:r.ok, j:j, status:r.status, relayHdr:hdr}; }).catch(function(){ return {ok:r.ok, j:null, status:r.status, relayHdr:hdr}; }); })
@@ -2106,7 +2107,7 @@ function enterSplit(id){
 function exitSplit(){ state.splitId=null; renderAll(); updateTargetLine(); }
 function renameChat(id){
   var c=chatById(id); if(!c) return;
-  openSheet('<h3>Rename chat</h3><div class="field"><label>Title</label><input id="rnInput" type="text" value="'+esc(c.title)+'"></div>'
+  openSheet('<h3>Rename chat</h3><div class="field"><label>Title</label><input id="rnInput" type="text" value="'+escA(c.title)+'"></div>'
     +'<button class="btn-primary" id="rnSave">Save</button><button class="btn-ghost" id="rnCancel">Cancel</button>');
   $('#rnSave').addEventListener('click',function(){ var v=$('#rnInput').value.trim(); if(v){ c.title=v; renderAll(); } closeSheet(); });
   $('#rnCancel').addEventListener('click',closeSheet);
@@ -3805,6 +3806,9 @@ function callProvider(chat, memHits, opts){
          2048 a long think could eat the whole budget and return
          empty content, which showed up as "didn't answer". */
       var rBody={provider:entry.provider, model:model, messages:requestMsgs, temperature:temperature, max_tokens:codeMode?8192:4096};
+      /* Server-side abuse backstop (api/relay.js): invite holders skip
+         the per-IP rate limit, so send the code when it is redeemed. */
+      try{ if(typeof inviteUnlocked==='function' && inviteUnlocked() && typeof INVITE_CODE==='string') rBody.invite=INVITE_CODE; }catch(e){}
       /* The final 'auto' sweep sends NO model: the server picks
          per provider (its own default + fallbacks) as it goes. */
       if(entry.provider==='auto') rBody.model='';
@@ -5380,7 +5384,7 @@ function settingsRelay(){
 function settingsRelayCode(){
   var src=relaySourceText();
   setView.innerHTML=setHead('Relay server code','apis')+'<div class="set-scroll"><div class="set-inner">'
-    +'<p class="set-note">Save this as <b>api/relay.js</b> in the Vercel project, set GROQ_API_KEY and OPENROUTER_API_KEY in the project\u2019s environment variables (Production), then redeploy. The keys stay server-side \u2014 nothing in this code or the app exposes them to the browser.</p>'
+    +'<p class="set-note">Save this as <b>api/relay.js</b> in the Vercel project, set GROQ_API_KEY and OPENROUTER_API_KEY in the project\u2019s environment variables (Production), then redeploy. Optional: set AXO_INVITE_CODE to change the invite code the relay recognises for unlimited use (default MEETAXO). The keys stay server-side \u2014 nothing in this code or the app exposes them to the browser.</p>'
     +'<pre style="white-space:pre-wrap;word-break:break-word;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;overflow:auto;-webkit-user-select:text;user-select:text">'+esc(src)+'</pre>'
     +'<button class="btn-primary" id="relayCopy">Copy relay code</button>'
     +'</div></div>';
@@ -8834,7 +8838,7 @@ function settingsAgentFile(){
   }
   agentEditing=false;
   var bodyHtml='';
-  if(isImg) bodyHtml='<img class="mdimg" style="width:100%;border-radius:14px;border:1px solid var(--border)" src="'+entry.dataUrl+'" alt="'+esc(name)+'">';
+  if(isImg) bodyHtml='<img class="mdimg" style="width:100%;border-radius:14px;border:1px solid var(--border)" src="'+entry.dataUrl+'" alt="'+escA(name)+'">';
   else if(entry.dataUrl) bodyHtml='<div class="set-group" style="padding:16px 15px"><p style="margin:0 0 6px"><b>'+esc(name)+'</b></p><p class="set-note" style="margin:0">This file is not text, so it cannot be edited as text here. Download keeps the original file.</p></div><button class="btn-primary" id="afDlBtn">Download</button>';
   else bodyHtml='<div class="af-view">'+mdRender(entry.content||'')+'</div>';
   setView.innerHTML='<div class="set-head"><button class="circle-btn" id="setBack" aria-label="Back to files">'+I.back+'</button><span class="af-title">'+esc(name)+'</span>'

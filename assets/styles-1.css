@@ -1850,3 +1850,66 @@ header.chat-head .head-pill{justify-self:end; align-self:start; margin-left:0;}
 .head-center{position:relative; inset:auto; width:100%; align-items:flex-start;}
 #agentHeadBar{max-width:100%;}
 #agentHeadBar .ca-ava{max-width:56vw;}
+/* ============ Floating liquid-glass bottom nav ============
+   The bottom nav is now a floating frosted-glass pill, icons only.
+   These rules override the in-flow bar above; no earlier rule is edited. */
+#bottomNav{
+  position:fixed;
+  left:50%;
+  transform:translateX(-50%);
+  bottom:calc(10px + env(safe-area-inset-bottom));
+  width:auto;
+  max-width:calc(100vw - 28px);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  padding:8px 10px;
+  background:rgba(18,18,20,.55);
+  -webkit-backdrop-filter:blur(22px) saturate(1.5);
+  backdrop-filter:blur(22px) saturate(1.5);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:999px;
+  box-shadow:0 8px 32px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.08);
+  z-index:60;
+}
+/* keep the slide-away hide animation working with the centered pill */
+#bottomNav.nav-hidden{
+  transform:translateX(-50%) translateY(12px);
+}
+#bottomNav .bnav-btn{
+  flex:none;
+  width:52px;
+  height:52px;
+  min-width:52px;
+  padding:0;
+  margin:0;
+  border:none;
+  border-radius:999px;
+  background:transparent;
+  color:var(--muted);
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+#bottomNav a.bnav-btn{
+  color:var(--muted);
+  text-decoration:none;
+}
+#bottomNav .bnav-btn svg{width:26px; height:26px;}
+#bottomNav .bnav-btn.on{
+  background:rgba(255,255,255,.12);
+  color:#4da3ff;
+}
+#bottomNav .bnav-btn:active{transform:scale(.93);}
+#bottomNav .bnav-btn:focus-visible{outline:2px solid #4da3ff; outline-offset:2px;}
+/* goals notification dot stays pinned to its button corner */
+#bottomNav .bnav-dot{top:5px; right:5px;}
+/* the bar floats now, so the composer gets its own bottom clearance */
+#composerZone{padding-bottom:calc(84px + env(safe-area-inset-bottom));}
+/* light theme variant of the glass pill */
+[data-theme="white"] #bottomNav{
+  background:rgba(255,255,255,.6);
+  border:1px solid rgba(0,0,0,.1);
+  box-shadow:0 8px 32px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.7);
+}
+[data-theme="white"] #bottomNav .bnav-btn.on{background:rgba(0,0,0,.08);}

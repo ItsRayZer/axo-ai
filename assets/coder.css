@@ -1,14 +1,30 @@
 /* codeR - agentic coding console. Dark theme matching Gptopen, mobile-first. */
+/* Same theme variables as the main app (assets/styles-1.css), so codeR
+   always matches the app's theme, including the light mode. */
 :root{
-  --bg:#000000; --surface:#1c1c1e; --surface2:#2c2c2e; --surface3:#3a3a3c;
-  --text:#ffffff; --text2:#e5e5ea; --muted:#98989d;
-  --border:rgba(255,255,255,.08); --border2:rgba(255,255,255,.16);
+  --accent:#ffffff; --accent-ink:#0b0b0c;
+  --bg:#000000; --surface:#1c1c1e; --surface2:#2c2c2e; --text:#ffffff; --text2:#e5e5ea;
+  --muted:#98989d; --border:rgba(255,255,255,.08); --border2:rgba(255,255,255,.14);
+  --input:rgba(255,255,255,.06); --hover:rgba(255,255,255,.07); --rowbg:rgba(255,255,255,.055);
+  --overlay:rgba(0,0,0,.55); --glass:rgba(28,28,30,.72);
   --green:#30d158; --orange:#ff9f0a; --red:#ff453a; --blue:#0a84ff; --purple:#bf5af2;
-  --accent:#0a84ff; --accent-ink:#ffffff;
   --radius:14px;
-  --font:-apple-system,BlinkMacSystemFont,"Inter","SF Pro Text",system-ui,sans-serif;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
 }
+html[data-theme="white"]{
+  --bg:#ffffff; --surface:#f2f2f7; --surface2:#e5e5ea; --text:#111111; --text2:#333333;
+  --muted:#6b6b70; --border:rgba(0,0,0,.09); --border2:rgba(0,0,0,.16);
+  --input:rgba(0,0,0,.045); --hover:rgba(0,0,0,.05); --rowbg:rgba(0,0,0,.04);
+  --overlay:rgba(0,0,0,.35); --glass:rgba(255,255,255,.78);
+}
+/* light-mode variants of codeR's hardcoded dark surfaces */
+html[data-theme="white"] .cr-head{background:rgba(255,255,255,.86);}
+html[data-theme="white"] .cr-bar{background:rgba(255,255,255,.72);}
+html[data-theme="white"] .cr-nav{background:rgba(255,255,255,.6); border-color:rgba(0,0,0,.1);
+  box-shadow:0 8px 32px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.7);}
+html[data-theme="white"] .cr-nav a.on{background:rgba(0,0,0,.08); color:var(--blue);}
+html[data-theme="white"] .cr-compose .cr-row{box-shadow:0 10px 34px rgba(0,0,0,.12);}
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
 html,body{height:100%;}
 body{margin:0; background:var(--bg); color:var(--text); font-family:var(--font); font-size:15px; -webkit-font-smoothing:antialiased; overflow:hidden;}
@@ -18,15 +34,15 @@ button{font-family:var(--font);}
 .cr-head{position:fixed; top:0; left:0; right:0; z-index:20; display:flex; align-items:center; gap:10px;
   padding:calc(10px + env(safe-area-inset-top)) 12px 10px; background:rgba(0,0,0,.86);
   backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border-bottom:1px solid var(--border);}
-.cr-back{width:38px; height:38px; border-radius:50%; border:1px solid var(--border); background:var(--surface);
-  color:var(--text); display:grid; place-items:center; text-decoration:none; flex:none;}
-.cr-back svg{width:20px; height:20px;}
 .cr-title{font-size:20px; font-weight:800; letter-spacing:-.02em; flex:1;}
 .cr-title .r{color:var(--purple);}
-.cr-model-btn{max-width:38vw; border:1px solid var(--border); background:var(--surface); color:var(--text2);
-  border-radius:999px; padding:8px 12px; font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-.cr-gear{width:38px; height:38px; border-radius:50%; border:1px solid var(--border); background:var(--surface);
-  color:var(--text); display:grid; place-items:center; flex:none;}
+/* minimalistic header buttons: no boxes, just quiet text and icons */
+.cr-model-btn{max-width:38vw; border:none; background:none; color:var(--muted);
+  border-radius:10px; padding:8px 6px; font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.cr-model-btn:active{color:var(--text); background:var(--hover);}
+.cr-gear{width:36px; height:36px; border:none; background:none;
+  color:var(--muted); display:grid; place-items:center; flex:none; border-radius:10px;}
+.cr-gear:active{color:var(--text); background:var(--hover);}
 .cr-gear svg{width:19px; height:19px;}
 
 /* ---------- mode + tool bar ---------- */
@@ -34,14 +50,16 @@ button{font-family:var(--font);}
   display:flex; gap:8px; align-items:center; padding:8px 12px; background:rgba(0,0,0,.7);
   border-bottom:1px solid var(--border); overflow-x:auto; scrollbar-width:none;}
 .cr-bar::-webkit-scrollbar{display:none;}
-.chip{flex:none; border:1px solid var(--border2); background:var(--surface); color:var(--muted);
-  border-radius:999px; padding:7px 13px; font-size:13px; font-weight:700;}
-.chip.on{color:#000; background:#fff; border-color:#fff;}
+.chip{flex:none; border:1px solid transparent; background:none; color:var(--muted);
+  border-radius:999px; padding:6px 10px; font-size:13px; font-weight:700;}
+.chip:active{background:var(--hover);}
+.chip.on{color:var(--text); background:var(--rowbg); border-color:var(--border);}
 .chip.plan.on{background:var(--blue); border-color:var(--blue); color:#fff;}
 .chip.auto.on{background:var(--orange); border-color:var(--orange); color:#000;}
 .cr-bar .sp{flex:1; min-width:4px;}
-.tbtn{flex:none; border:1px solid var(--border); background:var(--surface); color:var(--text2);
-  border-radius:999px; padding:7px 12px; font-size:13px; font-weight:600;}
+.tbtn{flex:none; border:none; background:none; color:var(--muted);
+  border-radius:10px; padding:7px 8px; font-size:13px; font-weight:600;}
+.tbtn:active{color:var(--text); background:var(--hover);}
 
 /* ---------- messages ---------- */
 #msgs{position:fixed; inset:0; padding:calc(116px + env(safe-area-inset-top)) 12px calc(150px + env(safe-area-inset-bottom));
@@ -80,7 +98,7 @@ button{font-family:var(--font);}
 .btn:disabled{opacity:.45;}
 
 /* ---------- composer: same search box + send button as the main app ---------- */
-.cr-compose{position:fixed; left:0; right:0; bottom:calc(74px + env(safe-area-inset-bottom)); z-index:20; padding:0 12px;}
+.cr-compose{position:fixed; left:0; right:0; bottom:calc(64px + env(safe-area-inset-bottom)); z-index:20; padding:0 12px;}
 .cr-row{display:flex; align-items:flex-end; gap:8px; background:var(--surface); border:1px solid var(--border2);
   border-radius:28px; padding:6px; box-shadow:0 10px 34px rgba(0,0,0,.28);}
 #prompt{flex:1; border:none; outline:none; background:none; resize:none; color:var(--text);
@@ -162,14 +180,14 @@ button{font-family:var(--font);}
 
 /* ---------- floating liquid-glass bottom nav, icons only ---------- */
 .cr-nav{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(10px + env(safe-area-inset-bottom));
-  z-index:30; display:flex; align-items:center; gap:2px; padding:6px 8px;
+  z-index:30; display:flex; align-items:center; gap:2px; padding:5px 7px;
   background:rgba(18,18,20,.55); -webkit-backdrop-filter:blur(22px) saturate(1.5); backdrop-filter:blur(22px) saturate(1.5);
   border:1px solid rgba(255,255,255,.12); border-radius:999px;
   box-shadow:0 8px 32px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.08);}
-.cr-nav a{flex:none; width:44px; height:44px; display:flex; align-items:center; justify-content:center;
+.cr-nav a{flex:none; width:38px; height:38px; display:flex; align-items:center; justify-content:center;
   border-radius:999px; color:var(--muted); text-decoration:none; -webkit-tap-highlight-color:transparent;}
-.cr-nav a svg{width:24px; height:24px;}
+.cr-nav a svg{width:22px; height:22px;}
 .cr-nav a.on{background:rgba(255,255,255,.12); color:#4da3ff;}
 .cr-nav a:active{transform:scale(.93);}
 /* lift the composer above the floating pill, and clear the message list */
-#msgs{padding-bottom:calc(140px + env(safe-area-inset-bottom));}
+#msgs{padding-bottom:calc(128px + env(safe-area-inset-bottom));}

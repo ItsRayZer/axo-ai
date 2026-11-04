@@ -642,7 +642,28 @@ function refreshChrome(){
 }
 
 /* ---------------- init ---------------- */
+/* Same theme as the main app: it stores {theme:'black'|'white', accent:'#hex'}
+   in localStorage under axo.local.v1.state. codeR reads it and mirrors it,
+   so the theme the user picked in Gptopen applies here too. */
+function applyAppTheme(){
+  var theme='black', accent='';
+  try{
+    var st=JSON.parse(window.localStorage.getItem('axo.local.v1.state')||'null');
+    if(st){ if(st.theme==='white'||st.theme==='black') theme=st.theme; if(st.accent) accent=String(st.accent); }
+  }catch(e){}
+  document.documentElement.setAttribute('data-theme', theme);
+  if(accent){
+    document.documentElement.style.setProperty('--accent', accent);
+    var hex=accent.replace('#','');
+    var r=parseInt(hex.substr(0,2),16), g=parseInt(hex.substr(2,2),16), b=parseInt(hex.substr(4,2),16);
+    var lum=(0.2126*r+0.7152*g+0.0722*b)/255;
+    document.documentElement.style.setProperty('--accent-ink', lum>0.6 ? '#0b0b0c' : '#ffffff');
+  }
+}
 function init(){
+  applyAppTheme();
+  /* theme changed in the main app while codeR is open: follow it live */
+  window.addEventListener('storage', function(e){ if(e.key==='axo.local.v1.state') applyAppTheme(); });
   refreshChrome(); renderTree(); renderSessions();
   newSession();
 

@@ -1863,8 +1863,8 @@ header.chat-head .head-pill{justify-self:end; align-self:start; margin-left:0;}
   display:flex;
   align-items:center;
   justify-content:center;
-  gap:4px;
-  padding:8px 10px;
+  gap:2px;
+  padding:6px 8px;
   background:rgba(18,18,20,.55);
   -webkit-backdrop-filter:blur(22px) saturate(1.5);
   backdrop-filter:blur(22px) saturate(1.5);
@@ -1879,9 +1879,9 @@ header.chat-head .head-pill{justify-self:end; align-self:start; margin-left:0;}
 }
 #bottomNav .bnav-btn{
   flex:none;
-  width:52px;
-  height:52px;
-  min-width:52px;
+  width:44px;
+  height:44px;
+  min-width:44px;
   padding:0;
   margin:0;
   border:none;
@@ -1895,7 +1895,7 @@ header.chat-head .head-pill{justify-self:end; align-self:start; margin-left:0;}
   color:var(--muted);
   text-decoration:none;
 }
-#bottomNav .bnav-btn svg{width:26px; height:26px;}
+#bottomNav .bnav-btn svg{width:24px; height:24px;}
 #bottomNav .bnav-btn.on{
   background:rgba(255,255,255,.12);
   color:#4da3ff;
@@ -1905,7 +1905,7 @@ header.chat-head .head-pill{justify-self:end; align-self:start; margin-left:0;}
 /* goals notification dot stays pinned to its button corner */
 #bottomNav .bnav-dot{top:5px; right:5px;}
 /* the bar floats now, so the composer gets its own bottom clearance */
-#composerZone{padding-bottom:calc(84px + env(safe-area-inset-bottom));}
+#composerZone{padding-bottom:calc(74px + env(safe-area-inset-bottom));}
 /* light theme variant of the glass pill */
 [data-theme="white"] #bottomNav{
   background:rgba(255,255,255,.6);

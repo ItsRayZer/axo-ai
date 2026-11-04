@@ -4,6 +4,7 @@
   --text:#ffffff; --text2:#e5e5ea; --muted:#98989d;
   --border:rgba(255,255,255,.08); --border2:rgba(255,255,255,.16);
   --green:#30d158; --orange:#ff9f0a; --red:#ff453a; --blue:#0a84ff; --purple:#bf5af2;
+  --accent:#0a84ff; --accent-ink:#ffffff;
   --radius:14px;
   --font:-apple-system,BlinkMacSystemFont,"Inter","SF Pro Text",system-ui,sans-serif;
   --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
@@ -78,16 +79,20 @@ button{font-family:var(--font);}
 .btn.reject{background:var(--surface3); color:var(--text);}
 .btn:disabled{opacity:.45;}
 
-/* ---------- composer ---------- */
-.cr-compose{position:fixed; left:0; right:0; bottom:0; z-index:20; padding:8px 12px calc(10px + env(safe-area-inset-bottom));
-  background:rgba(0,0,0,.88); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border-top:1px solid var(--border);}
-.cr-row{display:flex; gap:8px; align-items:flex-end;}
-#prompt{flex:1; background:var(--surface); border:1px solid var(--border2); border-radius:16px; color:var(--text);
-  font-family:var(--font); font-size:15px; padding:11px 13px; resize:none; max-height:130px; line-height:1.45;}
-#prompt:focus{outline:none; border-color:var(--purple);}
-#send{width:46px; height:46px; border-radius:50%; border:none; background:#fff; color:#000; font-size:19px; font-weight:800; flex:none;}
-#send:disabled{opacity:.35;}
-.cr-hint{font-size:11.5px; color:var(--muted); text-align:center; margin-top:6px;}
+/* ---------- composer: same search box + send button as the main app ---------- */
+.cr-compose{position:fixed; left:0; right:0; bottom:calc(74px + env(safe-area-inset-bottom)); z-index:20; padding:0 12px;}
+.cr-row{display:flex; align-items:flex-end; gap:8px; background:var(--surface); border:1px solid var(--border2);
+  border-radius:28px; padding:6px; box-shadow:0 10px 34px rgba(0,0,0,.28);}
+#prompt{flex:1; border:none; outline:none; background:none; resize:none; color:var(--text);
+  font-family:var(--font); font-size:16px; line-height:1.4; padding:9px 2px; max-height:130px; min-width:0;
+  scrollbar-width:none; -ms-overflow-style:none;}
+#prompt::-webkit-scrollbar{width:0 !important; height:0 !important; display:none;}
+#prompt::placeholder{color:var(--muted);}
+#send{width:40px; height:40px; border-radius:50%; border:none; background:var(--accent); color:var(--accent-ink);
+  display:grid; place-items:center; flex:none;}
+#send:disabled{background:var(--surface2); color:var(--muted);}
+#send:active{filter:brightness(1.12);}
+#send svg{width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round;}
 .typing{display:inline-flex; gap:4px; padding:4px 0;}
 .typing i{width:7px; height:7px; border-radius:50%; background:var(--muted); animation:tp 1s infinite;}
 .typing i:nth-child(2){animation-delay:.15s;} .typing i:nth-child(3){animation-delay:.3s;}
@@ -157,15 +162,14 @@ button{font-family:var(--font);}
 
 /* ---------- floating liquid-glass bottom nav, icons only ---------- */
 .cr-nav{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(10px + env(safe-area-inset-bottom));
-  z-index:30; display:flex; align-items:center; gap:4px; padding:8px 10px;
+  z-index:30; display:flex; align-items:center; gap:2px; padding:6px 8px;
   background:rgba(18,18,20,.55); -webkit-backdrop-filter:blur(22px) saturate(1.5); backdrop-filter:blur(22px) saturate(1.5);
   border:1px solid rgba(255,255,255,.12); border-radius:999px;
   box-shadow:0 8px 32px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.08);}
-.cr-nav a{flex:none; width:52px; height:52px; display:flex; align-items:center; justify-content:center;
+.cr-nav a{flex:none; width:44px; height:44px; display:flex; align-items:center; justify-content:center;
   border-radius:999px; color:var(--muted); text-decoration:none; -webkit-tap-highlight-color:transparent;}
-.cr-nav a svg{width:26px; height:26px;}
+.cr-nav a svg{width:24px; height:24px;}
 .cr-nav a.on{background:rgba(255,255,255,.12); color:#4da3ff;}
 .cr-nav a:active{transform:scale(.93);}
 /* lift the composer above the floating pill, and clear the message list */
-.cr-compose{bottom:86px;}
-#msgs{padding-bottom:calc(236px + env(safe-area-inset-bottom));}
+#msgs{padding-bottom:calc(140px + env(safe-area-inset-bottom));}
